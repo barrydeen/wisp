@@ -3311,6 +3311,24 @@ fun WispNavHost(
                 onAddToGrocery = if (feedViewModel.signer != null && recipeDetailEvent != null) {
                     { showAddToGrocery = true }
                 } else null,
+                // Delete is the author's own affordance: a signing key whose
+                // pubkey is the recipe's. Anyone else gets no overflow menu at
+                // all (RecipeDetailScreen hides it when this is null). The
+                // publisher re-checks authorship before signing anything.
+                onDelete = if (
+                    feedViewModel.signer != null &&
+                    recipeDetailEvent != null &&
+                    recipeDetailEvent?.pubkey == feedViewModel.getUserPubkey()
+                ) {
+                    {
+                        recipeDetailViewModel.delete(
+                            feedViewModel.recipePublisher,
+                            feedViewModel.recipeRepo,
+                            feedViewModel.signer,
+                        )
+                    }
+                } else null,
+                onDeleted = { navController.popBackStack() },
             )
 
             if (showAddToGrocery) {

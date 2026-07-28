@@ -11,7 +11,9 @@ import cooking.zap.app.nostr.NostrSigner
 import cooking.zap.app.nostr.NourishScore
 import cooking.zap.app.nostr.RecipeParser
 import cooking.zap.app.repo.NourishRepository
+import cooking.zap.app.repo.RecipePublisher
 import cooking.zap.app.repo.RecipeRepository
+import cooking.zap.app.repo.recipeCoordinate
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -53,6 +55,20 @@ class RecipeDetailViewModel : ViewModel() {
     private val _nourishUi = MutableStateFlow<NourishUi>(NourishUi.Hidden)
     val nourishUi: StateFlow<NourishUi> = _nourishUi
 
+    /**
+     * Delete-a-recipe state (author only). [Deleted] is terminal — the screen
+     * leaves on it, so nothing resets it back to [Idle].
+     */
+    sealed interface DeleteState {
+        data object Idle : DeleteState
+        data object Deleting : DeleteState
+        data object Deleted : DeleteState
+        data class Error(val message: String) : DeleteState
+    }
+
+    private val _deleteState = MutableStateFlow<DeleteState>(DeleteState.Idle)
+    val deleteState: StateFlow<DeleteState> = _deleteState
+
     private var loadedKey: String? = null
 
     fun load(
@@ -87,6 +103,44 @@ class RecipeDetailViewModel : ViewModel() {
                 else -> NourishUi.Hidden // READ_ONLY / no key, and no published score
             }
         }
+    }
+
+    /**
+     * Delete this recipe via [RecipePublisher.delete] (the shared recipe write
+     * surface — same relays the publish reached). Author-only; the publisher
+     * re-checks that against the signer, so a screen that offered the action by
+     * mistake still can't publish someone else's tombstone.
+     *
+     * Guarded against a double tap: a second call while [DeleteState.Deleting]
+     * is a no-op.
+     *
+     * Two local evictions, and they are different jobs. The publisher applies
+     * the kind-5 through [EventRepository.addEvent] — the same inbound path a
+     * relay round-trip would take — which clears the note feed and the event
+     * cache. That does **not** reach [RecipeRepository]'s grids, which key on
+     * the coordinate and have no deletion observer, so [RecipeRepository.removeRecipe]
+     * is what stops the member landing back on a grid that still shows the
+     * recipe they just deleted. Only on success: a failed delete must leave the
+     * recipe exactly where it was.
+     */
+    fun delete(publisher: RecipePublisher, recipeRepo: RecipeRepository, signer: NostrSigner?) {
+        val event = _event.value ?: return
+        if (_deleteState.value == DeleteState.Deleting) return
+        _deleteState.value = DeleteState.Deleting
+        viewModelScope.launch {
+            _deleteState.value = when (val r = publisher.delete(event, signer)) {
+                RecipePublisher.DeleteResult.Deleted -> {
+                    recipeRepo.removeRecipe(recipeCoordinate(event))
+                    DeleteState.Deleted
+                }
+                is RecipePublisher.DeleteResult.Error -> DeleteState.Error(r.message)
+            }
+        }
+    }
+
+    /** Dismiss a failed delete so the menu can be used again. */
+    fun clearDeleteError() {
+        if (_deleteState.value is DeleteState.Error) _deleteState.value = DeleteState.Idle
     }
 
     /**

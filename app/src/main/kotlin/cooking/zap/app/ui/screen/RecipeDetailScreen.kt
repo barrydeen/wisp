@@ -14,7 +14,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.TextButton
@@ -27,9 +30,12 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.AddShoppingCart
+import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -90,11 +96,22 @@ fun RecipeDetailScreen(
     onStartCooking: ((RecipeParser.Recipe) -> Unit)? = null,
     onComputeNourish: () -> Unit = {},
     onAddToGrocery: (() -> Unit)? = null,
+    onDelete: (() -> Unit)? = null,
+    onDeleted: () -> Unit = {},
 ) {
     val recipe by viewModel.recipe.collectAsState()
     val event by viewModel.event.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val nourishUi by viewModel.nourishUi.collectAsState()
+    val deleteState by viewModel.deleteState.collectAsState()
+
+    var menuExpanded by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+
+    // Terminal: the recipe is gone, so the screen has nothing left to render.
+    LaunchedEffect(deleteState) {
+        if (deleteState is RecipeDetailViewModel.DeleteState.Deleted) onDeleted()
+    }
 
     val reactionVersion by eventRepo.reactionVersion.collectAsState()
     val zapVersion by eventRepo.zapVersion.collectAsState()
@@ -140,6 +157,37 @@ fun RecipeDetailScreen(
                                 Icons.Outlined.Share,
                                 contentDescription = stringResource(R.string.btn_share),
                             )
+                        }
+                    }
+                    // Overflow menu. Rendered only when it would hold something:
+                    // Delete today (author + signing key). Report (§4.7 UGC) is
+                    // the other item this menu exists for — it drops in here as
+                    // a sibling DropdownMenuItem, and its own gate goes in the
+                    // condition below.
+                    if (onDelete != null) {
+                        Box {
+                            IconButton(onClick = { menuExpanded = true }) {
+                                Icon(
+                                    Icons.Default.MoreVert,
+                                    contentDescription = stringResource(R.string.cd_more_options),
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = menuExpanded,
+                                onDismissRequest = { menuExpanded = false },
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.btn_delete)) },
+                                    trailingIcon = {
+                                        Icon(Icons.Outlined.DeleteOutline, contentDescription = null)
+                                    },
+                                    enabled = deleteState !is RecipeDetailViewModel.DeleteState.Deleting,
+                                    onClick = {
+                                        menuExpanded = false
+                                        showDeleteConfirm = true
+                                    },
+                                )
+                            }
                         }
                     }
                 },
@@ -267,6 +315,45 @@ fun RecipeDetailScreen(
                 }
             }
         }
+    }
+
+    if (showDeleteConfirm && onDelete != null) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text(stringResource(R.string.title_delete_recipe)) },
+            text = { Text(stringResource(R.string.msg_delete_recipe_confirm)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDeleteConfirm = false
+                    onDelete()
+                }) {
+                    Text(
+                        stringResource(R.string.btn_delete),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) {
+                    Text(stringResource(R.string.btn_cancel))
+                }
+            },
+        )
+    }
+
+    // A failed delete keeps the member on the recipe — the menu is usable
+    // again on dismiss, so a retry is one tap and nothing was silently lost.
+    (deleteState as? RecipeDetailViewModel.DeleteState.Error)?.let { failed ->
+        AlertDialog(
+            onDismissRequest = { viewModel.clearDeleteError() },
+            title = { Text(stringResource(R.string.title_delete_recipe_failed)) },
+            text = { Text(failed.message) },
+            confirmButton = {
+                TextButton(onClick = { viewModel.clearDeleteError() }) {
+                    Text(stringResource(R.string.btn_ok))
+                }
+            },
+        )
     }
 }
 

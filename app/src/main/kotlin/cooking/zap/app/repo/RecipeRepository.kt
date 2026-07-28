@@ -699,6 +699,11 @@ class RecipeRepository(
             _isLoading.value = false
         }
 
+        /** Drop [coordinate] from this session's grid; see [removeRecipe]. */
+        suspend fun remove(coordinate: String) = coordMutex.withLock {
+            if (byCoordinate.remove(coordinate) != null) emit()
+        }
+
         /** Merge [event] into [byCoordinate] (author-guarded); true iff it became the winner. */
         private fun accept(author: String, event: NostrEvent): Boolean {
             if (event.pubkey != author) return false
@@ -736,6 +741,34 @@ class RecipeRepository(
      */
     fun loadProfileAuthoredRecipes(pubkey: String, limit: Int = 200) =
         profileAuthored.load(pubkey, limit)
+
+    /**
+     * Evict a deleted recipe from every in-memory grid this repo owns — the
+     * main feed, the tag feed, and both [AuthoredSession]s — and re-emit each
+     * one that actually held it.
+     *
+     * Called by [RecipePublisher.delete] after the author deletes their own
+     * recipe. Nothing else would remove it: this repo has no deletion observer
+     * (`EventRepository.removedEvents` has one consumer, `ThreadViewModel`),
+     * and the blanked replacement cannot evict it either — every collector here
+     * drops what [RecipeFormats.forEvent] can't parse, which a tombstone is by
+     * design. Without this the member returns from the detail screen to a grid
+     * still showing the recipe they just deleted.
+     *
+     * [coordinate] is `recipeCoordinate(event)` of the deleted recipe. Keyed on
+     * the coordinate rather than the event id because that is what these maps
+     * are keyed on, and because a replaceable event's identity *is* its address.
+     */
+    suspend fun removeRecipe(coordinate: String) {
+        coordMutex.withLock {
+            if (byCoordinate.remove(coordinate) != null) emitRecipes()
+        }
+        tagCoordMutex.withLock {
+            if (tagByCoordinate.remove(coordinate) != null) emitTagRecipes()
+        }
+        selfAuthored.remove(coordinate)
+        profileAuthored.remove(coordinate)
+    }
 
     private suspend fun cachedAuthoredEvents(author: String, limit: Int = 2_000): List<NostrEvent> {
         val persistence = eventRepo.eventPersistence ?: return emptyList()

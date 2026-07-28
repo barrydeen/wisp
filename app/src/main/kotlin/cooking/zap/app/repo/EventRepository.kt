@@ -13,6 +13,7 @@ import cooking.zap.app.nostr.Nip88
 import cooking.zap.app.nostr.NostrEvent
 import cooking.zap.app.nostr.NostrEvent.Companion.fromJson
 import cooking.zap.app.nostr.ProfileData
+import cooking.zap.app.nostr.RecipeDeletion
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -433,7 +434,16 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                 if (!isReply) binaryInsert(event, fromFeed = true)
             }
             30023 -> {
-                binaryInsert(event, fromFeed = true)
+                // A blanked replacement (["deleted","true"]) is how an author
+                // deletes an addressable event on relays that don't honor
+                // NIP-09 — it is a tombstone, not content. Still cached above
+                // (an addressable lookup should resolve to the tombstone, not a
+                // stale copy), but it must not enter the feed: this branch
+                // routes on kind alone, so FeedScreen/UserProfileScreen would
+                // render it as an article card titled "[Deleted]".
+                if (!RecipeDeletion.isBlankedReplacement(event)) {
+                    binaryInsert(event, fromFeed = true)
+                }
             }
             20, 21, 22 -> {
                 Log.d("GALLERY", "[EventRepo] routing kind ${event.kind} to binaryInsert id=${event.id.take(12)}")
