@@ -543,7 +543,7 @@ fun WispDrawerContent(
                 // reach the policy links without expanding a power-user tray.
                 NavigationDrawerItem(
                     icon = { Icon(Icons.Outlined.Info, contentDescription = null) },
-                    label = { Text(stringResource(R.string.drawer_about)) },
+                    label = { Text(stringResource(R.string.drawer_membership_policies)) },
                     selected = false,
                     onClick = onAbout,
                     modifier = Modifier.height(48.dp).padding(start = 36.dp, end = 12.dp)

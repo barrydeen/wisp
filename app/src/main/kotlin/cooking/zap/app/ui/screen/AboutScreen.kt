@@ -81,7 +81,7 @@ fun AboutScreen(
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.drawer_about)) },
+                title = { Text(stringResource(R.string.drawer_membership_policies)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.cd_back))
@@ -177,7 +177,10 @@ private fun MembershipLine(row: MembershipRow) {
                 // everything we can stand behind.
                 Expiry.Unknown -> Unit
                 is Expiry.On -> Secondary(
-                    stringResource(R.string.about_membership_expires, formatDate(expiry.epochMillis))
+                    stringResource(
+                        R.string.about_membership_paid_through,
+                        formatDate(expiry.epochMillis)
+                    )
                 )
             }
         }
