@@ -1135,8 +1135,25 @@
     <string name="msg_delete_group_confirm">Permanently delete this group? This cannot be undone.</string>
     <string name="title_delete_note">Delete note?</string>
     <string name="msg_delete_note_confirm">Send a deletion request to relays for this note? This cannot be guaranteed.</string>
+    <!--
+      msg_delete_recipe_confirm reads almost exactly like msg_delete_note_confirm
+      one line above it BY CHOICE, not because the two deletes agree. A note is
+      kind 5 alone (SocialActionManager.deleteEvent), so "we ask, it may not
+      happen" describes that mechanism completely. A recipe delete is two events:
+      a blanked replacement that supersedes the recipe on any NIP-01 relay
+      whether or not it honours NIP-09, plus the kind 5. So this string
+      under-claims — deliberately. The accurate sentence would assert what the
+      replacement does locally, which rests on the EventRepository feed guard and
+      RecipeRepository.removeRecipe, and no one has run those on a device.
+      Revisit when there is a device pass behind them, not before.
+      Two clauses, each independent of that: "cannot be guaranteed" is the kind-5
+      half; "there's no undo" is the absence of a control — no undo or restore
+      exists on RecipeDetailScreen, RecipeDetailViewModel, RecipePublisher or
+      RecipeDeletion — and stays true even if both branches fail.
+      (Prep + Growth, 2026-07-28.)
+    -->
     <string name="title_delete_recipe">Delete recipe?</string>
-    <string name="msg_delete_recipe_confirm">Send a deletion request to relays for this recipe? This cannot be guaranteed.</string>
+    <string name="msg_delete_recipe_confirm">Send a deletion request to relays for this recipe? This cannot be guaranteed, and there\'s no undo.</string>
     <string name="title_delete_recipe_failed">Couldn\'t delete recipe</string>
     <string name="label_notifications">Notifications</string>
     <string name="label_notifications_on">On — new messages will be tracked</string>

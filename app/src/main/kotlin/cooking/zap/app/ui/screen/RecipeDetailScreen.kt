@@ -321,6 +321,10 @@ fun RecipeDetailScreen(
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
             title = { Text(stringResource(R.string.title_delete_recipe)) },
+            // This body deliberately under-claims what the delete does, and it
+            // resembles msg_delete_note_confirm by choice rather than because
+            // the two paths agree. Reasoning is at the string in strings.xml —
+            // read it before harmonizing the two.
             text = { Text(stringResource(R.string.msg_delete_recipe_confirm)) },
             confirmButton = {
                 TextButton(onClick = {
