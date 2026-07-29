@@ -63,6 +63,7 @@ fun ProfileEditScreen(
     val nip05 by viewModel.nip05.collectAsState()
     val banner by viewModel.banner.collectAsState()
     val lud16 by viewModel.lud16.collectAsState()
+    val clinkOffer by viewModel.clinkOffer.collectAsState()
     val publishing by viewModel.publishing.collectAsState()
     val uploading by viewModel.uploading.collectAsState()
     val error by viewModel.error.collectAsState()
@@ -196,6 +197,16 @@ fun ProfileEditScreen(
                 onValueChange = { new -> if (!NsecPasteGuard.blockIfNsec(lud16, new)) viewModel.updateLud16(new) },
                 label = { Text(stringResource(R.string.placeholder_lightning_address)) },
                 singleLine = true,
+                modifier = Modifier.fillMaxWidth().scrollOnFocus()
+            )
+            Spacer(Modifier.height(12.dp))
+            OutlinedTextField(
+                value = clinkOffer,
+                onValueChange = { new -> if (!NsecPasteGuard.blockIfNsec(clinkOffer, new)) viewModel.updateClinkOffer(new) },
+                label = { Text(stringResource(R.string.placeholder_clink_offer)) },
+                placeholder = { Text("noffer1…") },
+                singleLine = true,
+                supportingText = { Text(stringResource(R.string.placeholder_clink_offer_hint)) },
                 modifier = Modifier.fillMaxWidth().scrollOnFocus()
             )
             Spacer(Modifier.height(16.dp))

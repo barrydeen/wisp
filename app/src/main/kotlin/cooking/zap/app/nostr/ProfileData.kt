@@ -17,6 +17,12 @@ data class ProfileData(
     val banner: String?,
     val nip05: String?,
     val lud16: String?,
+    /**
+     * CLINK offer (`noffer1…`) advertised in kind-0. Read tolerantly from
+     * `clink_offer`, `noffer`, or `offer` for cross-client compatibility.
+     * Spec: https://github.com/shocknet/CLINK/blob/main/specs/clink-offers.md
+     */
+    val clinkOffer: String? = null,
     val updatedAt: Long
 ) {
     val displayString: String
@@ -40,6 +46,11 @@ data class ProfileData(
                     banner = obj["banner"]?.jsonPrimitive?.content,
                     nip05 = obj["nip05"]?.jsonPrimitive?.content,
                     lud16 = obj["lud16"]?.jsonPrimitive?.content,
+                    clinkOffer = (
+                        obj["clink_offer"]?.jsonPrimitive?.content
+                            ?: obj["noffer"]?.jsonPrimitive?.content
+                            ?: obj["offer"]?.jsonPrimitive?.content
+                        ).takeUnlessBlank(),
                     updatedAt = event.created_at
                 )
             } catch (_: Exception) {
