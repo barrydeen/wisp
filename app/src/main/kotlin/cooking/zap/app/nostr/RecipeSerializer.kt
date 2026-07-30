@@ -91,6 +91,16 @@ object RecipeSerializer {
     ): List<List<String>> = buildList {
         // One source of truth for the address: `d` and the self-tag below both
         // read this, so they cannot drift apart at a call site.
+        //
+        // Note what the blank branch means: a BLANK [identifier] is create
+        // semantics, silently. So [RecipeFormat.serializeEdit]'s "the address is
+        // preserved, never re-derived from title" is a guarantee about its
+        // CALLERS, not something enforced here. It holds today because the only
+        // edit path resolves the original by a non-blank `d`
+        // ([RecipeParser.dTag]), which is why there is no guard on a state that
+        // cannot currently occur. It stops holding the day a format whose
+        // identifier is not slugged from the title reaches `serializeEdit` —
+        // that format must pass its own identifier, not rely on this fallback.
         val id = identifier?.takeIf { it.isNotBlank() } ?: slug(title)
         add(listOf("d", id))
         add(listOf("title", title))

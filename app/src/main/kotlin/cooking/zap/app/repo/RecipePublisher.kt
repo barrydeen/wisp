@@ -107,9 +107,24 @@ class RecipePublisher(
 
     /**
      * Recipe-edit path: republish [original] as a **replacement** at the same
-     * address, through the same spine the create paths use, so an edit reaches
-     * exactly the relays the recipe was published to. Images are already hosted
-     * (same contract as the manual compose publish above) — no re-host.
+     * address, through the same spine the create paths use — so an edit reaches
+     * the relays a **new** recipe would: the author's *current* write relays ∪
+     * [RelayConfig.ARTICLES_RELAYS], per this class's own contract above.
+     *
+     * That is deliberately **not** "the relays the recipe was published to."
+     * Nothing here can reach a relay we no longer write to, so a recipe first
+     * published from the web, or from this account before its relay list
+     * changed, can keep serving its old version somewhere this edit never
+     * touches. A replacement is only as complete as the relay set it lands on,
+     * and that set is the publisher's, not the original event's.
+     *
+     * What it does reach is wider than the create paths' worst case: `30023` is
+     * in [PANTRY_MIRROR_KINDS], so [broadcast] mirrors the replacement to
+     * [RelayConfig.MEMBERS_RELAY] too. Propagating furthest is not the same as
+     * propagating far enough.
+     *
+     * Images are already hosted (same contract as the manual compose publish
+     * above) — no re-host.
      *
      * The address is not re-derived from the (possibly changed) title; it comes
      * off [original] inside the format's `serializeEdit`, which is also what
