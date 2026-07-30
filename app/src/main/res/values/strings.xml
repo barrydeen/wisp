@@ -934,6 +934,7 @@
     <string name="profile_tab_recipes">Recipes</string>
     <string name="profile_tab_notes">Notes</string>
     <string name="profile_tab_replies">Replies</string>
+    <string name="profile_tab_comments">Comments</string>
     <string name="profile_tab_conversation">Conversation</string>
     <string name="profile_tab_gallery">Gallery</string>
     <string name="profile_tab_media">Media</string>
@@ -955,6 +956,7 @@
     <string name="profile_no_recipes">No recipes yet</string>
     <string name="profile_no_notes">No notes yet</string>
     <string name="profile_no_replies">No replies yet</string>
+    <string name="profile_no_comments">No comments on external content yet</string>
     <string name="profile_no_conversation">No shared threads yet</string>
     <string name="profile_no_gallery">No gallery posts yet</string>
     <string name="profile_no_media">No media yet</string>

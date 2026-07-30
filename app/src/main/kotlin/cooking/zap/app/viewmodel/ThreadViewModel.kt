@@ -6,6 +6,7 @@ import cooking.zap.app.nostr.ClientMessage
 import cooking.zap.app.nostr.Filter
 import cooking.zap.app.nostr.Nip09
 import cooking.zap.app.nostr.Nip10
+import cooking.zap.app.nostr.Nip22
 import cooking.zap.app.nostr.NostrEvent
 import cooking.zap.app.viewmodel.thread.ThreadFlattener
 import cooking.zap.app.viewmodel.thread.ThreadItem
@@ -209,7 +210,9 @@ class ThreadViewModel : ViewModel() {
                     return@collect
                 }
 
-                if (event.kind != 1) return@collect
+                // Admit NIP-22 comments (kind 1111): a reply to a comment must itself
+                // be a comment, so a kind-1-only filter would show the thread as empty.
+                if (event.kind != 1 && event.kind != Nip22.KIND_COMMENT) return@collect
 
                 // Silently drop events the user has already deleted on some other client/session.
                 if (eventRepo.deletedEventsRepo?.isDeleted(event.id) == true) return@collect
@@ -273,7 +276,9 @@ class ThreadViewModel : ViewModel() {
             // Phase 2: Now we (hopefully) have the root — use outbox routing for replies
             val rootEvent = _rootEvent.value
             // Include kind 5 so deletions of the root (or any event tagging the root) come through.
-            val repliesFilter = Filter(kinds = listOf(1, 5), eTags = listOf(rootId))
+            // Kind 1111 (NIP-22 comments) rides along: replies to a comment must themselves
+            // be comments, so a kind-1-only filter would show the thread as having no replies.
+            val repliesFilter = Filter(kinds = listOf(1, 5, Nip22.KIND_COMMENT), eTags = listOf(rootId))
             if (rootEvent != null) {
                 outboxRouter.subscribeToUserReadRelays(
                     "thread-replies", rootEvent.pubkey, repliesFilter

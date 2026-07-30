@@ -1403,6 +1403,10 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         if (muteRepo?.isBlocked(event.pubkey) == true) return
         if (deletedEventsRepo?.isDeleted(event.id) == true) return
 
+        // NIP-22 comments (kind 1111) are deliberately NOT admitted to feed
+        // surfaces here: a comment on a blog post is conversation about that
+        // article, not a broadcast to the author's followers. They surface on the
+        // profile Comments tab instead.
         when (event.kind) {
             1 -> {
                 val threadRoot = Nip10.getRootId(event) ?: Nip10.getReplyTarget(event) ?: event.id

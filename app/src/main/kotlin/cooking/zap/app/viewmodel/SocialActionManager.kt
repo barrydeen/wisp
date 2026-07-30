@@ -218,6 +218,14 @@ class SocialActionManager(
     }
 
     fun sendRepost(event: NostrEvent) {
+        // TODO: reposts of non-kind-1 events should be kind 16, not kind 6. NIP-18
+        // scopes kind 6 to kind-1 text notes and defines kind 16 (generic repost)
+        // for everything else, carrying the original's kind in a `k` tag. We already
+        // emit that `k` tag (Nip18.buildRepostTags) but always sign as kind 6, so a
+        // repost of a kind-1111 comment (or a 30023 article, a kind-20 picture) is
+        // technically malformed. Switching kinds changes which clients surface the
+        // repost — a behavioral change that wants a survey of other clients first,
+        // not a drive-by correctness edit.
         val s = getSigner() ?: return
         scope.launch {
             try {
