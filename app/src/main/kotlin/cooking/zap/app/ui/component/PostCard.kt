@@ -40,6 +40,7 @@ import androidx.compose.material.icons.outlined.Tag
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.Badge
 import androidx.compose.material.icons.outlined.Podcasts
+import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Translate
@@ -89,6 +90,7 @@ import cooking.zap.app.nostr.toNpub
 import cooking.zap.app.nostr.Nip10
 import cooking.zap.app.nostr.Nip13
 import cooking.zap.app.nostr.Nip19
+import cooking.zap.app.nostr.Nip22
 import cooking.zap.app.nostr.NostrEvent
 import cooking.zap.app.nostr.ProfileData
 import cooking.zap.app.nostr.hexToByteArray
@@ -218,6 +220,15 @@ fun PostCard(
         }
     }
 
+    // NIP-22 comment scoped to an external item (web page, podcast…): name the
+    // source the comment is about. A comment carries no p-tags naming a recipient,
+    // so without this the context row renders blank and it reads like a stray
+    // remark with no subject. Preferred over [replyToName] when present.
+    val externalCommentRef = remember(event.id) { Nip22.externalRoot(event) }
+    val commentingOnLabel = remember(externalCommentRef) {
+        externalCommentRef?.let { ref -> ref.displayHost ?: externalKindLabel(ref.kind) }
+    }
+
     val hasReactionDetails = reactionDetails.isNotEmpty() || zapDetails.isNotEmpty() || repostDetails.isNotEmpty()
     var expandedDetails by remember { mutableStateOf(false) }
     var showTranslation by remember { mutableStateOf(true) }
@@ -325,20 +336,27 @@ fun PostCard(
                 }
             }
         }
-        if (replyToName != null) {
+        // Context row: "Replying to @name" for a normal reply, or "Commenting on
+        // <host>" for a NIP-22 comment scoped to an external item. A web-rooted
+        // comment carries no p-tag recipient, so without the latter the row would
+        // render blank and the comment looks like it's replying to nobody.
+        val contextLabel = commentingOnLabel
+            ?: replyToName?.let { stringResource(R.string.post_replying_to_prefix) + " " + it }
+        if (contextLabel != null) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.padding(bottom = 4.dp)
             ) {
                 Icon(
-                    imageVector = Icons.AutoMirrored.Outlined.Reply,
+                    imageVector = if (externalCommentRef != null) Icons.Outlined.Link
+                        else Icons.AutoMirrored.Outlined.Reply,
                     contentDescription = null,
                     modifier = Modifier.size(14.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    text = stringResource(R.string.post_replying_to_prefix) + " " + replyToName,
+                    text = if (externalCommentRef != null) "Commenting on $contextLabel" else contextLabel,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -681,6 +699,12 @@ fun PostCard(
             // Normal content display
             val emojiMap = remember(event.id) { Nip30.parseEmojiTags(event) }
             val imetaMap = remember(event.id) { parseImetaTags(event.tags) }
+
+            // NIP-22 comment scoped to a web page (or other NIP-73 identifier).
+            // Sits ABOVE the comment text: the page is what's being discussed, so it
+            // reads as the subject the remark answers rather than a link trailing off
+            // the end of it.
+            externalCommentRef?.let { ExternalCommentCard(it) }
 
             // Collapsible content (~1 viewport of text). Truncation is scoped to the text
             // itself inside RichContent — media, quote cards, and other embeds always render
@@ -1465,3 +1489,65 @@ internal fun Nip05Badge(
         }
     }
 }
+
+/**
+ * The web page (or other NIP-73 identifier) a kind-1111 comment is scoped to —
+ * the subject being discussed, rendered above the comment text. Web roots reuse
+ * [LinkPreview] (OpenGraph fetch, caching, no-metadata fallback). Identifiers
+ * with no openable URL (a bare podcast GUID, an ISBN) get a plain labelled row
+ * instead of a dead preview card.
+ */
+@Composable
+private fun ExternalCommentCard(ref: Nip22.ExternalRef) {
+    Column {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                Icons.Outlined.Link,
+                contentDescription = null,
+                modifier = Modifier.size(14.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.width(4.dp))
+            Text(
+                text = ref.displayHost ?: externalKindLabel(ref.kind),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        val url = ref.openableUri?.toString()
+        if (url != null) {
+            LinkPreview(url)
+        } else {
+            // Bare identifier with no openable URL — show the raw value rather
+            // than a preview card that would have nothing to render.
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = ref.value,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(10.dp)
+                )
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+    }
+}
+
+/** Human label for a NIP-73 identifier type, used when there's no host to show. */
+private fun externalKindLabel(kind: String): String = when (kind) {
+    "web" -> "Web page"
+    "isbn" -> "Book"
+    "geo" -> "Location"
+    "doi" -> "Paper"
+    else -> if (kind.startsWith("podcast:")) "Podcast" else "External content"
+}
+

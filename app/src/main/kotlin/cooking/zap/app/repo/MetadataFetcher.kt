@@ -3,6 +3,7 @@ package cooking.zap.app.repo
 import cooking.zap.app.nostr.ClientMessage
 import cooking.zap.app.nostr.Filter
 import cooking.zap.app.nostr.Nip19
+import cooking.zap.app.nostr.Nip22
 import cooking.zap.app.nostr.NostrUriData
 import cooking.zap.app.relay.OutboxRouter
 import cooking.zap.app.relay.RelayPool
@@ -396,7 +397,9 @@ class MetadataFetcher(
         val subId = "reply-count-${replyCountBatchCounter++}"
         val eventIds = pendingReplyCountIds.toList()
         pendingReplyCountIds.clear()
-        val filter = Filter(kinds = listOf(1), eTags = eventIds)
+        // Kind 1111 (NIP-22 comments) tags its parent via an `e` tag, so a
+        // comment-on-comment reply counts toward the parent's reply count.
+        val filter = Filter(kinds = listOf(1, Nip22.KIND_COMMENT), eTags = eventIds)
         relayPool.sendToReadRelays(ClientMessage.req(subId, filter))
         scope.launch {
             subManager.awaitEoseWithTimeout(subId)

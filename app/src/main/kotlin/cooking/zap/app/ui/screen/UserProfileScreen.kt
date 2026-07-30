@@ -238,6 +238,7 @@ fun UserProfileScreen(
     val isFollowing by viewModel.isFollowing.collectAsState()
     val rootNotes by viewModel.rootNotes.collectAsState()
     val replies by viewModel.replies.collectAsState()
+    val comments by viewModel.comments.collectAsState()
     val followList by viewModel.followList.collectAsState()
     val relayList by viewModel.relayList.collectAsState()
     val relayHints by viewModel.relayHints.collectAsState()
@@ -407,6 +408,7 @@ fun UserProfileScreen(
         add(9 to stringResource(R.string.profile_tab_recipes))
         add(0 to stringResource(R.string.profile_tab_notes))
         add(1 to stringResource(R.string.profile_tab_replies))
+        add(10 to stringResource(R.string.profile_tab_comments))
         if (showConversationTab) add(8 to stringResource(R.string.profile_tab_conversation))
         add(2 to stringResource(R.string.profile_tab_gallery))
         add(3 to stringResource(R.string.profile_tab_media))
@@ -431,6 +433,8 @@ fun UserProfileScreen(
     if (selectedTabId == 9) {
         LaunchedEffect(profilePubkey) { viewModel.requestRecipes() }
     }
+    // Comments (NIP-22 kind 1111) stream in via the shared posts subscription in
+    // loadProfile, so the tab needs no dedicated trigger — it just reads `comments`.
 
     // Conversation tab: the profile's replies that involve the current user — either a p-tag of
     // them, or a direct reply to one of the current user's notes (resolved via the parent e-tag,
@@ -1133,6 +1137,82 @@ fun UserProfileScreen(
                                 LoadMoreButton(onClick = { viewModel.loadMoreReplies() })
                             }
                         }
+                    }
+                }
+                10 -> if (isBlocked && !blockedContentRevealed) {
+                    item { BlockedContentOverlay(onReveal = { blockedContentRevealed = true }) }
+                } else if (comments.isEmpty()) {
+                    item { EmptyTabContent(stringResource(R.string.profile_no_comments)) }
+                } else {
+                    // NIP-22 comments this user left on external items. Each row is an
+                    // ordinary PostCard — it already renders "Commenting on <host>" and the
+                    // linked page's preview card, so the subject is visible without a bespoke
+                    // layout. Poll/zap-poll state is omitted: comments are kind 1111, never polls.
+                    items(items = comments, key = { it.id }) { event ->
+                        val likeCount = reactionVersion.let { eventRepo?.getReactionCount(event.id) ?: 0 }
+                        val replyCount = replyCountVersion.let { eventRepo?.getReplyCount(event.id) ?: 0 }
+                        val repostCount = repostVersion.let { eventRepo?.getRepostCount(event.id) ?: 0 }
+                        val zapSats = zapVersion.let { eventRepo?.getZapSats(event.id) ?: 0L }
+                        val userEmojis = reactionVersion.let { userPubkey?.let { eventRepo?.getUserReactionEmojis(event.id, it) } ?: emptySet() }
+                        val reactionDetails = remember(reactionVersion, event.id) {
+                            eventRepo?.getReactionDetails(event.id) ?: emptyMap()
+                        }
+                        val zapDetails = remember(zapVersion, event.id) {
+                            eventRepo?.getZapDetails(event.id) ?: emptyList()
+                        }
+                        val relayIcons = remember(relaySourceVersion, event.id) {
+                            eventRepo?.getEventRelays(event.id)?.map { url -> url to relayInfoRepo?.getIconUrl(url) } ?: emptyList()
+                        }
+                        val hasUserReposted = eventRepo?.hasUserReposted(event.id) == true
+                        val hasUserZapped = zapVersion.let { eventRepo?.hasUserZapped(event.id) == true }
+                        val eventReactionEmojiUrls = reactionVersion.let { eventRepo?.getReactionEmojiUrls(event.id) ?: emptyMap() }
+                        val commentTranslationState = remember(translationVersion, event.id) {
+                            translationRepo?.getState(event.id) ?: cooking.zap.app.repo.TranslationState()
+                        }
+                        PostCard(
+                            event = event,
+                            profile = profile,
+                            onReply = { onReply(event) },
+                            onNavigateToProfile = onNavigateToProfile,
+                            onNoteClick = { onNoteClick(event) },
+                            onQuotedNoteClick = onQuotedNoteClick,
+                            onReact = { emoji -> onReact(event, emoji) },
+                            onRepost = { onRepost(event) },
+                            onQuote = { onQuote(event) },
+                            userReactionEmojis = userEmojis,
+                            hasUserReposted = hasUserReposted,
+                            onZap = { zapTargetEvent = event },
+                            hasUserZapped = hasUserZapped,
+                            likeCount = likeCount,
+                            replyCount = replyCount,
+                            repostCount = repostCount,
+                            zapSats = zapSats,
+                            isZapAnimating = event.id in zapAnimatingIds,
+                            isZapInProgress = event.id in zapInProgressIds,
+                            eventRepo = eventRepo,
+                            reactionDetails = reactionDetails,
+                            zapDetails = zapDetails,
+                            reactionEmojiUrls = eventReactionEmojiUrls,
+                            relayIcons = relayIcons,
+                            onNavigateToProfileFromDetails = onNavigateToProfile,
+                            onFollowAuthor = { onToggleFollow?.invoke(event.pubkey) },
+                            onBlockAuthor = { onBlockUser?.invoke() },
+                            isFollowingAuthor = contactRepo.isFollowing(event.pubkey),
+                            isOwnEvent = event.pubkey == userPubkey,
+                            nip05Repo = nip05Repo,
+                            onAddToList = { onAddNoteToList(event.id) },
+                            isInList = event.id in listedIds,
+                            onPin = { onTogglePin(event.id) },
+                            isPinned = event.id in pinnedIds,
+                            onDelete = { onDeleteEvent(event.id, event.kind) },
+                            translationState = commentTranslationState,
+                            onTranslate = { translationRepo?.translate(event.id, event.content) },
+                            autoTranslate = autoTranslate,
+                            resolvedEmojis = resolvedEmojis,
+                            unicodeEmojis = unicodeEmojis,
+                            onOpenEmojiLibrary = onOpenEmojiLibrary,
+                            noteActions = invoiceNoteActions
+                        )
                     }
                 }
                 8 -> {

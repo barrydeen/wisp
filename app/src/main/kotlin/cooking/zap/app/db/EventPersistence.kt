@@ -271,6 +271,7 @@ class EventPersistence(
     }
 
     companion object {
-        private val PERSISTED_KINDS = setOf(0, 1, 6, 7, 9735, 20, 21, 22, 1068, 6969, 30004, 30023)
+        // 1111 is NIP-22 comments (replies scoped to an external item or event).
+        private val PERSISTED_KINDS = setOf(0, 1, 6, 7, 9735, 20, 21, 22, 1068, 6969, 30004, 30023, 1111)
     }
 }

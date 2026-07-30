@@ -3525,7 +3525,7 @@ private fun unescapeHtml(s: String): String = s
     .replace("&#x27;", "'")
 
 @Composable
-private fun LinkPreview(url: String) {
+internal fun LinkPreview(url: String) {
     var ogData by remember(url) { mutableStateOf(ogCache.get(url)) }
     val uriHandler = LocalUriHandler.current
 

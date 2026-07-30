@@ -8,6 +8,7 @@ import cooking.zap.app.nostr.ClientMessage
 import cooking.zap.app.nostr.Filter
 import cooking.zap.app.nostr.Nip02
 import cooking.zap.app.nostr.Nip10
+import cooking.zap.app.nostr.Nip22
 import cooking.zap.app.nostr.Nip51
 import cooking.zap.app.nostr.Nip65
 import cooking.zap.app.nostr.SimpleGroupEntry
@@ -66,6 +67,13 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _replies = MutableStateFlow<List<NostrEvent>>(emptyList())
     val replies: StateFlow<List<NostrEvent>> = _replies
+
+    // NIP-22 comments this user left on external items (web pages, podcast
+    // episodes). Kept out of Notes/Replies: those are kind-1 surfaces, and a
+    // comment's subject is the linked item rather than another nostr note.
+    // Populated by the shared posts subscription in [loadProfile].
+    private val _comments = MutableStateFlow<List<NostrEvent>>(emptyList())
+    val comments: StateFlow<List<NostrEvent>> = _comments
 
     // Track which root notes are reposts: inner event id -> reposter pubkey
     private val _repostAuthors = mutableMapOf<String, String>()
@@ -207,6 +215,7 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
         _followers.value = emptyList()
         _followersLoading.value = false
         _galleryPosts.value = emptyList()
+        _comments.value = emptyList()
         _groups.value = emptyList()
         _groupsLoading.value = false
         // Recipes are lazy — drop the previous profile's grid and re-arm the
@@ -239,7 +248,7 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
 
         // Request fresh profile, posts, follow list, and relay list
         val profileFilter = Filter(kinds = listOf(0), authors = listOf(pubkey), limit = 1)
-        val postsFilter = Filter(kinds = listOf(1, 6, 1068, 6969, 30023, 20, 21, 22), authors = listOf(pubkey), limit = 50)
+        val postsFilter = Filter(kinds = listOf(1, 6, 1068, 6969, 30023, 20, 21, 22, Nip22.KIND_COMMENT), authors = listOf(pubkey), limit = 50)
         // Gallery posts can be old and curated — fetch separately with no since filter, higher limit
         val galleryFilter = Filter(kinds = listOf(20, 21, 22), authors = listOf(pubkey), limit = 100)
         val followFilter = Filter(kinds = listOf(3), authors = listOf(pubkey), limit = 1)
@@ -349,6 +358,21 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
                                     current.add(event)
                                     current.sortByDescending { it.created_at }
                                     _replies.value = current
+                                }
+                            }
+                        }
+                        Nip22.KIND_COMMENT -> {
+                            eventRepo.cacheEvent(event)
+                            // Only externally-rooted comments belong here: one replying to
+                            // another comment already appears in that thread, and without its
+                            // own subject card it would read exactly like the context-free rows
+                            // this tab exists to avoid.
+                            if (Nip22.externalRoot(event) != null) {
+                                val current = _comments.value.toMutableList()
+                                if (current.none { it.id == event.id }) {
+                                    current.add(event)
+                                    current.sortByDescending { it.created_at }
+                                    _comments.value = current
                                 }
                             }
                         }

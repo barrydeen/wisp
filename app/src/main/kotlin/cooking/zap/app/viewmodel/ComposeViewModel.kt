@@ -17,6 +17,7 @@ import cooking.zap.app.nostr.ClientMessage
 import cooking.zap.app.nostr.Filter
 import cooking.zap.app.nostr.Keys
 import cooking.zap.app.nostr.Nip10
+import cooking.zap.app.nostr.Nip22
 import cooking.zap.app.nostr.Nip30
 import cooking.zap.app.nostr.Nip89
 import cooking.zap.app.nostr.Nip18
@@ -848,9 +849,19 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         if (_explicit.value) {
             tags.add(listOf("content-warning", ""))
         }
+        // NIP-22: a reply to an external-rooted kind-1111 comment must itself be
+        // kind 1111 (carrying the root scope forward) — NIP-22 forbids answering a
+        // comment with a kind-1. Falls back to NIP-10 threading for anything else.
+        var replyingToComment = false
         if (replyTo != null) {
             val hint = outboxRouter?.getRelayHint(replyTo.pubkey) ?: ""
-            tags.addAll(Nip10.buildReplyTags(replyTo, hint))
+            val commentTags = Nip22.buildReplyTags(replyTo, hint)
+            if (commentTags != null) {
+                tags.addAll(commentTags)
+                replyingToComment = true
+            } else {
+                tags.addAll(Nip10.buildReplyTags(replyTo, hint))
+            }
         }
 
         val (mentionedPubkeys, _) = extractNostrRefs(content)
@@ -952,7 +963,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
                 eventKind = Nip88.KIND_POLL
             }
         } else {
-            eventKind = 1
+            eventKind = if (replyingToComment) Nip22.KIND_COMMENT else 1
         }
 
         if (!_galleryMode.value) {

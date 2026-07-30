@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import cooking.zap.app.nostr.ClientMessage
 import cooking.zap.app.nostr.Filter
 import cooking.zap.app.nostr.NostrEvent
+import cooking.zap.app.nostr.Nip22
 import cooking.zap.app.nostr.ProfileData
 import cooking.zap.app.nostr.RecipeFormats
 import cooking.zap.app.nostr.RecipeParser
@@ -318,7 +319,9 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
             SearchFilter.NOTES -> {
                 val authorPubkey = _authorFilter.value?.pubkey
                 val noteFilter = Filter(
-                    kinds = listOf(1),
+                    // Kind 1111 (NIP-22 comments) rides along so a pasted note1/nevent1
+                    // that resolves to a comment isn't dropped as "No results found".
+                    kinds = listOf(1, Nip22.KIND_COMMENT),
                     authors = authorPubkey?.let { listOf(it) },
                     search = trimmed,
                     limit = 50
@@ -367,7 +370,7 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
                         }
                         SearchFilter.NOTES -> {
                             val event = relayEvent.event
-                            if (event.kind == 1 && event.id !in seenNoteIds) {
+                            if ((event.kind == 1 || event.kind == Nip22.KIND_COMMENT) && event.id !in seenNoteIds) {
                                 if (muteRepo?.isBlocked(event.pubkey) == true) return@collect
                                 if (muteRepo?.containsMutedWord(event.content) == true) return@collect
                                 seenNoteIds.add(event.id)
