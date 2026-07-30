@@ -1156,6 +1156,36 @@
     <string name="title_delete_recipe">Delete recipe?</string>
     <string name="msg_delete_recipe_confirm">Send a deletion request to relays for this recipe? This cannot be guaranteed, and there\'s no undo.</string>
     <string name="title_delete_recipe_failed">Couldn\'t delete recipe</string>
+    <!--
+      D3 (PLANS/ANDROID_RECIPE_EDIT_SPEC_2026_07_30.md): an edit republishes
+      the recipe as a replacement event. Relays that don't honour replacement
+      keep serving the old version — the same guarantee problem
+      msg_delete_recipe_confirm states above, on the next surface.
+      btn_publish_recipe_update names the action (publish a replacement), not
+      the outcome: no claim that the new version reaches anyone, nothing like
+      "updated everywhere."
+      (Prep + Growth, 2026-07-30.)
+    -->
+    <string name="title_edit_recipe">Edit recipe</string>
+    <string name="btn_publish_recipe_update">Publish Update</string>
+    <!--
+      The create-mode branches of the same two widgets, extracted verbatim from
+      the literals at RecipeComposeScreen.kt:118 and :314. A resource on the edit
+      branch and a literal on the create branch would leave half of one button's
+      copy invisible to a strings.xml audit while the reviewed half read like the
+      whole control (spec D3 addendum).
+
+      Wording here is UNCHANGED: "Publish Recipe" is already-shipped copy,
+      extracted verbatim, and this PR's scope is edit-only.
+
+      The title-case-vs-sentence-case split against its sibling above was flagged
+      rather than quietly normalised while extracting, because it is Growth's to
+      rule. RULED 2026-07-30: capitalise the NEW resource to "Publish Update" —
+      not lowercase this one to match — so the fix stays inside this PR's scope.
+      The two now agree; the sibling moved, this string did not.
+    -->
+    <string name="title_create_recipe">Create recipe</string>
+    <string name="btn_publish_recipe">Publish Recipe</string>
     <string name="label_notifications">Notifications</string>
     <string name="label_notifications_on">On — new messages will be tracked</string>
     <string name="label_notifications_off">Off — tap to enable</string>

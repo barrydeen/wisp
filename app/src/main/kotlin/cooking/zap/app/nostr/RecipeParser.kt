@@ -66,7 +66,19 @@ object RecipeParser {
         /** Addressable `d` identifier — the `dTag` half of the coordinate. */
         val dTag: String,
         val title: String?,
-        val image: String?,
+        /**
+         * Every `image` tag value, in event order — the web writes one `image`
+         * tag per photo with no limit (`create/+page.svelte:353-356`,
+         * `MediaUploader.svelte` `limit = 0`), so a recipe routinely carries
+         * several and the first is the cover.
+         *
+         * This is a **list, not a single cover**, because the edit path
+         * re-serializes a recipe from this model: a `String?` cover would make
+         * "fix a typo" publish one `image` tag and silently delete every other
+         * photo. A model that is lossy about a tag is a deletion of that tag
+         * the moment anything writes the model back out.
+         */
+        val images: List<String>,
         val summary: String?,
         /** `published_at` if present, else the event `created_at` (epoch seconds). */
         val publishedAt: Long,
@@ -79,7 +91,10 @@ object RecipeParser {
          */
         val categories: List<String>,
         val content: RecipeContent,
-    )
+    ) {
+        /** Cover photo — the first `image` tag, or null when the recipe has none. */
+        val image: String? get() = images.firstOrNull()
+    }
 
     /**
      * True when [event] is a long-form recipe. A NIP-23 `kind 30023` is a
@@ -107,20 +122,37 @@ object RecipeParser {
     fun isRecipeContent(markdown: String): Boolean =
         validateMarkdownTemplate(markdown) is TemplateValidation.Valid
 
+    /**
+     * The original publication moment: `published_at` when the event carries
+     * it, else the event's own `created_at`.
+     *
+     * Public because the **edit** path needs it off the original event to write
+     * it back (an edit republishes with a fresh `created_at`, so without this
+     * the fallback below would silently re-date the recipe to the edit time).
+     */
+    fun publishedAt(event: NostrEvent): Long =
+        firstTagValue(event, "published_at")?.toLongOrNull() ?: event.created_at
+
+    /**
+     * The addressable `d` identifier, empty when absent (NIP-01 treats a missing
+     * `d` as `""`). Public for the same reason as [publishedAt]: the edit path
+     * reads it off the original event, not off a re-parsed model.
+     */
+    fun dTag(event: NostrEvent): String = firstTagValue(event, "d") ?: ""
+
     /** Resolve a recipe event into [Recipe]. Does not validate it is a recipe. */
     fun parse(event: NostrEvent): Recipe {
         val hashtags = tagValues(event, "t")
-        val dTag = firstTagValue(event, "d") ?: ""
-        val publishedAt = firstTagValue(event, "published_at")?.toLongOrNull() ?: event.created_at
+        val dTag = dTag(event)
 
         return Recipe(
             id = event.id,
             author = event.pubkey,
             dTag = dTag,
             title = firstTagValue(event, "title"),
-            image = firstTagValue(event, "image"),
+            images = tagValues(event, "image"),
             summary = firstTagValue(event, "summary"),
-            publishedAt = publishedAt,
+            publishedAt = publishedAt(event),
             hashtags = hashtags,
             categories = deriveCategories(hashtags, dTag),
             content = parseContent(event.content),

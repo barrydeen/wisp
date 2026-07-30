@@ -7,6 +7,7 @@ import cooking.zap.app.nostr.NostrSigner
 import cooking.zap.app.nostr.RecipeDeletion
 import cooking.zap.app.nostr.RecipeFormats
 import cooking.zap.app.nostr.RecipeParser
+import cooking.zap.app.nostr.UnsignedRecipeEvent
 import cooking.zap.app.relay.HttpClientFactory
 import cooking.zap.app.relay.RelayConfig
 import cooking.zap.app.relay.RelayPool
@@ -105,11 +106,78 @@ class RecipePublisher(
     }
 
     /**
+     * Recipe-edit path: republish [original] as a **replacement** at the same
+     * address, through the same spine the create paths use — so an edit reaches
+     * the relays a **new** recipe would: the author's *current* write relays ∪
+     * [RelayConfig.ARTICLES_RELAYS], per this class's own contract above.
+     *
+     * That is deliberately **not** "the relays the recipe was published to."
+     * Nothing here can reach a relay we no longer write to, so a recipe first
+     * published from the web, or from this account before its relay list
+     * changed, can keep serving its old version somewhere this edit never
+     * touches. A replacement is only as complete as the relay set it lands on,
+     * and that set is the publisher's, not the original event's.
+     *
+     * What it does reach is wider than the create paths' worst case: `30023` is
+     * in [PANTRY_MIRROR_KINDS], so [broadcast] mirrors the replacement to
+     * [RelayConfig.MEMBERS_RELAY] too. Propagating furthest is not the same as
+     * propagating far enough.
+     *
+     * Images are already hosted (same contract as the manual compose publish
+     * above) — no re-host.
+     *
+     * The address is not re-derived from the (possibly changed) title; it comes
+     * off [original] inside the format's `serializeEdit`, which is also what
+     * carries over the tags the model does not represent.
+     *
+     * Serialized by **[original]'s own format**, not [RecipeFormats.primary]: an
+     * edit replaces a specific event, and re-encoding it into a different format
+     * would leave the original live at its own address rather than replacing it.
+     * Those are the same object today and this is what keeps them from having to
+     * be.
+     *
+     * Only the author may edit — the same reason [delete] refuses: an event
+     * signed by anyone else replaces nothing, because a replaceable address is
+     * `(kind, pubkey, d)`. Refused here rather than published, so the publisher
+     * is never the one to sign an event that cannot do what the screen said.
+     */
+    suspend fun publishEdit(
+        original: NostrEvent,
+        recipe: RecipeParser.Recipe,
+        categories: List<String>,
+        imageUrls: List<String>,
+        signer: NostrSigner?,
+        includeClientTag: Boolean,
+    ): Result = withContext(Dispatchers.IO) {
+        if (signer == null) return@withContext Result.Error("Sign in to edit recipes.")
+        if (original.pubkey != signer.pubkeyHex) {
+            return@withContext Result.Error("You can only edit your own recipes.")
+        }
+        val title = recipe.title?.takeIf { it.isNotBlank() }
+            ?: return@withContext Result.Error("This recipe needs a title to publish.")
+        val images = imageUrls.filter { it.isNotBlank() }
+        if (images.isEmpty()) return@withContext Result.Error("Add an image to publish this recipe.")
+        val format = RecipeFormats.forEvent(original)
+            ?: return@withContext Result.Error("This recipe can't be edited from this device.")
+
+        publishCore(recipe, categories, images, signer, includeClientTag, title) {
+            format.serializeEdit(recipe, title, images, categories, original) to
+                RecipeParser.dTag(original)
+        }
+    }
+
+    /**
      * Shared serialize → sign → broadcast core. [imageUrls] are final hosted
      * URLs (re-hosted or device-uploaded); [title] is pre-validated non-blank.
      * Caches the signed event first so the detail screen can render it
      * optimistically, then broadcasts to the author's write relays **and**
      * [RelayConfig.ARTICLES_RELAYS] (the web's "all" publish).
+     *
+     * [encode] produces the unsigned event **and the address it lands at**, as
+     * one value, because those two must agree: the create paths derive both from
+     * the title, the edit path takes both off the original event. Returning the
+     * `d` separately from the encoder is how a future format that does not slug
+     * its identifier from the title stays correct here without a second branch.
      */
     private suspend fun publishCore(
         recipe: RecipeParser.Recipe,
@@ -118,14 +186,18 @@ class RecipePublisher(
         signer: NostrSigner,
         includeClientTag: Boolean,
         title: String,
+        encode: () -> Pair<UnsignedRecipeEvent, String> = {
+            // Serialize via the primary (write) format — NIP-23 today. The
+            // unsigned event is byte-identical to the previous direct
+            // RecipeSerializer call.
+            RecipeFormats.primary.serialize(recipe, title, imageUrls, categories) to
+                RecipeFormats.primary.slug(title)
+        },
     ): Result {
         // Signing/publish can throw — convert to Result.Error (never leave the
         // caller stuck in "Publishing"); still propagate cancellation.
         return try {
-            // Serialize via the primary (write) format — NIP-23 today. The
-            // unsigned event is byte-identical to the previous direct
-            // RecipeSerializer call.
-            val unsigned = RecipeFormats.primary.serialize(recipe, title, imageUrls, categories)
+            val (unsigned, dTag) = encode()
             val tags = unsigned.tags.toMutableList()
             if (includeClientTag) tags.add(Nip89.clientTag())
 
@@ -135,7 +207,7 @@ class RecipePublisher(
 
             broadcast(event)
 
-            Result.Published(author = signer.pubkeyHex, dTag = RecipeFormats.primary.slug(title))
+            Result.Published(author = signer.pubkeyHex, dTag = dTag)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

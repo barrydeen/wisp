@@ -391,7 +391,7 @@ class NourishDiscoveryTest {
             author = "pk",
             dTag = dTag,
             title = dTag,
-            image = null,
+            images = emptyList(),
             summary = null,
             publishedAt = 1,
             hashtags = emptyList(),

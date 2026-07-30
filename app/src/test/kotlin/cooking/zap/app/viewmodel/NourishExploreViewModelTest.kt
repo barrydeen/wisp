@@ -159,7 +159,7 @@ class NourishExploreViewModelTest {
             author = "pk",
             dTag = "pasta",
             title = "Pasta",
-            image = null,
+            images = emptyList(),
             summary = null,
             publishedAt = 1,
             hashtags = emptyList(),

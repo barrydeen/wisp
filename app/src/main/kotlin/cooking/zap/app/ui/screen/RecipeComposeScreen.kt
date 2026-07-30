@@ -50,10 +50,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import cooking.zap.app.R
 import cooking.zap.app.viewmodel.RecipeComposeViewModel
 import cooking.zap.app.viewmodel.RecipeComposeViewModel.ImageItem
 
@@ -87,6 +89,8 @@ fun RecipeComposeScreen(
     val images by viewModel.images.collectAsState()
     val publishState by viewModel.publishState.collectAsState()
     val prefillNotice by viewModel.prefillNotice.collectAsState()
+    val isEditing by viewModel.isEditing.collectAsState()
+    val editUnavailable by viewModel.editUnavailable.collectAsState()
 
     // Optimistic nav once the event is signed + cached.
     val published = publishState as? RecipeComposeViewModel.PublishState.Published
@@ -106,7 +110,7 @@ fun RecipeComposeScreen(
     // frozen at "Add a title"). Reading these collected vals here subscribes the
     // scope so the publish button re-evaluates on every field change.
     val reason = RecipeComposeViewModel.blockReason(
-        canSign, title, categories, images, ingredients, directions,
+        canSign, title, categories, images, ingredients, directions, editUnavailable,
     )
     val publishing = publishState is RecipeComposeViewModel.PublishState.Publishing
     val errorMsg = (publishState as? RecipeComposeViewModel.PublishState.Error)?.message
@@ -115,7 +119,13 @@ fun RecipeComposeScreen(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
-                title = { Text("Create recipe") },
+                title = {
+                    Text(
+                        stringResource(
+                            if (isEditing) R.string.title_edit_recipe else R.string.title_create_recipe
+                        )
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -311,7 +321,15 @@ fun RecipeComposeScreen(
                                 strokeWidth = 2.dp,
                             )
                         } else {
-                            Text("Publish Recipe")
+                            Text(
+                                stringResource(
+                                    if (isEditing) {
+                                        R.string.btn_publish_recipe_update
+                                    } else {
+                                        R.string.btn_publish_recipe
+                                    }
+                                )
+                            )
                         }
                     }
                 }
