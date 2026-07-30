@@ -411,11 +411,16 @@ class RecipeRepository(
         if (RecipeFormats.active.none { it.kind == kind }) return null
 
         eventRepo.findAddressableEvent(kind, normalizedAuthor, normalizedDTag)?.let { cached ->
-            if (RecipeFormats.forEvent(cached) != null) return cached
+            if (RecipeFormats.forEvent(cached) != null &&
+                eventRepo.deletedEventsRepo?.isEventDeleted(cached) != true
+            ) {
+                return cached
+            }
         }
         val persistence = eventRepo.eventPersistence ?: return null
         val fromDb = persistence.getEventsByAuthorAndKind(normalizedAuthor, kind, limit = 200)
             .filter { eventHasDTag(it, normalizedDTag) }
+            .withoutDeleted()
         return dedupeNewestPerCoordinate(fromDb).firstOrNull()
     }
 
@@ -503,7 +508,9 @@ class RecipeRepository(
         val needle = query.trim()
         if (needle.isEmpty()) return@withContext emptyList()
         val persistence = eventRepo.eventPersistence ?: return@withContext emptyList()
-        val events = RecipeFormats.active.flatMap { persistence.getEventsByKind(it.kind, limit) }
+        val events = RecipeFormats.active
+            .flatMap { persistence.getEventsByKind(it.kind, limit) }
+            .withoutDeleted()
         dedupeAcrossFormats(events) { RecipeFormats.rankOf(it) }
             .mapNotNull { RecipeFormats.forEvent(it)?.parse(it) }
             .filter { recipe ->
@@ -699,6 +706,11 @@ class RecipeRepository(
             _isLoading.value = false
         }
 
+        /** Drop [coordinate] from this session's grid; see [removeRecipe]. */
+        suspend fun remove(coordinate: String) = coordMutex.withLock {
+            if (byCoordinate.remove(coordinate) != null) emit()
+        }
+
         /** Merge [event] into [byCoordinate] (author-guarded); true iff it became the winner. */
         private fun accept(author: String, event: NostrEvent): Boolean {
             if (event.pubkey != author) return false
@@ -737,11 +749,71 @@ class RecipeRepository(
     fun loadProfileAuthoredRecipes(pubkey: String, limit: Int = 200) =
         profileAuthored.load(pubkey, limit)
 
+    /**
+     * Evict a deleted recipe from every in-memory grid this repo owns — the
+     * main feed, the tag feed, and both [AuthoredSession]s — and re-emit each
+     * one that actually held it.
+     *
+     * Called by [RecipePublisher.delete] after the author deletes their own
+     * recipe. Nothing else would remove it: this repo has no deletion observer
+     * (`EventRepository.removedEvents` has one consumer, `ThreadViewModel`),
+     * and the blanked replacement cannot evict it either — every collector here
+     * drops what [RecipeFormats.forEvent] can't parse, which a tombstone is by
+     * design. Without this the member returns from the detail screen to a grid
+     * still showing the recipe they just deleted.
+     *
+     * [coordinate] is `recipeCoordinate(event)` of the deleted recipe. Keyed on
+     * the coordinate rather than the event id because that is what these maps
+     * are keyed on, and because a replaceable event's identity *is* its address.
+     *
+     * Runs on [processingContext], like every other emit in this class: each of
+     * the four re-emits re-parses and re-sorts a whole grid, which is not work
+     * for the caller's thread — and the caller here is a `viewModelScope`
+     * coroutine, i.e. the main thread.
+     */
+    suspend fun removeRecipe(coordinate: String) = withContext(processingContext) {
+        coordMutex.withLock {
+            if (byCoordinate.remove(coordinate) != null) emitRecipes()
+        }
+        tagCoordMutex.withLock {
+            if (tagByCoordinate.remove(coordinate) != null) emitTagRecipes()
+        }
+        selfAuthored.remove(coordinate)
+        profileAuthored.remove(coordinate)
+    }
+
+    /**
+     * Drop events the author has already deleted.
+     *
+     * Every cache-first paint in this class reads ObjectBox directly, and
+     * nothing on that path would otherwise suppress a deleted recipe:
+     * `EventRepository.removeEvent` clears `eventCache` and the feed lists but
+     * never the persisted row, and the blanked replacement cannot supersede the
+     * recipe here either — [dedupeAcrossFormats] drops the tombstone, because
+     * [RecipeFormats.rankOf] is null for anything that isn't a recipe, which a
+     * tombstone is by design.
+     *
+     * Verified on device 2026-07-28: after deleting a recipe the relays held
+     * only the tombstone and the local deletion record was written, yet the
+     * Published grid still painted the recipe on the next cold start. This
+     * filter is the missing half of that path.
+     *
+     * Applied to the raw rows, before any dedupe, so a deleted event can never
+     * win a coordinate and mask a live one.
+     * [DeletedEventsRepository.isEventDeleted] honours the deletion's
+     * `created_at`, so a legitimate re-publish at the same coordinate — newer
+     * than the deletion — is still admitted.
+     */
+    private fun List<NostrEvent>.withoutDeleted(): List<NostrEvent> {
+        val deleted = eventRepo.deletedEventsRepo ?: return this
+        return filter { !deleted.isEventDeleted(it) }
+    }
+
     private suspend fun cachedAuthoredEvents(author: String, limit: Int = 2_000): List<NostrEvent> {
         val persistence = eventRepo.eventPersistence ?: return emptyList()
         val events = RecipeFormats.active.flatMap {
             persistence.getEventsByAuthorAndKind(author, it.kind, limit)
-        }
+        }.withoutDeleted()
         return dedupeAcrossFormats(events) { RecipeFormats.rankOf(it) }
             .filter { it.pubkey == author }
     }
@@ -914,7 +986,9 @@ class RecipeRepository(
         val normalizedTag = tag.trim().lowercase()
         if (normalizedTag.isBlank()) return emptyList()
         val persistence = eventRepo.eventPersistence ?: return emptyList()
-        val events = RecipeFormats.active.flatMap { persistence.getEventsByKind(it.kind, limit) }
+        val events = RecipeFormats.active
+            .flatMap { persistence.getEventsByKind(it.kind, limit) }
+            .withoutDeleted()
         return dedupeAcrossFormats(events) { RecipeFormats.rankOf(it) }
             .filter { eventMatchesCategoryTag(it, normalizedTag) }
     }
@@ -1006,6 +1080,7 @@ class RecipeRepository(
         val persistence = eventRepo.eventPersistence ?: return emptyList()
         return RecipeFormats.active
             .flatMap { persistence.getEventsByKind(it.kind, limit) }
+            .withoutDeleted()
             .filter { RecipeFormats.forEvent(it) != null }
     }
 

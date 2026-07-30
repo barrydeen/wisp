@@ -2,7 +2,9 @@ package cooking.zap.app.repo
 
 import cooking.zap.app.nostr.ClientMessage
 import cooking.zap.app.nostr.Nip89
+import cooking.zap.app.nostr.NostrEvent
 import cooking.zap.app.nostr.NostrSigner
+import cooking.zap.app.nostr.RecipeDeletion
 import cooking.zap.app.nostr.RecipeFormats
 import cooking.zap.app.nostr.RecipeParser
 import cooking.zap.app.relay.HttpClientFactory
@@ -40,6 +42,16 @@ class RecipePublisher(
         /** [author]/[dTag] address the just-published recipe (cached locally). */
         data class Published(val author: String, val dTag: String) : Result
         data class Error(val message: String) : Result
+    }
+
+    /**
+     * Outcome of [delete]. Deliberately **not** a [Result] variant: publish
+     * outcomes are matched exhaustively at their call sites, and a third case
+     * there would only ever be unreachable.
+     */
+    sealed interface DeleteResult {
+        data object Deleted : DeleteResult
+        data class Error(val message: String) : DeleteResult
     }
 
     /**
@@ -121,38 +133,127 @@ class RecipePublisher(
             // Cache first so the detail screen renders optimistically (no relay round-trip).
             eventRepo.cacheEvent(event)
 
-            val msg = ClientMessage.event(event)
-            relayPool.sendToWriteRelays(msg)
-            // Also broadcast to the article relays the Recipes feed reads.
-            for (url in RelayConfig.ARTICLES_RELAYS) relayPool.sendToRelayOrEphemeral(url, msg)
-
-            // Mirror kind 30023 to pantry so the live recipe-count dashboard
-            // stays current. Do NOT add MEMBERS_RELAY to ARTICLES_RELAYS —
-            // that set drives recipe reads. Kind-gated: pantry's write policy
-            // exempts only KindRecipe (30023) from NIP-42 auth; kind 35000
-            // (gated) hits auth + membership and would be silently rejected
-            // for most users — follow-up once authed 35000 writes + client
-            // auth during publish are confirmed. Android's publish is
-            // fire-and-forget (no OK wait), so a silently-rejected kind
-            // would be invisible — reinforcing why the kind-gate matters
-            // for that follow-up. Mirrors frontend PR #534
-            // (PANTRY_MIRROR_KINDS).
-            if (event.kind in PANTRY_MIRROR_KINDS) {
-                val pantry = RelayConfig.MEMBERS_RELAY
-                val pantryKey = pantry.trimEnd('/').lowercase()
-                val alreadyTargeted = RelayConfig.ARTICLES_RELAYS.any {
-                    it.trimEnd('/').lowercase() == pantryKey
-                }
-                if (!alreadyTargeted) {
-                    relayPool.sendToRelayOrEphemeral(pantry, msg)
-                }
-            }
+            broadcast(event)
 
             Result.Published(author = signer.pubkeyHex, dTag = RecipeFormats.primary.slug(title))
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             Result.Error("Couldn't publish this recipe — ${e.message ?: "please try again"}.")
+        }
+    }
+
+    /**
+     * Delete a published recipe — the web `handleDelete` fan-out, on the same
+     * [broadcast] path the recipe was published on. Publishing and deleting a
+     * recipe reach **the same relays** by construction: the web's delete misses
+     * pantry precisely because its two paths are written separately, and that
+     * is the defect this shared helper exists to not reproduce.
+     *
+     * Two events, per [RecipeDeletion]: the blanked replacement (kind = the
+     * recipe's own kind, so it is pantry-mirrored exactly like the publish and
+     * is what removes the recipe there) and the kind-5 deletion request (kind 5
+     * is outside [PANTRY_MIRROR_KINDS], and pantry would reject it unauthed
+     * anyway — see the [broadcast] comment). Neither carries a NIP-89 client
+     * tag: a tombstone stays minimal, matching `GroceryEvents`/`MealPlanEvents`.
+     *
+     * Applies **both** locally through [EventRepository.addEvent] — the same
+     * inbound path a relay round-trip would take — so the local tombstone, the
+     * removal, and the address timestamp are whatever the protocol path
+     * produces, not a second implementation of it.
+     *
+     * Only the author may delete: an event signed by anyone else would be
+     * ignored by every relay, so it is refused here rather than published.
+     * A recipe dated past the future-date ceiling is refused too
+     * ([RecipeDeletion.isDeletableNow]) — its tombstone would be dropped by
+     * every reader, so reporting success would be a lie the local eviction then
+     * acted on.
+     */
+    suspend fun delete(event: NostrEvent, signer: NostrSigner?): DeleteResult =
+        withContext(Dispatchers.IO) {
+            if (signer == null) return@withContext DeleteResult.Error("Sign in to delete recipes.")
+            if (event.pubkey != signer.pubkeyHex) {
+                return@withContext DeleteResult.Error("You can only delete your own recipes.")
+            }
+            // One `now` for the check and the stamp, so a delete can't pass the
+            // ceiling test and then be signed past it a tick later.
+            val now = System.currentTimeMillis() / 1000
+            if (!RecipeDeletion.isDeletableNow(event, now)) {
+                return@withContext DeleteResult.Error(
+                    "This recipe is dated too far in the future to delete from this device."
+                )
+            }
+            try {
+                val createdAt = RecipeDeletion.deletionTimestamp(event, now)
+
+                val replacement = signer.signEvent(
+                    kind = event.kind,
+                    content = RecipeDeletion.TOMBSTONE_CONTENT,
+                    tags = RecipeDeletion.blankedReplacementTags(event),
+                    createdAt = createdAt,
+                )
+                broadcast(replacement)
+
+                val deletionRequest = signer.signEvent(
+                    kind = 5,
+                    content = RecipeDeletion.DELETION_REQUEST_CONTENT,
+                    tags = RecipeDeletion.deletionRequestTags(event),
+                    createdAt = createdAt,
+                )
+                broadcast(deletionRequest)
+
+                // Local state last, and both halves through addEvent — the same
+                // inbound path a relay echo would take. The replacement becomes
+                // the cached event for the address (so an addressable lookup
+                // resolves to the tombstone rather than to the stale recipe, or
+                // to nothing, while the echo is in flight); addEvent's
+                // blanked-replacement guard is what keeps it out of the article
+                // feed. The kind-5 then marks the id and the address deleted
+                // and drops the recipe itself from the caches/feeds.
+                eventRepo.addEvent(replacement)
+                eventRepo.addEvent(deletionRequest)
+
+                DeleteResult.Deleted
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                DeleteResult.Error("Couldn't delete this recipe — ${e.message ?: "please try again"}.")
+            }
+        }
+
+    /**
+     * The recipe write surface: the author's write relays **and**
+     * [RelayConfig.ARTICLES_RELAYS] (the web's "all" publish, so the recipe
+     * shows up in the Recipes feed), plus the pantry mirror for mirrored kinds.
+     * Every recipe event — publish and delete alike — goes through here.
+     *
+     * Mirror kind 30023 to pantry so the live recipe-count dashboard
+     * stays current. Do NOT add MEMBERS_RELAY to ARTICLES_RELAYS —
+     * that set drives recipe reads. Kind-gated: pantry's write policy
+     * exempts only KindRecipe (30023) from NIP-42 auth; kind 35000
+     * (gated) hits auth + membership and would be silently rejected
+     * for most users — follow-up once authed 35000 writes + client
+     * auth during publish are confirmed. Android's publish is
+     * fire-and-forget (no OK wait), so a silently-rejected kind
+     * would be invisible — reinforcing why the kind-gate matters
+     * for that follow-up. Mirrors frontend PR #534
+     * (PANTRY_MIRROR_KINDS).
+     */
+    private fun broadcast(event: NostrEvent) {
+        val msg = ClientMessage.event(event)
+        relayPool.sendToWriteRelays(msg)
+        // Also broadcast to the article relays the Recipes feed reads.
+        for (url in RelayConfig.ARTICLES_RELAYS) relayPool.sendToRelayOrEphemeral(url, msg)
+
+        if (event.kind in PANTRY_MIRROR_KINDS) {
+            val pantry = RelayConfig.MEMBERS_RELAY
+            val pantryKey = pantry.trimEnd('/').lowercase()
+            val alreadyTargeted = RelayConfig.ARTICLES_RELAYS.any {
+                it.trimEnd('/').lowercase() == pantryKey
+            }
+            if (!alreadyTargeted) {
+                relayPool.sendToRelayOrEphemeral(pantry, msg)
+            }
         }
     }
 
