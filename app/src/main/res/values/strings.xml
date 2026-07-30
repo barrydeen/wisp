@@ -1167,7 +1167,7 @@
       (Prep + Growth, 2026-07-30.)
     -->
     <string name="title_edit_recipe">Edit recipe</string>
-    <string name="btn_publish_recipe_update">Publish update</string>
+    <string name="btn_publish_recipe_update">Publish Update</string>
     <!--
       The create-mode branches of the same two widgets, extracted verbatim from
       the literals at RecipeComposeScreen.kt:118 and :314. A resource on the edit
@@ -1175,9 +1175,14 @@
       copy invisible to a strings.xml audit while the reviewed half read like the
       whole control (spec D3 addendum).
 
-      Wording is UNCHANGED, including "Publish Recipe" title case against
-      "Publish update" sentence case on its sibling above. That split is real and
-      it is Growth's to rule; it is not mine to quietly normalise while extracting.
+      Wording here is UNCHANGED: "Publish Recipe" is already-shipped copy,
+      extracted verbatim, and this PR's scope is edit-only.
+
+      The title-case-vs-sentence-case split against its sibling above was flagged
+      rather than quietly normalised while extracting, because it is Growth's to
+      rule. RULED 2026-07-30: capitalise the NEW resource to "Publish Update" —
+      not lowercase this one to match — so the fix stays inside this PR's scope.
+      The two now agree; the sibling moved, this string did not.
     -->
     <string name="title_create_recipe">Create recipe</string>
     <string name="btn_publish_recipe">Publish Recipe</string>
