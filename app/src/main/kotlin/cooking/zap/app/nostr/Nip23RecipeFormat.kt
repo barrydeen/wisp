@@ -31,6 +31,35 @@ object Nip23RecipeFormat : RecipeFormat {
         tags = RecipeSerializer.toTags(title, recipe.summary, imageUrls, categories),
     )
 
+    /**
+     * The `d` comes off [original] rather than [recipe], because [recipe] may be
+     * a re-parse and the event in hand is the thing being replaced. `published_at`
+     * comes off [original] too — [RecipeParser.publishedAt] resolves it to the
+     * original `created_at` when the tag is absent, which is the value that
+     * stays true after the edit republishes with a fresh `created_at`.
+     */
+    override fun serializeEdit(
+        recipe: RecipeParser.Recipe,
+        title: String,
+        imageUrls: List<String>,
+        categories: List<String>,
+        original: NostrEvent,
+    ): UnsignedRecipeEvent = UnsignedRecipeEvent(
+        kind = RecipeParser.RECIPE_KIND,
+        content = RecipeSerializer.toContent(recipe),
+        tags = RecipeSerializer.mergeForEdit(
+            originalTags = original.tags,
+            newTags = RecipeSerializer.toTags(
+                title = title,
+                summary = recipe.summary,
+                imageUrls = imageUrls,
+                categories = categories,
+                identifier = RecipeParser.dTag(original),
+                publishedAt = RecipeParser.publishedAt(original),
+            ),
+        ),
+    )
+
     override fun slug(title: String): String = RecipeSerializer.slug(title)
 
     override fun feedFilter(limit: Int, until: Long?): Filter = Filter(

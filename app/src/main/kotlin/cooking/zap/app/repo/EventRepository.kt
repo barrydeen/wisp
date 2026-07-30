@@ -864,12 +864,27 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         metadataFetcher?.requestAddressableEvent(kind, author, dTag, relayHints)
     }
 
+    /**
+     * The cached event for a replaceable coordinate `(kind, author, dTag)`, or
+     * null when none is cached.
+     *
+     * **Newest wins.** [eventCache] is keyed by event **id**, and [cacheEvent]
+     * only early-returns on a matching id, so two versions of one coordinate
+     * coexist here happily — an edit republishes the same address under a new
+     * id, and both are cached. Picking the first match would then be picking an
+     * arbitrary version (`ConcurrentHashMap` iteration order), which shows up as
+     * "my edit didn't save": the detail screen paints a stale version while the
+     * author's own grid, which already applies newest-wins
+     * (`RecipeRepository.preferNewer`), shows the new one.
+     *
+     * `created_at` ties break on the lower id — the same deterministic tiebreak
+     * `dedupeAcrossFormats` uses, so two readers can't disagree about a tie.
+     * This is NIP-01's own rule for replaceable events, applied at the one
+     * lookup that skipped it rather than at any single caller.
+     */
     fun findAddressableEvent(kind: Int, author: String, dTag: String): NostrEvent? {
         if (muteRepo?.isBlocked(author) == true) return null
-        return eventCache.values.firstOrNull { event ->
-            event.kind == kind && event.pubkey == author &&
-                event.tags.any { it.size >= 2 && it[0] == "d" && it[1] == dTag }
-        }
+        return newestAddressable(eventCache.values, kind, author, dTag)
     }
 
     fun getEvent(id: String): NostrEvent? {
@@ -1784,4 +1799,33 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         _relaySourceVersion.value = 0
         _reactionVersion.value = 0
     }
+}
+
+/**
+ * The **newest** event in [events] at the replaceable coordinate
+ * `(kind, author, dTag)`, or null when none matches.
+ *
+ * Split out of [EventRepository.findAddressableEvent] as a pure function so the
+ * pick is unit-testable without an Android runtime: the interesting case — a
+ * cache holding two versions of one coordinate — is a property of this loop, not
+ * of the repository around it.
+ *
+ * Winner chosen by [preferNewer], the NIP-01 replaceable rule this repo already
+ * applies in the recipe feeds. Reusing it rather than restating it is the point:
+ * the defect here was one lookup that skipped the decision, not a missing one.
+ */
+internal fun newestAddressable(
+    events: Iterable<NostrEvent>,
+    kind: Int,
+    author: String,
+    dTag: String,
+): NostrEvent? {
+    var newest: NostrEvent? = null
+    for (event in events) {
+        val matches = event.kind == kind && event.pubkey == author &&
+            event.tags.any { it.size >= 2 && it[0] == "d" && it[1] == dTag }
+        if (!matches) continue
+        newest = if (newest == null) event else preferNewer(newest, event)
+    }
+    return newest
 }

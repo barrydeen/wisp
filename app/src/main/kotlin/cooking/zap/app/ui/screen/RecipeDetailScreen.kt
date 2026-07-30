@@ -33,6 +33,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.AddShoppingCart
 import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -98,6 +99,17 @@ fun RecipeDetailScreen(
     onAddToGrocery: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null,
     onDeleted: () -> Unit = {},
+    /**
+     * Open this recipe in the editor. Null hides the item — gated at the call
+     * site on the same predicate as [onDelete] (author + a signing key), because
+     * an edit is a replacement publish at the author's own address and nobody
+     * else's signature can land there.
+     *
+     * An optional lambda is right *here* and would not be on `PostCard`: this
+     * screen has exactly one call site, so an omitted lambda cannot be a surface
+     * that silently opted out.
+     */
+    onEdit: (() -> Unit)? = null,
 ) {
     val recipe by viewModel.recipe.collectAsState()
     val event by viewModel.event.collectAsState()
@@ -160,11 +172,13 @@ fun RecipeDetailScreen(
                         }
                     }
                     // Overflow menu. Rendered only when it would hold something:
-                    // Delete today (author + signing key). Report (§4.7 UGC) is
-                    // the other item this menu exists for — it drops in here as
-                    // a sibling DropdownMenuItem, and its own gate goes in the
-                    // condition below.
-                    if (onDelete != null) {
+                    // Edit or Delete today (author + signing key). Report
+                    // (§4.7 UGC) is the other item this menu exists for — it
+                    // drops in here as a sibling DropdownMenuItem, and its own
+                    // gate goes in the condition below. Each item's gate is
+                    // OR-ed here, never AND-ed: a state where one is available
+                    // and the other isn't must still open the menu.
+                    if (onDelete != null || onEdit != null) {
                         Box {
                             IconButton(onClick = { menuExpanded = true }) {
                                 Icon(
@@ -176,7 +190,22 @@ fun RecipeDetailScreen(
                                 expanded = menuExpanded,
                                 onDismissRequest = { menuExpanded = false },
                             ) {
-                                DropdownMenuItem(
+                                // Edit before Delete: the reversible action goes
+                                // above the one with no undo.
+                                onEdit?.let { edit ->
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.btn_edit)) },
+                                        trailingIcon = {
+                                            Icon(Icons.Outlined.Edit, contentDescription = null)
+                                        },
+                                        enabled = deleteState !is RecipeDetailViewModel.DeleteState.Deleting,
+                                        onClick = {
+                                            menuExpanded = false
+                                            edit()
+                                        },
+                                    )
+                                }
+                                if (onDelete != null) DropdownMenuItem(
                                     text = { Text(stringResource(R.string.btn_delete)) },
                                     trailingIcon = {
                                         Icon(Icons.Outlined.DeleteOutline, contentDescription = null)

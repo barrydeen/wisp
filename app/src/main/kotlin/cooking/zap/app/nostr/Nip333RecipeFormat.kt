@@ -38,6 +38,18 @@ object Nip333RecipeFormat : RecipeFormat {
     ): UnsignedRecipeEvent =
         TODO("Encode RecipeParser.Recipe into this format's unsigned event.")
 
+    override fun serializeEdit(
+        recipe: RecipeParser.Recipe,
+        title: String,
+        imageUrls: List<String>,
+        categories: List<String>,
+        original: NostrEvent,
+    ): UnsignedRecipeEvent =
+        TODO(
+            "Encode an edit: preserve original's identifier and publication moment, " +
+                "and carry over every tag this format does not generate.",
+        )
+
     override fun slug(title: String): String =
         TODO("Derive this format's addressable identifier from the title.")
 

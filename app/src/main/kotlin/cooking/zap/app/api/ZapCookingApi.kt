@@ -775,7 +775,7 @@ data class NormalizedRecipe(
      * import preview, reusing the recipe-detail rendering. Pure (unit-tested).
      * `id`/`author`/`dTag` are empty (not a published event); the missing
      * author means the preview shows no byline/date. Empty `imageUrls` →
-     * `image = null` → no hero (guarded — never `imageUrls.first` on empty).
+     * `image` (the `images.firstOrNull()` cover) is null → no hero.
      */
     fun toRecipePreview(): cooking.zap.app.nostr.RecipeParser.Recipe =
         cooking.zap.app.nostr.RecipeParser.Recipe(
@@ -783,7 +783,7 @@ data class NormalizedRecipe(
             author = "",
             dTag = "",
             title = title.ifBlank { null },
-            image = imageUrls.firstOrNull(),
+            images = imageUrls,
             summary = summary.ifBlank { null },
             publishedAt = 0L,
             hashtags = tags,

@@ -5,6 +5,7 @@ import android.net.Uri
 import android.webkit.MimeTypeMap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import cooking.zap.app.nostr.NostrEvent
 import cooking.zap.app.nostr.NostrSigner
 import cooking.zap.app.nostr.RecipeFormats
 import cooking.zap.app.nostr.RecipeParser
@@ -93,6 +94,25 @@ class RecipeComposeViewModel : ViewModel() {
     val prefillNotice: StateFlow<String?> = _prefillNotice
 
     private var prefilled = false
+
+    /**
+     * The event being replaced when the screen is in **edit** mode, else null.
+     *
+     * Held as the original [NostrEvent] rather than as a flag plus a coordinate,
+     * because the edit serialize needs the event itself: it carries the
+     * identifier, the publication moment, and every tag this form does not
+     * model. A boolean here would be a re-serialize from the form alone, which
+     * is the deletion this build exists to avoid.
+     */
+    private var editing: NostrEvent? = null
+
+    /** True once [prefillFromEvent] has put the screen in edit mode. */
+    private val _isEditing = MutableStateFlow(false)
+    val isEditing: StateFlow<Boolean> = _isEditing
+
+    /** True when an edit was asked for and its recipe could not be loaded. */
+    private val _editUnavailable = MutableStateFlow(false)
+    val editUnavailable: StateFlow<Boolean> = _editUnavailable
 
     // --- simple field setters ---
     fun setTitle(v: String) { _title.value = v }
@@ -190,6 +210,79 @@ class RecipeComposeViewModel : ViewModel() {
         // resetForm() above guarantees it.
     }
 
+    /**
+     * Seed the form from an existing recipe [event] and put the screen in
+     * **edit** mode — [publish] then republishes at the same address instead of
+     * creating a second recipe.
+     *
+     * Shares [prefillFromMarkdown]'s once-only guard for the same reason: the
+     * route consumes the hand-off once, and a re-entrant call after the member
+     * has started typing would silently discard their edits.
+     *
+     * Unlike the Cheffy pre-fill this seeds images, categories and summary too —
+     * an edit form that came up without the recipe's own photos would publish a
+     * recipe without them the moment the member pressed the button.
+     *
+     * Photos arrive already hosted, so they go straight in as
+     * [ImageItem.Status.Done]: nothing is re-uploaded, and the URLs written back
+     * out are the ones already on the event.
+     *
+     * Returns false when [event] is not a recipe this app can parse, so the
+     * caller can refuse to open the editor rather than show an empty form
+     * over a real recipe.
+     */
+    fun prefillFromEvent(event: NostrEvent): Boolean {
+        if (prefilled) return editing != null
+        val format = RecipeFormats.forEvent(event) ?: return false
+        prefilled = true
+
+        resetForm()
+        val recipe = format.parse(event)
+        editing = event
+        _isEditing.value = true
+
+        _title.value = recipe.title.orEmpty()
+        _summary.value = recipe.summary.orEmpty()
+        // Category chips come back as the slugged values the event carries (the
+        // `<root>-` prefix stripped) — the display casing was never on the wire
+        // to recover, on this surface or the web's.
+        _categories.value = recipe.categories
+        _images.value = recipe.images
+            .filter { it.isNotBlank() }
+            .map { ImageItem(nextId(), ImageItem.Status.Done(it)) }
+
+        val c = recipe.content
+        _chefNotes.value = c.chefNotes.orEmpty()
+        _prepTime.value = c.details.prepTime.orEmpty()
+        _cookTime.value = c.details.cookTime.orEmpty()
+        _servings.value = c.details.servings.orEmpty()
+        _additionalResources.value = c.additionalMarkdown.orEmpty()
+        // Keep one blank row when a section parsed empty, so the field never
+        // disappears — same invariant the row helpers maintain.
+        _ingredients.value = c.ingredients.map { Row(nextId(), it) }
+            .ifEmpty { listOf(Row(nextId(), "")) }
+        _directions.value = c.directions.map { Row(nextId(), it) }
+            .ifEmpty { listOf(Row(nextId(), "")) }
+        return true
+    }
+
+    /**
+     * The editor was opened for a recipe that could not be loaded (evicted from
+     * the cache between the tap and the route). Puts the screen in edit mode
+     * with publish blocked.
+     *
+     * **Blocked, not empty.** The dangerous failure here is not an error — it is
+     * a blank *create* form standing in for an edit: the member fills it in,
+     * presses the button, and publishes a second recipe while believing they
+     * corrected the first. Refusing to publish is the only outcome that cannot
+     * be mistaken for having worked.
+     */
+    fun markEditUnavailable() {
+        prefilled = true
+        _isEditing.value = true
+        _editUnavailable.value = true
+    }
+
     /** Empty every form field — the explicit clean slate [prefillFromMarkdown] seeds onto. */
     private fun resetForm() {
         _title.value = ""
@@ -273,13 +366,20 @@ class RecipeComposeViewModel : ViewModel() {
      */
     fun blockReason(canSign: Boolean): String? = blockReason(
         canSign, _title.value, _categories.value, _images.value, _ingredients.value, _directions.value,
+        _editUnavailable.value,
     )
 
     /**
      * Build the recipe from the form and publish via the multi-image
-     * [RecipePublisher] overload. Re-validates defensively; the screen also
-     * gates the button. Optimistic: on success the just-signed event is already
-     * cached, so the caller can navigate straight to the recipe.
+     * [RecipePublisher] overload — or, in edit mode ([prefillFromEvent]),
+     * republish it as a replacement at the original address. Re-validates
+     * defensively; the screen also gates the button. Optimistic: on success the
+     * just-signed event is already cached, so the caller can navigate straight
+     * to the recipe.
+     *
+     * One entry point for both, because everything before the final call is the
+     * same snapshot-and-validate: a second `publishEdit` method here would be
+     * that whole body copied, and the copy is what drifts.
      */
     fun publish(publisher: RecipePublisher, signer: NostrSigner?, clientTagEnabled: Boolean) {
         if (_publishState.value == PublishState.Publishing) return
@@ -298,14 +398,20 @@ class RecipeComposeViewModel : ViewModel() {
         val title = _title.value.trim()
         val imageUrls = hostedImageUrls
         val categories = _categories.value
+        val original = editing
         val recipe = RecipeParser.Recipe(
-            id = "",
+            id = original?.id.orEmpty(),
             author = signer.pubkeyHex,
-            dTag = RecipeFormats.primary.slug(title),
+            // On an edit the address is the original's — never re-derived from
+            // the (possibly retitled) title, which would publish a second
+            // recipe and leave the first live. The serializer reads it off the
+            // original event too; this keeps the in-memory model agreeing with
+            // what gets signed rather than carrying a stale slug.
+            dTag = original?.let { RecipeParser.dTag(it) } ?: RecipeFormats.primary.slug(title),
             title = title,
-            image = imageUrls.firstOrNull(),
+            images = imageUrls,
             summary = _summary.value.trim().ifBlank { null },
-            publishedAt = 0L,
+            publishedAt = original?.let { RecipeParser.publishedAt(it) } ?: 0L,
             hashtags = emptyList(),
             categories = categories,
             content = RecipeParser.RecipeContent(
@@ -323,13 +429,24 @@ class RecipeComposeViewModel : ViewModel() {
         _publishState.value = PublishState.Publishing
         viewModelScope.launch {
             _publishState.value = when (
-                val r = publisher.publish(
-                    recipe = recipe,
-                    categories = categories,
-                    imageUrls = imageUrls,
-                    signer = signer,
-                    includeClientTag = clientTagEnabled,
-                )
+                val r = if (original != null) {
+                    publisher.publishEdit(
+                        original = original,
+                        recipe = recipe,
+                        categories = categories,
+                        imageUrls = imageUrls,
+                        signer = signer,
+                        includeClientTag = clientTagEnabled,
+                    )
+                } else {
+                    publisher.publish(
+                        recipe = recipe,
+                        categories = categories,
+                        imageUrls = imageUrls,
+                        signer = signer,
+                        includeClientTag = clientTagEnabled,
+                    )
+                }
             ) {
                 is RecipePublisher.Result.Published -> PublishState.Published(r.author, r.dTag)
                 is RecipePublisher.Result.Error -> PublishState.Error(r.message)
@@ -352,7 +469,13 @@ class RecipeComposeViewModel : ViewModel() {
             images: List<ImageItem>,
             ingredients: List<Row>,
             directions: List<Row>,
+            editUnavailable: Boolean = false,
         ): String? = when {
+            // First, and above even the sign-in check: every reason below is
+            // "finish the form", and this one is "the form is not the recipe
+            // you asked to edit" — filling it in cannot clear it.
+            editUnavailable ->
+                "Couldn't load this recipe to edit. Go back and open it again."
             !canSign -> "Sign in to publish recipes."
             title.isBlank() -> "Add a title."
             categories.isEmpty() -> "Add at least one category."

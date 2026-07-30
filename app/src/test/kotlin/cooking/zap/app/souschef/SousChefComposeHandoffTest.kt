@@ -24,7 +24,7 @@ class SousChefComposeHandoffTest {
         author = "",
         dTag = "",
         title = title,
-        image = "https://example.com/pasta.jpg",
+        images = listOf("https://example.com/pasta.jpg"),
         summary = null,
         publishedAt = 0L,
         hashtags = listOf("italian"),

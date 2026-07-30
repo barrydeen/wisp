@@ -45,6 +45,32 @@ interface RecipeFormat {
         categories: List<String>,
     ): UnsignedRecipeEvent
 
+    /**
+     * Encode an **edit** of [original] into an unsigned event.
+     *
+     * Distinct from [serialize] rather than a flag on it, because the two have
+     * different contracts and only this one can see the event being replaced:
+     *
+     *  - the address is **preserved**, never re-derived from [title] — a
+     *    re-derived identifier publishes a second recipe and leaves the first
+     *    live, which is not an edit;
+     *  - the original publication moment is preserved, so an edit does not
+     *    re-date the recipe;
+     *  - tags this format does not generate are **carried over** from
+     *    [original], because rebuilding a tag set from a model deletes
+     *    everything the model does not represent.
+     *
+     * Tag conventions are format knowledge, which is why this sits on the format
+     * and not in the publisher. Caller pre-checks [matches] on [original].
+     */
+    fun serializeEdit(
+        recipe: RecipeParser.Recipe,
+        title: String,
+        imageUrls: List<String>,
+        categories: List<String>,
+        original: NostrEvent,
+    ): UnsignedRecipeEvent
+
     /** The addressable identifier (the `d`/slug value) for [title]. */
     fun slug(title: String): String
 

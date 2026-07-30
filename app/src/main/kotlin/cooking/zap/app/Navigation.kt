@@ -235,6 +235,23 @@ object Routes {
     const val MEMORIES = "memories"
     const val SOUS_CHEF = "souschef"
     const val RECIPE_COMPOSE = "recipe_compose"
+
+    /**
+     * The compose destination's declared pattern. `editEventId` is an optional
+     * query argument, so plain [RECIPE_COMPOSE] still matches this destination
+     * and every existing "create a recipe" entry point is unchanged.
+     *
+     * It carries the **event id**, not the `(author, d-tag)` coordinate, so the
+     * editor loads exactly the version the member was looking at. A coordinate
+     * would be re-resolved a frame later and could pick a different version —
+     * and "edit" is the one action where showing a different version than the
+     * one tapped means editing on top of something the member never read.
+     */
+    const val RECIPE_COMPOSE_ROUTE = "recipe_compose?editEventId={editEventId}"
+    const val ARG_EDIT_EVENT_ID = "editEventId"
+
+    /** Build a compose route that opens [eventId] for editing. */
+    fun recipeEdit(eventId: String): String = "recipe_compose?editEventId=$eventId"
     const val CHEFFY = "cheffy"
 
     /**
@@ -3333,6 +3350,22 @@ fun WispNavHost(
                     }
                 } else null,
                 onDeleted = { navController.popBackStack() },
+                // Same predicate as onDelete, deliberately not a new one: both
+                // are the author acting on their own address, and an edit that
+                // is not signed by the author replaces nothing. The publisher
+                // re-checks authorship before signing, exactly as delete does.
+                //
+                // Routed by the event's id, so the editor opens the version this
+                // screen is showing.
+                onEdit = if (
+                    feedViewModel.signer != null &&
+                    recipeDetailEvent != null &&
+                    recipeDetailEvent?.pubkey == feedViewModel.getUserPubkey()
+                ) {
+                    {
+                        recipeDetailEvent?.let { navController.navigate(Routes.recipeEdit(it.id)) }
+                    }
+                } else null,
             )
 
             if (showAddToGrocery) {
@@ -3622,16 +3655,40 @@ fun WispNavHost(
             )
         }
 
-        composable(Routes.RECIPE_COMPOSE) {
+        composable(
+            Routes.RECIPE_COMPOSE_ROUTE,
+            arguments = listOf(
+                navArgument(Routes.ARG_EDIT_EVENT_ID) {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
+            ),
+        ) { backStackEntry ->
             val recipeComposeViewModel: RecipeComposeViewModel = viewModel()
             val context = androidx.compose.ui.platform.LocalContext.current
+            val editEventId = backStackEntry.arguments?.getString(Routes.ARG_EDIT_EVENT_ID)
             // Consume a pending Cheffy "Save" hand-off ONCE (read-then-null), so
             // recomposition/back-nav can't re-prefill and an abandoned hand-off
             // can't leak into a later FAB-launched empty compose (concern 2.3c).
+            //
+            // Edit takes precedence and consumes the hand-off without using it:
+            // an abandoned Cheffy draft must never seed an edit form, or the
+            // member would replace their published recipe with somebody's
+            // imported one.
             LaunchedEffect(Unit) {
-                feedViewModel.pendingComposeMarkdown?.let { md ->
+                if (editEventId != null) {
                     feedViewModel.pendingComposeMarkdown = null
-                    recipeComposeViewModel.prefillFromMarkdown(md)
+                    val original = feedViewModel.eventRepo.getEvent(editEventId)
+                    if (original == null || !recipeComposeViewModel.prefillFromEvent(original)) {
+                        // Blocked, not blank — see markEditUnavailable.
+                        recipeComposeViewModel.markEditUnavailable()
+                    }
+                } else {
+                    feedViewModel.pendingComposeMarkdown?.let { md ->
+                        feedViewModel.pendingComposeMarkdown = null
+                        recipeComposeViewModel.prefillFromMarkdown(md)
+                    }
                 }
             }
             RecipeComposeScreen(
@@ -3654,8 +3711,11 @@ fun WispNavHost(
                 },
                 onPublished = { author, dTag ->
                     navController.navigate(Routes.recipe(author, dTag)) {
-                        // Replace the composer in the back stack — back returns to the feed.
-                        popUpTo(Routes.RECIPE_COMPOSE) { inclusive = true }
+                        // Replace the composer in the back stack — back returns to
+                        // the feed. Pops the DECLARED route pattern, which is what
+                        // the destination is identified by; the bare
+                        // Routes.RECIPE_COMPOSE would not match it.
+                        popUpTo(Routes.RECIPE_COMPOSE_ROUTE) { inclusive = true }
                     }
                 },
                 onBack = { navController.popBackStack() },
