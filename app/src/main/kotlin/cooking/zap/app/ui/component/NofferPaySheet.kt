@@ -194,6 +194,9 @@ fun NofferCard(
  * Bottom sheet that requests a bolt11 invoice for a CLINK offer and pays it
  * with the active wallet via [onPayInvoice], or falls back to a scannable
  * bare-`noffer` QR for an external CLINK-aware wallet (Zeus, ShockWallet, …).
+ *
+ * Thin `ModalBottomSheet` wrapper around [NofferPaySheetContent], extracted
+ * so the content can also be embedded as one tab of [ProfileZapSheet].
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -204,6 +207,39 @@ fun NofferPaySheet(
     onDismiss: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        // Full-height sheet to match the iOS pay modal — inset below the
+        // status bar so the drag handle clears the camera cutout.
+        modifier = Modifier
+            .fillMaxHeight()
+            .statusBarsPadding()
+    ) {
+        NofferPaySheetContent(
+            noffer = noffer,
+            recipientProfile = recipientProfile,
+            onPayInvoice = onPayInvoice,
+            onDone = onDismiss
+        )
+    }
+}
+
+/**
+ * [NofferPaySheet]'s content (everything below the sheet's drag handle) —
+ * extracted so it can be embedded either as [NofferPaySheet]'s own full
+ * sheet, or as one page of [ProfileZapSheet]'s Zap/CLINK pager. [onDone] is
+ * called both on successful payment's "Done" button and is otherwise unused
+ * by this content (the enclosing sheet/pager owns dismissal).
+ */
+@Composable
+fun NofferPaySheetContent(
+    noffer: NofferData,
+    recipientProfile: ProfileData? = null,
+    onPayInvoice: (suspend (String) -> Boolean)? = null,
+    onDone: () -> Unit
+) {
     val zapColor = WispThemeColors.zapColor
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
@@ -283,46 +319,37 @@ fun NofferPaySheet(
         }
     }
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        // Full-height sheet to match the iOS pay modal — inset below the
-        // status bar so the drag handle clears the camera cutout.
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
-            .fillMaxHeight()
-            .statusBarsPadding()
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp)
+            .padding(bottom = 32.dp)
     ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 32.dp)
-        ) {
-            // Recipient header
-            ProfilePicture(url = recipientProfile?.picture, size = 64)
-            Spacer(Modifier.height(8.dp))
-            Text(
-                recipientName,
-                style = MaterialTheme.typography.titleMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Spacer(Modifier.height(16.dp))
+        // Recipient header
+        ProfilePicture(url = recipientProfile?.picture, size = 64)
+        Spacer(Modifier.height(8.dp))
+        Text(
+            recipientName,
+            style = MaterialTheme.typography.titleMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Spacer(Modifier.height(16.dp))
 
-            if (didPay) {
-                Icon(
-                    Icons.Default.CheckCircle,
-                    contentDescription = null,
-                    tint = zapColor,
-                    modifier = Modifier.size(56.dp)
-                )
-                Spacer(Modifier.height(12.dp))
-                Text("Payment sent", style = MaterialTheme.typography.titleMedium)
-                Spacer(Modifier.height(16.dp))
-                TextButton(onClick = onDismiss) { Text("Done") }
-            } else {
+        if (didPay) {
+            Icon(
+                Icons.Default.CheckCircle,
+                contentDescription = null,
+                tint = zapColor,
+                modifier = Modifier.size(56.dp)
+            )
+            Spacer(Modifier.height(12.dp))
+            Text("Payment sent", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(16.dp))
+            TextButton(onClick = onDone) { Text("Done") }
+        } else {
                 // Offer details
                 Surface(
                     shape = RoundedCornerShape(14.dp),
@@ -477,5 +504,5 @@ fun NofferPaySheet(
                 }
             }
         }
-    }
 }
+

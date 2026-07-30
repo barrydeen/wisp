@@ -41,7 +41,6 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.PersonRemove
-import androidx.compose.material.icons.outlined.Sell
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.foundation.shape.CircleShape
@@ -259,7 +258,8 @@ fun UserProfileScreen(
     var zapAnimatingIds by remember { mutableStateOf(emptySet<String>()) }
     var zapErrorMessage by remember { mutableStateOf<String?>(null) }
 
-    var showProfileZapDialog by remember { mutableStateOf(false) }
+    var showProfileZapSheet by remember { mutableStateOf(false) }
+    var profileZapSheetInitialTab by remember { mutableStateOf(cooking.zap.app.ui.component.ProfileZapTab.ZAP) }
     var profileZapStatus by remember { mutableStateOf<ProfileZapStatus>(ProfileZapStatus.Idle) }
 
     LaunchedEffect(Unit) {
@@ -307,17 +307,27 @@ fun UserProfileScreen(
         )
     }
 
-    if (showProfileZapDialog) {
-        ZapDialog(
+    // Decoded CLINK offer advertised on the profile, when present and valid.
+    val profileClinkOffer = remember(profile?.clinkOffer) {
+        profile?.clinkOffer?.let { cooking.zap.app.nostr.Noffer.decodeOrNull(it) }
+    }
+
+    if (showProfileZapSheet) {
+        cooking.zap.app.ui.component.ProfileZapSheet(
+            hasZap = onZapProfile != null,
+            noffer = profileClinkOffer,
+            initialTab = profileZapSheetInitialTab,
+            onDismiss = { showProfileZapSheet = false },
             isWalletConnected = isWalletConnected,
-            onDismiss = { showProfileZapDialog = false },
             onZap = { amountMsats, message, isAnonymous, _ ->
-                showProfileZapDialog = false
+                showProfileZapSheet = false
                 profileZapStatus = ProfileZapStatus.InProgress(amountMsats)
                 onZapProfile?.invoke(amountMsats, message, isAnonymous)
             },
             onGoToWallet = onWallet,
-            canPrivateZap = false
+            canPrivateZap = false,
+            recipientProfile = profile,
+            onPayInvoice = onPayInvoice,
         )
     }
 
@@ -366,21 +376,6 @@ fun UserProfileScreen(
 
     var showQrDialog by remember { mutableStateOf(false) }
     var showAddToListDialog by remember { mutableStateOf(false) }
-
-    // Decoded CLINK offer advertised on the profile, when present and valid.
-    val profileClinkOffer = remember(profile?.clinkOffer) {
-        profile?.clinkOffer?.let { cooking.zap.app.nostr.Noffer.decodeOrNull(it) }
-    }
-    var showOfferPaySheet by remember { mutableStateOf(false) }
-
-    if (showOfferPaySheet && profileClinkOffer != null) {
-        cooking.zap.app.ui.component.NofferPaySheet(
-            noffer = profileClinkOffer,
-            recipientProfile = profile,
-            onPayInvoice = onPayInvoice,
-            onDismiss = { showOfferPaySheet = false }
-        )
-    }
 
     if (showQrDialog) {
         ProfileQrSheet(
@@ -692,8 +687,16 @@ fun UserProfileScreen(
                     eventRepo = eventRepo,
                     onNavigateToProfile = onNavigateToProfile,
                     onSendDm = onSendDm,
-                    onZapClick = if (onZapProfile != null) { { showProfileZapDialog = true } } else null,
-                    onPayOffer = if (profileClinkOffer != null) { { showOfferPaySheet = true } } else null,
+                    onZapClick = if (onZapProfile != null || profileClinkOffer != null) {
+                        {
+                            profileZapSheetInitialTab = if (onZapProfile != null) {
+                                cooking.zap.app.ui.component.ProfileZapTab.ZAP
+                            } else {
+                                cooking.zap.app.ui.component.ProfileZapTab.CLINK
+                            }
+                            showProfileZapSheet = true
+                        }
+                    } else null,
                     followingCount = followList.size,
                     followerCount = followers.size.takeIf { followers.isNotEmpty() },
                     followedBy = followedBy,
@@ -1422,8 +1425,8 @@ private fun ProfileHeader(
     eventRepo: EventRepository? = null,
     onNavigateToProfile: ((String) -> Unit)? = null,
     onSendDm: (() -> Unit)? = null,
+    /** Opens [ProfileZapSheet] — gated on `lud16 != null || clinkOffer != null` by the caller. */
     onZapClick: (() -> Unit)? = null,
-    onPayOffer: (() -> Unit)? = null,
     followingCount: Int = 0,
     followerCount: Int? = null,
     followedBy: List<String> = emptyList(),
@@ -1511,7 +1514,10 @@ private fun ProfileHeader(
                             )
                         }
                     }
-                    if (profile?.lud16 != null && onZapClick != null) {
+                    // Merged zap/CLINK button — visibility is already gated by the
+                    // caller on (lud16 != null || clinkOffer != null); tapping opens
+                    // ProfileZapSheet, which shows both/either as tabs.
+                    if (onZapClick != null) {
                         Surface(
                             onClick = onZapClick,
                             shape = CircleShape,
@@ -1523,21 +1529,6 @@ private fun ProfileHeader(
                                 contentDescription = "Zap",
                                 tint = Color(0xFFFFC107),
                                 modifier = Modifier.padding(11.dp)
-                            )
-                        }
-                    }
-                    if (onPayOffer != null) {
-                        Surface(
-                            onClick = onPayOffer,
-                            shape = CircleShape,
-                            color = MaterialTheme.colorScheme.surfaceVariant,
-                            modifier = Modifier.size(40.dp)
-                        ) {
-                            Icon(
-                                Icons.Outlined.Sell,
-                                contentDescription = "Pay offer",
-                                tint = Color(0xFFFFC107),
-                                modifier = Modifier.padding(10.dp)
                             )
                         }
                     }
