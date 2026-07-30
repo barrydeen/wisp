@@ -232,6 +232,8 @@
     <string name="placeholder_banner_url">Banner URL</string>
     <string name="placeholder_nip05">NIP-05 (e.g. user@domain.com)</string>
     <string name="placeholder_lightning_address">Lightning Address</string>
+    <string name="placeholder_clink_offer">CLINK offer</string>
+    <string name="placeholder_clink_offer_hint">Self-custodial Lightning payments. Generate one with Zeus, ShockWallet or Lightning.Pub.</string>
     <string name="placeholder_relay_url">wss://</string>
     <string name="placeholder_search_users_notes">Search users and notes</string>
     <string name="reply_bar_placeholder">Reply…</string>
@@ -1046,7 +1048,7 @@
     <string name="wallet_receive_expires_24h">24h</string>
     <string name="wallet_receive_expires_custom">Custom</string>
     <string name="wallet_receive_expires_hours">Hours</string>
-    <string name="wallet_lightning_address_invoice">Lightning address or invoice</string>
+    <string name="wallet_lightning_address_invoice">Lightning address, invoice, or CLINK offer</string>
     <string name="wallet_send_input_hint_onchain">Lightning or Bitcoin address, or invoice</string>
     <string name="wallet_paste">Paste</string>
     <string name="wallet_scan_qr">Scan QR</string>

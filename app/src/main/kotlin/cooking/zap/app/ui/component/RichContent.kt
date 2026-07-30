@@ -113,6 +113,8 @@ import androidx.compose.ui.window.DialogProperties
 import cooking.zap.app.R
 import cooking.zap.app.ui.theme.WispThemeColors
 import cooking.zap.app.nostr.Bolt11
+import cooking.zap.app.nostr.Noffer
+import cooking.zap.app.nostr.NofferData
 import cooking.zap.app.nostr.toNpub
 import cooking.zap.app.nostr.Nip19
 import cooking.zap.app.nostr.Nip57
@@ -223,6 +225,8 @@ internal sealed interface ContentSegment {
     data class CustomEmojiSegment(val shortcode: String, val url: String) : ContentSegment
     data class HashtagSegment(val tag: String) : ContentSegment
     data class LightningInvoiceSegment(val invoice: String, val decoded: Bolt11.DecodedInvoice) : ContentSegment
+    /** CLINK payment offer (`noffer1…`) — rendered as a "Pay offer" card. */
+    data class NofferSegment(val noffer: NofferData) : ContentSegment
     data class GroupInviteSegment(val relayUrl: String, val groupId: String) : ContentSegment
     data class LnurlPayableSegment(val encoded: String) : ContentSegment
     data class LightningAddressSegment(val address: String) : ContentSegment
@@ -442,10 +446,20 @@ internal fun parseContent(content: String, emojiMap: Map<String, String> = empty
     }
 
     // Fifth pass: detect Lightning addresses (user@domain.tld) in text segments
-    val finalResult = mutableListOf<ContentSegment>()
+    val afterLnAddr = mutableListOf<ContentSegment>()
     for (segment in afterLnurl) {
         if (segment is ContentSegment.TextSegment) {
-            finalResult.addAll(splitTextForLightningAddresses(segment.text))
+            afterLnAddr.addAll(splitTextForLightningAddresses(segment.text))
+        } else {
+            afterLnAddr.add(segment)
+        }
+    }
+
+    // Sixth pass: detect CLINK offers (noffer1…) in text segments
+    val finalResult = mutableListOf<ContentSegment>()
+    for (segment in afterLnAddr) {
+        if (segment is ContentSegment.TextSegment) {
+            finalResult.addAll(splitTextForNoffers(segment.text))
         } else {
             finalResult.add(segment)
         }
@@ -537,6 +551,33 @@ private fun splitTextForLightningAddresses(text: String): List<ContentSegment> {
     }
     if (!anyFound) return listOf(ContentSegment.TextSegment(text))
     if (lastEnd < text.length) result.add(ContentSegment.TextSegment(text.substring(lastEnd)))
+    return result
+}
+
+private val nofferRegex = Regex(
+    """(?:nostr:)?noffer1[023456789acdefghjklmnpqrstuvwxyz]{20,}""",
+    RegexOption.IGNORE_CASE
+)
+
+private fun splitTextForNoffers(text: String): List<ContentSegment> {
+    val matches = nofferRegex.findAll(text).toList()
+    if (matches.isEmpty()) return listOf(ContentSegment.TextSegment(text))
+    val result = mutableListOf<ContentSegment>()
+    var lastEnd = 0
+    var anyFound = false
+    for (match in matches) {
+        val decoded = Noffer.decodeOrNull(match.value) ?: continue
+        anyFound = true
+        if (match.range.first > lastEnd) {
+            result.add(ContentSegment.TextSegment(text.substring(lastEnd, match.range.first)))
+        }
+        result.add(ContentSegment.NofferSegment(decoded))
+        lastEnd = match.range.last + 1
+    }
+    if (!anyFound) return listOf(ContentSegment.TextSegment(text))
+    if (lastEnd < text.length) {
+        result.add(ContentSegment.TextSegment(text.substring(lastEnd)))
+    }
     return result
 }
 
@@ -1369,6 +1410,13 @@ fun RichContent(
                             is ContentSegment.LightningAddressSegment -> {
                                 LnurlPayableCard(
                                     value = segment.address,
+                                    onPayInvoice = noteActions?.onPayInvoice
+                                )
+                            }
+                            is ContentSegment.NofferSegment -> {
+                                NofferCard(
+                                    noffer = segment.noffer,
+                                    eventRepo = eventRepo,
                                     onPayInvoice = noteActions?.onPayInvoice
                                 )
                             }

@@ -258,7 +258,8 @@ fun UserProfileScreen(
     var zapAnimatingIds by remember { mutableStateOf(emptySet<String>()) }
     var zapErrorMessage by remember { mutableStateOf<String?>(null) }
 
-    var showProfileZapDialog by remember { mutableStateOf(false) }
+    var showProfileZapSheet by remember { mutableStateOf(false) }
+    var profileZapSheetInitialTab by remember { mutableStateOf(cooking.zap.app.ui.component.ProfileZapTab.ZAP) }
     var profileZapStatus by remember { mutableStateOf<ProfileZapStatus>(ProfileZapStatus.Idle) }
 
     LaunchedEffect(Unit) {
@@ -306,17 +307,27 @@ fun UserProfileScreen(
         )
     }
 
-    if (showProfileZapDialog) {
-        ZapDialog(
+    // Decoded CLINK offer advertised on the profile, when present and valid.
+    val profileClinkOffer = remember(profile?.clinkOffer) {
+        profile?.clinkOffer?.let { cooking.zap.app.nostr.Noffer.decodeOrNull(it) }
+    }
+
+    if (showProfileZapSheet) {
+        cooking.zap.app.ui.component.ProfileZapSheet(
+            hasZap = onZapProfile != null,
+            noffer = profileClinkOffer,
+            initialTab = profileZapSheetInitialTab,
+            onDismiss = { showProfileZapSheet = false },
             isWalletConnected = isWalletConnected,
-            onDismiss = { showProfileZapDialog = false },
             onZap = { amountMsats, message, isAnonymous, _ ->
-                showProfileZapDialog = false
+                showProfileZapSheet = false
                 profileZapStatus = ProfileZapStatus.InProgress(amountMsats)
                 onZapProfile?.invoke(amountMsats, message, isAnonymous)
             },
             onGoToWallet = onWallet,
-            canPrivateZap = false
+            canPrivateZap = false,
+            recipientProfile = profile,
+            onPayInvoice = onPayInvoice,
         )
     }
 
@@ -371,6 +382,7 @@ fun UserProfileScreen(
             pubkeyHex = profilePubkey,
             avatarUrl = profile?.picture,
             lud16 = profile?.lud16,
+            clinkOffer = profile?.clinkOffer,
             onDismiss = { showQrDialog = false }
         )
     }
@@ -675,7 +687,16 @@ fun UserProfileScreen(
                     eventRepo = eventRepo,
                     onNavigateToProfile = onNavigateToProfile,
                     onSendDm = onSendDm,
-                    onZapClick = if (onZapProfile != null) { { showProfileZapDialog = true } } else null,
+                    onZapClick = if (onZapProfile != null || profileClinkOffer != null) {
+                        {
+                            profileZapSheetInitialTab = if (onZapProfile != null) {
+                                cooking.zap.app.ui.component.ProfileZapTab.ZAP
+                            } else {
+                                cooking.zap.app.ui.component.ProfileZapTab.CLINK
+                            }
+                            showProfileZapSheet = true
+                        }
+                    } else null,
                     followingCount = followList.size,
                     followerCount = followers.size.takeIf { followers.isNotEmpty() },
                     followedBy = followedBy,
@@ -1404,6 +1425,7 @@ private fun ProfileHeader(
     eventRepo: EventRepository? = null,
     onNavigateToProfile: ((String) -> Unit)? = null,
     onSendDm: (() -> Unit)? = null,
+    /** Opens [ProfileZapSheet] — gated on `lud16 != null || clinkOffer != null` by the caller. */
     onZapClick: (() -> Unit)? = null,
     followingCount: Int = 0,
     followerCount: Int? = null,
@@ -1492,7 +1514,10 @@ private fun ProfileHeader(
                             )
                         }
                     }
-                    if (profile?.lud16 != null && onZapClick != null) {
+                    // Merged zap/CLINK button — visibility is already gated by the
+                    // caller on (lud16 != null || clinkOffer != null); tapping opens
+                    // ProfileZapSheet, which shows both/either as tabs.
+                    if (onZapClick != null) {
                         Surface(
                             onClick = onZapClick,
                             shape = CircleShape,

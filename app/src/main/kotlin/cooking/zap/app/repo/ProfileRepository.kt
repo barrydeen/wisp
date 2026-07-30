@@ -13,6 +13,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 class ProfileRepository(context: Context) {
+    private companion object {
+        /** Bump when ProfileData gains fields that need a cache re-parse. */
+        const val SCHEMA_VERSION = 1
+    }
+
     private val prefs: SharedPreferences =
         context.getSharedPreferences("wisp_profiles", Context.MODE_PRIVATE)
     private val json = Json { ignoreUnknownKeys = true }
@@ -23,7 +28,22 @@ class ProfileRepository(context: Context) {
     val avatarDir = File(context.filesDir, "avatars").also { it.mkdirs() }
 
     init {
+        migrateSchema()
         loadFromPrefs()
+    }
+
+    /**
+     * Cached ProfileData is parsed JSON, so profiles stored before a new
+     * field existed (e.g. clinkOffer) deserialize without it — and the
+     * timestamp guard in [updateFromEvent] blocks re-parsing an unchanged
+     * kind-0. On schema bump, drop the stored timestamps (keeping the
+     * profiles) so the next received event re-parses with the new fields.
+     */
+    private fun migrateSchema() {
+        if (prefs.getInt("schema_version", 0) >= SCHEMA_VERSION) return
+        val editor = prefs.edit()
+        prefs.all.keys.filter { it.startsWith("p_ts_") }.forEach { editor.remove(it) }
+        editor.putInt("schema_version", SCHEMA_VERSION).apply()
     }
 
     fun updateFromEvent(event: NostrEvent): ProfileData? {

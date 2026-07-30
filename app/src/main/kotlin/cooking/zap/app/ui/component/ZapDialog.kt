@@ -14,12 +14,14 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -109,8 +111,12 @@ import kotlinx.coroutines.launch
  *   6. Privacy dropdown  — Public / Anonymous / Private with helper text
  *   7. Instant zaps      — toggle bound to the per-account quick-zap setting
  *   8. Zap button        — full-width orange action button; >10K = soft confirm, >1M = disabled
+ *
+ * Thin `ModalBottomSheet` wrapper around [ZapDialogContent] — owns the sheet's
+ * dismiss animation and the wallet/lud16 guard. Extracted so [ZapDialogContent]
+ * can also be embedded as one tab of [ProfileZapSheet] alongside the CLINK tab.
  */
-@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ZapDialog(
     isWalletConnected: Boolean,
@@ -155,9 +161,56 @@ fun ZapDialog(
         // Wallet connected but no lud16: fall through so the send surfaces the error.
     }
 
+    val scope = rememberCoroutineScope()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    fun closeSheet() {
+        scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() }
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surface,
+        // Full-height, inset below the status bar so the drag handle clears
+        // the camera cutout — matches NofferPaySheet's treatment.
+        modifier = Modifier
+            .fillMaxHeight()
+            .statusBarsPadding(),
+    ) {
+        ZapDialogContent(
+            onZap = onZap,
+            closeSheet = ::closeSheet,
+            zapPrefsRepo = zapPrefsRepo,
+            canPrivateZap = canPrivateZap,
+            forcePrivate = forcePrivate,
+            initialSatsHint = initialSatsHint,
+            recipientPubkey = recipientPubkey,
+            profileLookup = profileLookup,
+        )
+    }
+}
+
+/**
+ * The zap composer's content (everything below the sheet's drag handle) —
+ * extracted from [ZapDialog] so it can be embedded either as [ZapDialog]'s
+ * own full sheet, or as one page of [ProfileZapSheet]'s Zap/CLINK pager.
+ * Callers own the enclosing `ModalBottomSheet`/pager and pass [closeSheet]
+ * for the toolbar's "Close" pill.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun ZapDialogContent(
+    onZap: (amountMsats: Long, message: String, isAnonymous: Boolean, isPrivate: Boolean) -> Unit,
+    closeSheet: () -> Unit,
+    zapPrefsRepo: ZapPreferences? = null,
+    canPrivateZap: Boolean = false,
+    forcePrivate: Boolean = false,
+    initialSatsHint: Int? = null,
+    recipientPubkey: String? = null,
+    profileLookup: (String) -> ProfileData? = { null },
+) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
-    val scope = rememberCoroutineScope()
     val accent = WispThemeColors.zapColor
 
     val interfacePrefs = remember { InterfacePreferences(context) }
@@ -179,11 +232,6 @@ fun ZapDialog(
     val amountFocusRequester = remember { FocusRequester() }
 
     val recipientProfile = recipientPubkey?.let { profileLookup(it) }
-
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    fun closeSheet() {
-        scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() }
-    }
 
     LaunchedEffect(initialSatsHint) {
         val hint = initialSatsHint ?: return@LaunchedEffect
@@ -224,24 +272,19 @@ fun ZapDialog(
         presets.none { it.amountSats == effectiveAmount } &&
         presets.size < 8
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.surface,
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .imePadding()
     ) {
         Column(
             modifier = Modifier
-                .fillMaxSize()
-                .imePadding()
+                .fillMaxWidth()
+                .weight(1f, fill = false)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f, fill = false)
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 20.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
-            ) {
             // ── 1. Toolbar ──────────────────────────────────────────
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -588,56 +631,55 @@ fun ZapDialog(
             }
 
             Spacer(Modifier.height(4.dp))
-            } // end scrollable content Column
+        } // end scrollable content Column
 
-            // ── 8. Zap button — pinned to bottom ────────────────────
-            Column(
+        // ── 8. Zap button — pinned to bottom ────────────────────
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(top = 12.dp, bottom = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            if (overHardCap) {
+                Text(
+                    "Max ${"%,d".format(ZAP_HARD_CAP_SATS)} sats per zap",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Center
+                )
+            }
+            Button(
+                onClick = {
+                    if (effectiveAmount > ZAP_SOFT_CONFIRM_SATS) {
+                        showLargeAmountConfirm = true
+                    } else {
+                        onZap(effectiveAmount * 1000, effectiveMessage.ifEmpty { message }, isAnonymous, isPrivate)
+                    }
+                },
+                enabled = effectiveAmount > 0 && !overHardCap,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp)
-                    .padding(top = 12.dp, bottom = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                    .height(52.dp),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = accent,
+                    contentColor = Color.White,
+                    disabledContainerColor = accent.copy(alpha = 0.35f)
+                )
             ) {
-                if (overHardCap) {
-                    Text(
-                        "Max ${"%,d".format(ZAP_HARD_CAP_SATS)} sats per zap",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.fillMaxWidth(),
-                        textAlign = TextAlign.Center
-                    )
-                }
-                Button(
-                    onClick = {
-                        if (effectiveAmount > ZAP_SOFT_CONFIRM_SATS) {
-                            showLargeAmountConfirm = true
-                        } else {
-                            onZap(effectiveAmount * 1000, effectiveMessage.ifEmpty { message }, isAnonymous, isPrivate)
-                        }
-                    },
-                    enabled = effectiveAmount > 0 && !overHardCap,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(52.dp),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = accent,
-                        contentColor = Color.White,
-                        disabledContainerColor = accent.copy(alpha = 0.35f)
-                    )
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_bolt),
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        "Zap ${"%,d".format(effectiveAmount)} sats",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 17.sp
-                    )
-                }
+                Icon(
+                    painter = painterResource(R.drawable.ic_bolt),
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "Zap ${"%,d".format(effectiveAmount)} sats",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 17.sp
+                )
             }
         }
     }
