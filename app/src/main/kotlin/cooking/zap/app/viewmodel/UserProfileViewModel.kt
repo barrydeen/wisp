@@ -363,11 +363,14 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
                         }
                         Nip22.KIND_COMMENT -> {
                             eventRepo.cacheEvent(event)
-                            // Only externally-rooted comments belong here: one replying to
-                            // another comment already appears in that thread, and without its
-                            // own subject card it would read exactly like the context-free rows
-                            // this tab exists to avoid.
-                            if (Nip22.externalRoot(event) != null) {
+                            // Surface comments we can render a meaningful subject card for:
+                            // externally-rooted ones (web page/podcast) and those rooted on a
+                            // recipe or article (kind 30023, addressed via an uppercase `A`).
+                            // Comments on notes, polls, and other event types are skipped —
+                            // they'd land here with no subject card and read as context-free.
+                            val isRecipeArticleRoot =
+                                (Nip22.eventRoot(event) as? Nip22.EventRootRef.Addressable)?.kind == 30023
+                            if (Nip22.externalRoot(event) != null || isRecipeArticleRoot) {
                                 val current = _comments.value.toMutableList()
                                 if (current.none { it.id == event.id }) {
                                     current.add(event)
