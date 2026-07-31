@@ -1,5 +1,21 @@
-
 # Changelog
+
+## [1.3.6]
+
+🍳 Edit and delete published recipes — Update your own recipes directly from Android while keeping the same recipe link, photos, and original publish date. You can also remove recipes from the recipe detail screen, and deleted recipes now stay deleted after restarting the app.
+
+📈 Recipe momentum — A new trend indicator shows recent recipe publishing activity across the community.
+
+⚡ CLINK payments — Pay CLINK offers directly from posts, profiles, or the wallet. Profiles now combine Lightning zaps and CLINK into one simple payment flow.
+
+💬 Better comments and profiles — Comments connected to external articles and websites now show the content they reference. Profiles also make it easier to view someone’s published recipes and comments.
+
+✅ Clearer profiles — Improved verified badges, follow indicators, timestamps, and profile navigation.
+
+🛡️ Better reporting and account information — Reports now confirm whether they were successfully sent before content is hidden. The About screen also shows membership information and links to Zap Cooking’s published policies.
+
+🌐 More reliable relay coverage — Updated the default relay sets to remove a decommissioned relay and improve redundancy.
+
 ##[1.3.5]
 
 🍳 My Kitchen — Saved recipes, published recipes, grocery lists, meal planning, and Nourish now live together in one personal kitchen hub.
