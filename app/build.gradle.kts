@@ -1,3 +1,4 @@
+import java.io.File
 import java.util.Properties
 
 plugins {
@@ -6,6 +7,67 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.objectbox)
+}
+
+// local.properties is gitignored and per-machine. It already carries the Breez
+// and Giphy API keys; the release signing credentials below read from the same
+// place. Nothing in it is ever committed.
+val localPropsFile = rootProject.file("local.properties")
+val localProps = Properties().apply {
+    if (localPropsFile.exists()) localPropsFile.inputStream().use { load(it) }
+}
+
+/** local.properties wins over the environment. Blank is treated as absent. */
+fun secret(propertyKey: String, envKey: String): String? =
+    (localProps.getProperty(propertyKey) ?: System.getenv(envKey))
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+
+fun expandHome(path: String): File =
+    if (path.startsWith("~/")) File(System.getProperty("user.home"), path.removePrefix("~/"))
+    else File(path)
+
+// ---------------------------------------------------------------------------
+// Release signing
+//
+// Credentials come from local.properties, or the matching ZAPCOOKING_*
+// environment variables for a machine that has no local.properties. The
+// keystore file itself lives outside the repo and is never committed. Which
+// keystore to use — and why the Zapstore one is irreplaceable — is
+// ZAPCOOKING_ANDROID_BUILD.md §"Release keystore".
+//
+// All four values are required together, and a release artifact cannot be
+// built without them. AGP does NOT fall back to the debug key when a release
+// signingConfig is absent: it silently emits app-<flavor>-release-unsigned.apk
+// and an unsigned .aab. Play rejects those at upload, and an APK signed by the
+// wrong key cannot update an existing Zapstore install and breaks Google
+// sign-in. Failing here is cheaper than finding out at the Console.
+// ---------------------------------------------------------------------------
+val signingInputs = mapOf(
+    "zapcooking.keystore.path" to secret("zapcooking.keystore.path", "ZAPCOOKING_KEYSTORE_PATH"),
+    "zapcooking.keystore.password" to secret("zapcooking.keystore.password", "ZAPCOOKING_KEYSTORE_PASSWORD"),
+    "zapcooking.key.alias" to secret("zapcooking.key.alias", "ZAPCOOKING_KEY_ALIAS"),
+    "zapcooking.key.password" to secret("zapcooking.key.password", "ZAPCOOKING_KEY_PASSWORD"),
+)
+val missingSigningInputs = signingInputs.filterValues { it == null }.keys
+val releaseSigningConfigured = missingSigningInputs.isEmpty()
+
+// Some-but-not-all means someone meant to sign and mistyped a key. Never let
+// that degrade into an unsigned build, whatever task is being run.
+if (!releaseSigningConfigured && missingSigningInputs.size < signingInputs.size) {
+    error(
+        "Incomplete release signing credentials — missing ${missingSigningInputs.joinToString()}. " +
+            "Set all four in local.properties (or all four ZAPCOOKING_* environment variables), " +
+            "or none. See ZAPCOOKING_ANDROID_BUILD.md §\"Release signing\"."
+    )
+}
+
+val releaseKeystore = signingInputs.getValue("zapcooking.keystore.path")?.let(::expandHome)
+if (releaseKeystore != null && !releaseKeystore.isFile) {
+    error(
+        "Release keystore not found at ${releaseKeystore.absolutePath} " +
+            "(zapcooking.keystore.path). The keystore is not stored in this repo."
+    )
 }
 
 android {
@@ -28,15 +90,22 @@ android {
             abiFilters += "arm64-v8a"
         }
 
-        val localProps = rootProject.file("local.properties")
-        val props = if (localProps.exists()) {
-            Properties().apply { localProps.inputStream().use { load(it) } }
-        } else Properties()
-        val breezApiKey = props.getProperty("breez.api.key", "")
-        val giphyApiKey = props.getProperty("giphy.api.key", "")
+        val breezApiKey = localProps.getProperty("breez.api.key", "")
+        val giphyApiKey = localProps.getProperty("giphy.api.key", "")
         buildConfigField("String", "BREEZ_API_KEY", "\"$breezApiKey\"")
         buildConfigField("String", "BREEZ_SDK_VERSION", "\"${libs.versions.breez.sdk.spark.get()}\"")
         buildConfigField("String", "GIPHY_API_KEY", "\"$giphyApiKey\"")
+    }
+
+    signingConfigs {
+        if (releaseSigningConfigured) {
+            create("release") {
+                storeFile = releaseKeystore
+                storePassword = signingInputs.getValue("zapcooking.keystore.password")
+                keyAlias = signingInputs.getValue("zapcooking.key.alias")
+                keyPassword = signingInputs.getValue("zapcooking.key.password")
+            }
+        }
     }
 
     buildTypes {
@@ -46,6 +115,9 @@ android {
         }
 
         release {
+            // Null when credentials are absent; the taskGraph check below then
+            // stops the build before an unsigned artifact can be produced.
+            signingConfig = signingConfigs.findByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
@@ -91,6 +163,32 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+}
+
+// Refuse to produce a release artifact that nobody can ship. Checked against
+// the resolved task graph rather than the command line so that a release
+// packaging task reached indirectly is caught too. Debug builds, unit tests
+// and lint are unaffected.
+if (!releaseSigningConfigured) {
+    gradle.taskGraph.whenReady {
+        val blocked = allTasks.firstOrNull { task ->
+            task.project == project &&
+                task.name.contains("Release") &&
+                (task.name.startsWith("assemble") ||
+                    task.name.startsWith("bundle") ||
+                    task.name.startsWith("package"))
+        }
+        if (blocked != null) {
+            error(
+                "Cannot build a release artifact (task graph reached ${blocked.name}): " +
+                    "no release signing credentials. " +
+                    "Set zapcooking.keystore.path, zapcooking.keystore.password, " +
+                    "zapcooking.key.alias and zapcooking.key.password in local.properties " +
+                    "(or the matching ZAPCOOKING_* environment variables). " +
+                    "See ZAPCOOKING_ANDROID_BUILD.md §\"Release signing\"."
+            )
+        }
     }
 }
 

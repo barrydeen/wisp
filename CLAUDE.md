@@ -10,7 +10,8 @@ This repository is a fork of the **Wisp** Nostr client being adapted into **Zap 
 
 ```bash
 ./gradlew assembleZapstoreDebug              # Build the zapstore debug APK
-./gradlew assembleRelease                    # Build release APKs (minified with R8)
+./gradlew assembleZapstoreRelease            # Zapstore release APK (signed; minified with R8)
+./gradlew bundlePlayRelease                  # Play release AAB (signed; minified with R8)
 ./gradlew installZapstoreDebug               # Build + install the zapstore debug variant
 ./gradlew testZapstoreDebugUnitTest          # Run the hermetic JVM unit suite
 ./gradlew connectedZapstoreDebugAndroidTest  # Run integration tests (device required)
@@ -22,6 +23,12 @@ variants are `<flavor><BuildType>` (e.g. `zapstoreDebug`). Most tasks must
 be flavor-qualified: `assembleDebug` is a valid aggregate, but
 `testDebugUnitTest` / `connectedDebugAndroidTest` are ambiguous — use the
 `zapstore`/`play`-qualified task names above (or `test` for all variants).
+
+Release builds require signing credentials in `local.properties` (or the
+`ZAPCOOKING_*` environment variables) and fail loudly without them rather
+than emitting an unsigned artifact — see
+[`ZAPCOOKING_ANDROID_BUILD.md`](ZAPCOOKING_ANDROID_BUILD.md) §"Release
+signing". Debug builds and tests need nothing.
 
 JDK 17 and Android SDK 35 are required. Tests: a hermetic JVM unit suite
 under `app/src/test/` plus integration tests under `app/src/androidTest/`
