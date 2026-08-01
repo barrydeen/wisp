@@ -713,8 +713,62 @@ so every `credentialManager.getCredential()` on this fork failed with
   `keytool -printcert -jarfile`.)
 - **Back this file up off-machine.** Unlike Play there is no
   Google-held key: losing it permanently orphans the Zapstore listing.
-- Signing is currently Android Studio wizard-based (no `signingConfigs`
-  in Gradle) — future concern: gitignored `keystore.properties` config.
+- Signing is wired into Gradle — see **Release signing** below. (It was
+  Android Studio wizard-based, which meant only the person at that
+  machine could produce a shippable artifact.)
+
+### Release signing
+Release builds are signed by Gradle from credentials that live outside
+the repo. Put all four in `local.properties` (already gitignored, and
+already where the Breez and Giphy keys live):
+
+```properties
+zapcooking.keystore.path=~/.zapcooking-keys/zap-cooking-release.jks
+zapcooking.keystore.password=<store password>
+zapcooking.key.alias=<alias>
+zapcooking.key.password=<key password>
+```
+
+`~/` is expanded. On a machine with no `local.properties` the same four
+values are read from `ZAPCOOKING_KEYSTORE_PATH`,
+`ZAPCOOKING_KEYSTORE_PASSWORD`, `ZAPCOOKING_KEY_ALIAS` and
+`ZAPCOOKING_KEY_PASSWORD`; `local.properties` wins where both are set.
+
+Then, the one command per target:
+
+```bash
+./gradlew bundlePlayRelease        # Play — app/build/outputs/bundle/playRelease/app-play-release.aab
+./gradlew assembleZapstoreRelease  # Zapstore — app/build/outputs/apk/zapstore/release/
+```
+
+Confirm what actually signed an artifact before uploading it:
+
+```bash
+keytool -printcert -jarfile <path-to-apk-or-aab>
+```
+
+**Which keystore.** Zapstore has no key recovery, so its APK must keep
+being signed by the canonical keystore above — a different key orphans
+the listing. Play is not the same situation: under Play App Signing the
+uploaded AAB is signed by an *upload* key that Google then re-signs with
+the app signing key it holds, so the upload key may be a new one.
+Whether Play reuses the Zapstore keystore or gets its own is Seth's
+call, not a build decision.
+
+**Failure modes are loud, by design.** AGP does not fall back to the
+debug key when a release `signingConfig` is missing — it quietly emits
+`app-<flavor>-release-unsigned.apk` and an unsigned `.aab`, which Play
+rejects at upload and Zapstore cannot install as an update. So:
+- No credentials + any release packaging task ⇒ build fails naming the
+  four keys. Debug builds, unit tests and lint are unaffected.
+- Some but not all four ⇒ build fails immediately on every task,
+  naming the missing ones (a typo must not degrade to unsigned).
+- `zapcooking.keystore.path` pointing at a file that is not there ⇒
+  build fails with the resolved absolute path.
+
+**Machine note.** On an 8 GB machine an R8 release build and a running
+Android emulator will not coexist — the Gradle daemon gets killed
+mid-build ("daemon disappeared unexpectedly"). Run them one at a time.
 
 ### Contributor note
 Google sign-in only works for builds signed by a cert registered in the
