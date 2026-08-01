@@ -53,7 +53,63 @@ object Nip22 {
             }
     }
 
+    /**
+     * A nostr event a comment is scoped to (the comment's subject) — either by id
+     * (uppercase `E`) or by addressable coordinate (uppercase `A`,
+     * `kind:pubkey:dTag`). See [eventRoot].
+     */
+    sealed class EventRootRef {
+        /** Root named by event id. [relayHint]/[authorPubkey] from the tag if present. */
+        data class ById(
+            val id: String,
+            val relayHint: String?,
+            val authorPubkey: String?
+        ) : EventRootRef()
+
+        /** Root named by addressable coordinate (`kind:pubkey:dTag`). */
+        data class Addressable(
+            val kind: Int,
+            val pubkey: String,
+            val dTag: String,
+            val relayHint: String?
+        ) : EventRootRef()
+    }
+
     fun isComment(event: NostrEvent): Boolean = event.kind == KIND_COMMENT
+
+    /**
+     * The comment's root scope when it's a nostr event — an uppercase `E` tag
+     * (by id) or `A` tag (addressable `kind:pubkey:dTag`). Returns null for
+     * externally-rooted comments (`I` tag) and non-comments. Returns the root
+     * whatever its kind; callers decide which kinds they render (the profile
+     * Comments tab shows a subject card only for addressable kind 30023).
+     */
+    fun eventRoot(event: NostrEvent): EventRootRef? {
+        if (!isComment(event)) return null
+        // Uppercase E (by id) takes precedence over A (addressable) when both exist.
+        val eTag = event.tags.firstOrNull { it.size >= 2 && it[0] == "E" }
+        if (eTag != null) {
+            return EventRootRef.ById(
+                id = eTag[1],
+                relayHint = eTag.getOrNull(2)?.takeIf { it.isNotEmpty() },
+                authorPubkey = eTag.getOrNull(3)?.takeIf { it.isNotEmpty() },
+            )
+        }
+        val aTag = event.tags.firstOrNull { it.size >= 2 && it[0] == "A" } ?: return null
+        // `kind:pubkey:dTag` — drop(2).joinToString(":") so a dTag containing ":"
+        // (common in some identifier schemes) survives the split.
+        val parts = aTag[1].split(":")
+        if (parts.size < 3) return null
+        val kind = parts[0].toIntOrNull() ?: return null
+        val pubkey = parts[1]
+        val dTag = parts.drop(2).joinToString(":")
+        return EventRootRef.Addressable(
+            kind = kind,
+            pubkey = pubkey,
+            dTag = dTag,
+            relayHint = aTag.getOrNull(2)?.takeIf { it.isNotEmpty() },
+        )
+    }
 
     /**
      * The comment's root scope when it's external (an uppercase `I` tag), else null.

@@ -1197,6 +1197,7 @@ fun UserProfileScreen(
                             onNavigateToProfile = onNavigateToProfile,
                             onNoteClick = { onNoteClick(event) },
                             onQuotedNoteClick = onQuotedNoteClick,
+                            onArticleClick = onArticleClick,
                             onReact = { emoji -> onReact(event, emoji) },
                             onRepost = { onRepost(event) },
                             onQuote = { onQuote(event) },

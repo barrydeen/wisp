@@ -93,6 +93,7 @@ import cooking.zap.app.nostr.Nip19
 import cooking.zap.app.nostr.Nip22
 import cooking.zap.app.nostr.NostrEvent
 import cooking.zap.app.nostr.ProfileData
+import cooking.zap.app.nostr.RecipeParser
 import cooking.zap.app.nostr.hexToByteArray
 import cooking.zap.app.R
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -157,6 +158,8 @@ fun PostCard(
     isPinned: Boolean = false,
     onDelete: () -> Unit = {},
     onQuotedNoteClick: ((String) -> Unit)? = null,
+    /** Open a long-form (kind 30023) subject — recipe/article — via its article route. */
+    onArticleClick: ((kind: Int, author: String, dTag: String) -> Unit)? = null,
     noteActions: NoteActions? = null,
     repostDetails: List<String> = emptyList(),
     reactionEmojiUrls: Map<String, String> = emptyMap(),
@@ -228,6 +231,10 @@ fun PostCard(
     val commentingOnLabel = remember(externalCommentRef) {
         externalCommentRef?.let { ref -> ref.displayHost ?: externalKindLabel(ref.kind) }
     }
+    // NIP-22 comment scoped to a nostr event. Only an addressable recipe/article
+    // root (kind 30023) renders a subject card — see [EventCommentCard]; note and
+    // poll roots are left to the ordinary reply rendering.
+    val eventCommentRef = remember(event.id) { Nip22.eventRoot(event) }
 
     val hasReactionDetails = reactionDetails.isNotEmpty() || zapDetails.isNotEmpty() || repostDetails.isNotEmpty()
     var expandedDetails by remember { mutableStateOf(false) }
@@ -705,6 +712,21 @@ fun PostCard(
             // reads as the subject the remark answers rather than a link trailing off
             // the end of it.
             externalCommentRef?.let { ExternalCommentCard(it) }
+
+            // NIP-22 comment scoped to a recipe or article (addressable kind 30023):
+            // render that subject above the text so the comment reads in context.
+            // The card resolves the subject itself and no-ops for any other root
+            // kind, so note/poll-rooted comments render without a subject card.
+            eventCommentRef?.let { ref ->
+                eventRepo?.let { repo ->
+                    EventCommentCard(
+                        ref = ref,
+                        eventRepo = repo,
+                        onArticleClick = onArticleClick,
+                        onSubjectClick = onQuotedNoteClick,
+                    )
+                }
+            }
 
             // Collapsible content (~1 viewport of text). Truncation is scoped to the text
             // itself inside RichContent — media, quote cards, and other embeds always render
@@ -1500,29 +1522,15 @@ internal fun Nip05Badge(
 @Composable
 private fun ExternalCommentCard(ref: Nip22.ExternalRef) {
     Column {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                Icons.Outlined.Link,
-                contentDescription = null,
-                modifier = Modifier.size(14.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(Modifier.width(4.dp))
-            Text(
-                text = ref.displayHost ?: externalKindLabel(ref.kind),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-        Spacer(Modifier.height(6.dp))
         val url = ref.openableUri?.toString()
         if (url != null) {
+            // Web page — LinkPreview renders the source (image, site name, title),
+            // so no separate header here: the host is already named once in the
+            // "Commenting on <host>" context row, and the preview card carries it again.
             LinkPreview(url)
         } else {
-            // Bare identifier with no openable URL — show the raw value rather
-            // than a preview card that would have nothing to render.
+            // Bare identifier (podcast GUID, ISBN…) with no preview to render —
+            // show the raw value; the kind is named in the context row above.
             Surface(
                 shape = RoundedCornerShape(12.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
@@ -1549,5 +1557,113 @@ private fun externalKindLabel(kind: String): String = when (kind) {
     "geo" -> "Location"
     "doi" -> "Paper"
     else -> if (kind.startsWith("podcast:")) "Podcast" else "External content"
+}
+
+/**
+ * The nostr event a kind-1111 comment is scoped to — rendered above the comment
+ * text as a compact subject card. Scoped to **recipes and articles only**
+ * (kind 30023, addressed via an uppercase `A` tag): notes, polls, and other
+ * event types don't get a card — they read fine as ordinary replies, and
+ * surfacing every one would flood the Comments tab with types we can't render
+ * well. Shows just the preview image + title (not the full article body).
+ */
+@Composable
+private fun EventCommentCard(
+    ref: Nip22.EventRootRef,
+    eventRepo: EventRepository,
+    onArticleClick: ((kind: Int, author: String, dTag: String) -> Unit)?,
+    onSubjectClick: ((String) -> Unit)?,
+) {
+    val addressable = ref as? Nip22.EventRootRef.Addressable
+    if (addressable == null || addressable.kind != RecipeParser.RECIPE_KIND) return
+
+    val version by eventRepo.quotedEventVersion.collectAsState()
+    val subject = remember(addressable.pubkey, addressable.dTag, version) {
+        eventRepo.findAddressableEvent(addressable.kind, addressable.pubkey, addressable.dTag)
+    }
+    LaunchedEffect(addressable.pubkey, addressable.dTag) {
+        if (subject == null) {
+            eventRepo.requestAddressableEvent(
+                kind = addressable.kind,
+                author = addressable.pubkey,
+                dTag = addressable.dTag,
+                relayHints = addressable.relayHint?.let { listOf(it) } ?: emptyList(),
+            )
+        }
+    }
+
+    Column {
+        if (subject != null) {
+            // Open the recipe/article via its long-form route (kind, author, dTag) —
+            // not the thread route by id, which would render the 30023 body as raw
+            // markdown. Fall back to the id-based route only if no article handler.
+            val openSubject: () -> Unit = {
+                if (onArticleClick != null) {
+                    onArticleClick.invoke(addressable.kind, addressable.pubkey, addressable.dTag)
+                } else {
+                    onSubjectClick?.invoke(subject.id)
+                }
+                Unit
+            }
+            RecipeArticleSubjectCard(event = subject, onClick = openSubject)
+        } else {
+            // Subject not yet fetched — a quiet placeholder rather than a spinner
+            // so an unfetchable root doesn't draw attention it hasn't earned.
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                // Neutral wording: kind 30023 covers both recipes and articles, and
+                // until the event resolves there's no way to tell which this is.
+                Text(
+                    text = "Loading…",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 14.dp)
+                )
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+    }
+}
+
+/** Compact recipe/article subject card — preview image + title only (no body). */
+@Composable
+private fun RecipeArticleSubjectCard(event: NostrEvent, onClick: () -> Unit) {
+    val title = remember(event) { event.tags.firstOrNull { it.size >= 2 && it[0] == "title" }?.get(1) }
+    val image = remember(event) { event.tags.firstOrNull { it.size >= 2 && it[0] == "image" }?.get(1) }
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(8.dp)
+        ) {
+            if (image != null) {
+                coil3.compose.AsyncImage(
+                    model = image,
+                    contentDescription = title,
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    modifier = Modifier
+                        .size(56.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                )
+                Spacer(Modifier.width(10.dp))
+            }
+            Text(
+                text = title ?: "Untitled",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
 }
 

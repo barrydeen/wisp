@@ -119,4 +119,44 @@ class Nip22Test {
         val note = NostrEvent(id = "n", pubkey = "pk", created_at = 0, kind = 1, tags = emptyList(), content = "", sig = "")
         assertNull(Nip22.buildReplyTags(note))
     }
+
+    /** A comment rooted on a nostr event by id (uppercase E) yields a ById ref. */
+    @Test fun eventRootByEtag() {
+        val e = comment(listOf(
+            listOf("E", "rooteventid", "wss://r", "rootpk"), listOf("K", "1"),
+            listOf("e", "parentid", "wss://r", "pk"), listOf("k", "1111"),
+        ))
+        val root = Nip22.eventRoot(e)
+        assertEquals(Nip22.EventRootRef.ById("rooteventid", "wss://r", "rootpk"), root)
+    }
+
+    /** A comment rooted on an addressable (uppercase A) yields an Addressable ref. */
+    @Test fun eventRootByAtag() {
+        val e = comment(listOf(listOf("A", "30023:abc:dTag-1"), listOf("K", "30023")))
+        val root = Nip22.eventRoot(e) as? Nip22.EventRootRef.Addressable
+        assertEquals(30023, root?.kind)
+        assertEquals("abc", root?.pubkey)
+        assertEquals("dTag-1", root?.dTag)
+    }
+
+    /** A dTag containing `:` survives the split (drop(2).joinToString). */
+    @Test fun eventRootAtagPreservesColonInDtag() {
+        val e = comment(listOf(listOf("A", "30023:abc:foo:bar:baz"), listOf("K", "30023")))
+        val root = Nip22.eventRoot(e) as? Nip22.EventRootRef.Addressable
+        assertEquals("foo:bar:baz", root?.dTag)
+    }
+
+    /** An externally-rooted comment (I tag, no E/A) has no event root. */
+    @Test fun externalRootedCommentHasNoEventRoot() {
+        val e = comment(listOf(listOf("I", "https://example.com/a"), listOf("K", "web")))
+        assertNull(Nip22.eventRoot(e))
+    }
+
+    /** E (by id) is preferred over A when both are present. */
+    @Test fun eventRootPrefersEtagOverAtag() {
+        val e = comment(listOf(
+            listOf("E", "byid"), listOf("A", "30023:abc:d"),
+        ))
+        assertTrue(Nip22.eventRoot(e) is Nip22.EventRootRef.ById)
+    }
 }
