@@ -80,8 +80,9 @@ object Nip22 {
     /**
      * The comment's root scope when it's a nostr event — an uppercase `E` tag
      * (by id) or `A` tag (addressable `kind:pubkey:dTag`). Returns null for
-     * externally-rooted comments (`I` tag) and non-comments. Used to render the
-     * referenced event (a recipe, note, or article) as the comment's subject.
+     * externally-rooted comments (`I` tag) and non-comments. Returns the root
+     * whatever its kind; callers decide which kinds they render (the profile
+     * Comments tab shows a subject card only for addressable kind 30023).
      */
     fun eventRoot(event: NostrEvent): EventRootRef? {
         if (!isComment(event)) return null

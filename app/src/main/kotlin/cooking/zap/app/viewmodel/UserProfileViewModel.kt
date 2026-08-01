@@ -69,8 +69,9 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
     val replies: StateFlow<List<NostrEvent>> = _replies
 
     // NIP-22 comments this user left on external items (web pages, podcast
-    // episodes). Kept out of Notes/Replies: those are kind-1 surfaces, and a
-    // comment's subject is the linked item rather than another nostr note.
+    // episodes) and on recipes/articles (addressable kind 30023). Kept out of
+    // Notes/Replies: those are kind-1 surfaces, and a comment's subject is the
+    // linked item rather than another nostr note.
     // Populated by the shared posts subscription in [loadProfile].
     private val _comments = MutableStateFlow<List<NostrEvent>>(emptyList())
     val comments: StateFlow<List<NostrEvent>> = _comments
@@ -369,7 +370,8 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
                             // Comments on notes, polls, and other event types are skipped —
                             // they'd land here with no subject card and read as context-free.
                             val isRecipeArticleRoot =
-                                (Nip22.eventRoot(event) as? Nip22.EventRootRef.Addressable)?.kind == 30023
+                                (Nip22.eventRoot(event) as? Nip22.EventRootRef.Addressable)?.kind ==
+                                    RecipeParser.RECIPE_KIND
                             if (Nip22.externalRoot(event) != null || isRecipeArticleRoot) {
                                 val current = _comments.value.toMutableList()
                                 if (current.none { it.id == event.id }) {

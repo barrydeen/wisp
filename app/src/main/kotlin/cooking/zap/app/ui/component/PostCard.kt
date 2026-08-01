@@ -93,6 +93,7 @@ import cooking.zap.app.nostr.Nip19
 import cooking.zap.app.nostr.Nip22
 import cooking.zap.app.nostr.NostrEvent
 import cooking.zap.app.nostr.ProfileData
+import cooking.zap.app.nostr.RecipeParser
 import cooking.zap.app.nostr.hexToByteArray
 import cooking.zap.app.R
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -230,8 +231,9 @@ fun PostCard(
     val commentingOnLabel = remember(externalCommentRef) {
         externalCommentRef?.let { ref -> ref.displayHost ?: externalKindLabel(ref.kind) }
     }
-    // NIP-22 comment scoped to a nostr event (a recipe, note, or article): the
-    // event it's replying to, rendered as a subject card above the comment text.
+    // NIP-22 comment scoped to a nostr event. Only an addressable recipe/article
+    // root (kind 30023) renders a subject card — see [EventCommentCard]; note and
+    // poll roots are left to the ordinary reply rendering.
     val eventCommentRef = remember(event.id) { Nip22.eventRoot(event) }
 
     val hasReactionDetails = reactionDetails.isNotEmpty() || zapDetails.isNotEmpty() || repostDetails.isNotEmpty()
@@ -711,10 +713,10 @@ fun PostCard(
             // the end of it.
             externalCommentRef?.let { ExternalCommentCard(it) }
 
-            // NIP-22 comment scoped to a nostr event (a recipe, note, or article):
+            // NIP-22 comment scoped to a recipe or article (addressable kind 30023):
             // render that subject above the text so the comment reads in context.
-            // The subject card resolves + renders internally (loading/timeout/
-            // unavailable fallbacks), the same as any other quoted-event embed.
+            // The card resolves the subject itself and no-ops for any other root
+            // kind, so note/poll-rooted comments render without a subject card.
             eventCommentRef?.let { ref ->
                 eventRepo?.let { repo ->
                     EventCommentCard(
@@ -1573,16 +1575,16 @@ private fun EventCommentCard(
     onSubjectClick: ((String) -> Unit)?,
 ) {
     val addressable = ref as? Nip22.EventRootRef.Addressable
-    if (addressable == null || addressable.kind != 30023) return
+    if (addressable == null || addressable.kind != RecipeParser.RECIPE_KIND) return
 
     val version by eventRepo.quotedEventVersion.collectAsState()
     val subject = remember(addressable.pubkey, addressable.dTag, version) {
-        eventRepo.findAddressableEvent(30023, addressable.pubkey, addressable.dTag)
+        eventRepo.findAddressableEvent(addressable.kind, addressable.pubkey, addressable.dTag)
     }
     LaunchedEffect(addressable.pubkey, addressable.dTag) {
         if (subject == null) {
             eventRepo.requestAddressableEvent(
-                kind = 30023,
+                kind = addressable.kind,
                 author = addressable.pubkey,
                 dTag = addressable.dTag,
                 relayHints = addressable.relayHint?.let { listOf(it) } ?: emptyList(),
@@ -1612,8 +1614,10 @@ private fun EventCommentCard(
                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
                 modifier = Modifier.fillMaxWidth()
             ) {
+                // Neutral wording: kind 30023 covers both recipes and articles, and
+                // until the event resolves there's no way to tell which this is.
                 Text(
-                    text = "Loading recipe…",
+                    text = "Loading…",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 14.dp)
