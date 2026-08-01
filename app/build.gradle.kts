@@ -115,8 +115,8 @@ android {
         }
 
         release {
-            // Null when credentials are absent; the taskGraph check below then
-            // stops the build before an unsigned artifact can be produced.
+            // Null when credentials are absent; the release-packaging guards
+            // below stop the build before an unsigned artifact can be produced.
             signingConfig = signingConfigs.findByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
@@ -166,28 +166,50 @@ android {
     }
 }
 
-// Refuse to produce a release artifact that nobody can ship. Checked against
-// the resolved task graph rather than the command line so that a release
-// packaging task reached indirectly is caught too. Debug builds, unit tests
-// and lint are unaffected.
+// Refuse to produce a release artifact that nobody can ship.
+//
+// Prefer task-local doFirst guards over gradle.taskGraph.whenReady — the latter
+// is incompatible with the configuration cache. A config-time check on the
+// explicitly requested task names covers the common case immediately (so we
+// don't burn an R8 cycle first); doFirst still catches packaging tasks reached
+// only as dependencies. Debug builds, unit tests and lint are unaffected.
 if (!releaseSigningConfigured) {
-    gradle.taskGraph.whenReady {
-        val blocked = allTasks.firstOrNull { task ->
-            task.project == project &&
-                task.name.contains("Release") &&
-                (task.name.startsWith("assemble") ||
-                    task.name.startsWith("bundle") ||
-                    task.name.startsWith("package"))
-        }
-        if (blocked != null) {
-            error(
-                "Cannot build a release artifact (task graph reached ${blocked.name}): " +
-                    "no release signing credentials. " +
-                    "Set zapcooking.keystore.path, zapcooking.keystore.password, " +
-                    "zapcooking.key.alias and zapcooking.key.password in local.properties " +
-                    "(or the matching ZAPCOOKING_* environment variables). " +
-                    "See ZAPCOOKING_ANDROID_BUILD.md §\"Release signing\"."
-            )
+    val missingCredentialsMessage =
+        "no release signing credentials. " +
+            "Set zapcooking.keystore.path, zapcooking.keystore.password, " +
+            "zapcooking.key.alias and zapcooking.key.password in local.properties " +
+            "(or the matching ZAPCOOKING_* environment variables). " +
+            "See ZAPCOOKING_ANDROID_BUILD.md §\"Release signing\"."
+
+    fun isReleasePackagingTask(taskName: String): Boolean {
+        val n = taskName.substringAfterLast(':')
+        return n.contains("Release") &&
+            (n.startsWith("assemble") || n.startsWith("bundle") || n.startsWith("package"))
+    }
+
+    // Aggregates that pull in every variant's packaging tasks.
+    fun isReleasePullingAggregate(taskName: String): Boolean {
+        val n = taskName.substringAfterLast(':')
+        return n == "build" || n == "assemble" || n == "bundle" ||
+            n == "assembleRelease" || n == "bundleRelease"
+    }
+
+    val requested = gradle.startParameter.taskNames
+    val blockedRequest = requested.firstOrNull {
+        isReleasePackagingTask(it) || isReleasePullingAggregate(it)
+    }
+    if (blockedRequest != null) {
+        error(
+            "Cannot build a release artifact (requested task $blockedRequest): " +
+                missingCredentialsMessage
+        )
+    }
+
+    tasks.configureEach {
+        if (isReleasePackagingTask(name)) {
+            doFirst {
+                error("Cannot build a release artifact (task $name): $missingCredentialsMessage")
+            }
         }
     }
 }
