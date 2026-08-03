@@ -277,16 +277,34 @@ fun ReactionDetailsSection(
 
         if (hasReposts) {
             SectionLabel("REPOSTS", repostDetails.size)
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+            Row(
+                verticalAlignment = Alignment.Top,
+                modifier = Modifier.padding(vertical = 2.dp),
             ) {
-                repostDetails.forEach { pubkey ->
-                    UserChip(
-                        pubkey = pubkey,
-                        profile = resolveProfile(pubkey),
-                        onProfileClick = onProfileClick,
+                // Repost icon in its own column — matches the emoji column
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier.size(width = 30.dp, height = 32.dp),
+                ) {
+                    Icon(
+                        Icons.Outlined.Repeat,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                        tint = WispThemeColors.repostColor,
                     )
+                }
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.weight(1f),
+                ) {
+                    repostDetails.forEach { pubkey ->
+                        UserChip(
+                            pubkey = pubkey,
+                            profile = resolveProfile(pubkey),
+                            onProfileClick = onProfileClick,
+                        )
+                    }
                 }
             }
         }
