@@ -274,23 +274,12 @@ fun ReactionDetailsSection(
         }
 
         if (hasReposts) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 3.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    Icons.Outlined.Repeat,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp),
-                    tint = WispThemeColors.repostColor
-                )
-                Spacer(Modifier.width(8.dp))
-                StackedAvatarRow(
-                    pubkeys = repostDetails,
-                    resolveProfile = resolveProfile,
-                    onProfileClick = onProfileClick
+            SectionLabel("REPOSTS", repostDetails.size)
+            repostDetails.forEach { pubkey ->
+                EngagementUserRow(
+                    pubkey = pubkey,
+                    profile = resolveProfile(pubkey),
+                    onProfileClick = onProfileClick,
                 )
             }
         }
@@ -303,31 +292,16 @@ fun ReactionDetailsSection(
         }
 
         if (hasReactions) {
+            val totalReactions = reactionDetails.values.sumOf { it.size }
+            SectionLabel("REACTIONS", totalReactions)
             reactionDetails.forEach { (emoji, pubkeys) ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 3.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    val emojiUrl = reactionEmojiUrls[emoji]
-                    if (emojiUrl != null) {
-                        AsyncImage(
-                            model = emojiUrl,
-                            contentDescription = emoji,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    } else {
-                        Text(
-                            text = emoji,
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
-                    Spacer(Modifier.width(8.dp))
-                    StackedAvatarRow(
-                        pubkeys = pubkeys,
-                        resolveProfile = resolveProfile,
-                        onProfileClick = onProfileClick
+                pubkeys.forEach { pubkey ->
+                    EngagementUserRow(
+                        pubkey = pubkey,
+                        profile = resolveProfile(pubkey),
+                        onProfileClick = onProfileClick,
+                        trailingEmoji = emoji,
+                        trailingEmojiUrl = reactionEmojiUrls[emoji],
                     )
                 }
             }
@@ -592,3 +566,70 @@ fun ClientTagSection(
     }
 }
 
+/** Lightweight uppercase section header with a count — "REPOSTS  3", "REACTIONS  8". */
+@Composable
+private fun SectionLabel(label: String, count: Int) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.padding(top = 8.dp, bottom = 2.dp),
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(
+            text = count.toString(),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/** A single user's engagement row — avatar + name (+ optional reaction emoji). */
+@Composable
+private fun EngagementUserRow(
+    pubkey: String,
+    profile: ProfileData?,
+    onProfileClick: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    trailingEmoji: String? = null,
+    trailingEmojiUrl: String? = null,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable { onProfileClick(pubkey) }
+            .padding(vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ProfilePicture(
+            url = profile?.picture,
+            size = 32,
+            onClick = { onProfileClick(pubkey) },
+        )
+        Spacer(Modifier.width(10.dp))
+        Text(
+            text = profile?.displayString
+                ?: pubkey.toNpub().let { "${it.take(12)}…${it.takeLast(4)}" },
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        if (trailingEmoji != null) {
+            if (trailingEmojiUrl != null) {
+                AsyncImage(
+                    model = trailingEmojiUrl,
+                    contentDescription = trailingEmoji,
+                    modifier = Modifier.size(20.dp),
+                )
+            } else {
+                Text(trailingEmoji, style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+    }
+}
