@@ -303,36 +303,38 @@ fun ReactionDetailsSection(
             SectionLabel("REACTIONS", totalReactions)
             reactionDetails.forEach { (emoji, pubkeys) ->
                 Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(top = 4.dp, bottom = 2.dp),
+                    verticalAlignment = Alignment.Top,
+                    modifier = Modifier.padding(vertical = 2.dp),
                 ) {
-                    val emojiUrl = reactionEmojiUrls[emoji]
-                    if (emojiUrl != null) {
-                        AsyncImage(
-                            model = emojiUrl,
-                            contentDescription = emoji,
-                            modifier = Modifier.size(18.dp),
-                        )
-                    } else {
-                        Text(emoji, style = MaterialTheme.typography.bodySmall)
+                    // Emoji in its own fixed-width column
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier.size(width = 30.dp, height = 32.dp),
+                    ) {
+                        val emojiUrl = reactionEmojiUrls[emoji]
+                        if (emojiUrl != null) {
+                            AsyncImage(
+                                model = emojiUrl,
+                                contentDescription = emoji,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        } else {
+                            Text(emoji, style = MaterialTheme.typography.bodySmall)
+                        }
                     }
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        "${pubkeys.size}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    pubkeys.forEach { pubkey ->
-                        UserChip(
-                            pubkey = pubkey,
-                            profile = resolveProfile(pubkey),
-                            onProfileClick = onProfileClick,
-                        )
+                    // Chips flow to the right of the emoji column
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        pubkeys.forEach { pubkey ->
+                            UserChip(
+                                pubkey = pubkey,
+                                profile = resolveProfile(pubkey),
+                                onProfileClick = onProfileClick,
+                            )
+                        }
                     }
                 }
             }
