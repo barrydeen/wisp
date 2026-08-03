@@ -1,5 +1,6 @@
 package cooking.zap.app.ui.component
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
@@ -225,6 +226,7 @@ fun ZapRow(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ReactionDetailsSection(
     reactionDetails: Map<String, List<String>>,
@@ -275,12 +277,17 @@ fun ReactionDetailsSection(
 
         if (hasReposts) {
             SectionLabel("REPOSTS", repostDetails.size)
-            repostDetails.forEach { pubkey ->
-                EngagementUserRow(
-                    pubkey = pubkey,
-                    profile = resolveProfile(pubkey),
-                    onProfileClick = onProfileClick,
-                )
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                repostDetails.forEach { pubkey ->
+                    UserChip(
+                        pubkey = pubkey,
+                        profile = resolveProfile(pubkey),
+                        onProfileClick = onProfileClick,
+                    )
+                }
             }
         }
 
@@ -295,14 +302,38 @@ fun ReactionDetailsSection(
             val totalReactions = reactionDetails.values.sumOf { it.size }
             SectionLabel("REACTIONS", totalReactions)
             reactionDetails.forEach { (emoji, pubkeys) ->
-                pubkeys.forEach { pubkey ->
-                    EngagementUserRow(
-                        pubkey = pubkey,
-                        profile = resolveProfile(pubkey),
-                        onProfileClick = onProfileClick,
-                        trailingEmoji = emoji,
-                        trailingEmojiUrl = reactionEmojiUrls[emoji],
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 2.dp),
+                ) {
+                    val emojiUrl = reactionEmojiUrls[emoji]
+                    if (emojiUrl != null) {
+                        AsyncImage(
+                            model = emojiUrl,
+                            contentDescription = emoji,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    } else {
+                        Text(emoji, style = MaterialTheme.typography.bodySmall)
+                    }
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        "${pubkeys.size}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                }
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    pubkeys.forEach { pubkey ->
+                        UserChip(
+                            pubkey = pubkey,
+                            profile = resolveProfile(pubkey),
+                            onProfileClick = onProfileClick,
+                        )
+                    }
                 }
             }
         }
@@ -588,48 +619,34 @@ private fun SectionLabel(label: String, count: Int) {
     }
 }
 
-/** A single user's engagement row — avatar + name (+ optional reaction emoji). */
+/** Compact avatar + name chip — non-overlapping, wraps in a FlowRow. */
 @Composable
-private fun EngagementUserRow(
+private fun UserChip(
     pubkey: String,
     profile: ProfileData?,
     onProfileClick: (String) -> Unit,
-    modifier: Modifier = Modifier,
-    trailingEmoji: String? = null,
-    trailingEmojiUrl: String? = null,
 ) {
     Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .clickable { onProfileClick(pubkey) }
-            .padding(vertical = 3.dp),
         verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+            .clickable { onProfileClick(pubkey) }
+            .padding(end = 8.dp),
     ) {
         ProfilePicture(
             url = profile?.picture,
-            size = 32,
+            size = 28,
             onClick = { onProfileClick(pubkey) },
         )
-        Spacer(Modifier.width(10.dp))
+        Spacer(Modifier.width(6.dp))
         Text(
             text = profile?.displayString
-                ?: pubkey.toNpub().let { "${it.take(12)}…${it.takeLast(4)}" },
-            style = MaterialTheme.typography.bodyMedium,
+                ?: pubkey.toNpub().let { "${it.take(10)}…${it.takeLast(4)}" },
+            style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
         )
-        if (trailingEmoji != null) {
-            if (trailingEmojiUrl != null) {
-                AsyncImage(
-                    model = trailingEmojiUrl,
-                    contentDescription = trailingEmoji,
-                    modifier = Modifier.size(20.dp),
-                )
-            } else {
-                Text(trailingEmoji, style = MaterialTheme.typography.bodyMedium)
-            }
-        }
     }
 }
