@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import coil3.compose.AsyncImage
 import androidx.compose.ui.platform.LocalContext
+import androidx.annotation.StringRes
 import cooking.zap.app.R
 import cooking.zap.app.ui.util.AmountFormatter
 import cooking.zap.app.nostr.NostrEvent
@@ -276,7 +277,7 @@ fun ReactionDetailsSection(
         }
 
         if (hasReposts) {
-            SectionLabel("REPOSTS", repostDetails.size)
+            SectionLabel(R.string.filter_reposts, repostDetails.size)
             Row(
                 verticalAlignment = Alignment.Top,
                 modifier = Modifier.padding(vertical = 2.dp),
@@ -318,7 +319,7 @@ fun ReactionDetailsSection(
 
         if (hasReactions) {
             val totalReactions = reactionDetails.values.sumOf { it.size }
-            SectionLabel("REACTIONS", totalReactions)
+            SectionLabel(R.string.filter_reactions, totalReactions)
             reactionDetails.forEach { (emoji, pubkeys) ->
                 Row(
                     verticalAlignment = Alignment.Top,
@@ -619,13 +620,13 @@ fun ClientTagSection(
 
 /** Lightweight uppercase section header with a count — "REPOSTS  3", "REACTIONS  8". */
 @Composable
-private fun SectionLabel(label: String, count: Int) {
+private fun SectionLabel(@StringRes labelRes: Int, count: Int) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.padding(top = 8.dp, bottom = 2.dp),
     ) {
         Text(
-            text = label,
+            text = stringResource(labelRes).uppercase(),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontWeight = FontWeight.SemiBold,
@@ -657,7 +658,6 @@ private fun UserChip(
         ProfilePicture(
             url = profile?.picture,
             size = 28,
-            onClick = { onProfileClick(pubkey) },
         )
         Spacer(Modifier.width(6.dp))
         Text(
