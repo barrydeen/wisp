@@ -13,6 +13,23 @@ class InterfacePreferences(context: Context) {
         }
     }
 
+    /** How the notifications list renders each row. */
+    enum class NotificationFeedStyle(val key: String) {
+        /**
+         * Every row renders its detail (referenced note, zap message, poll,
+         * reply composer) inline without a tap — the default.
+         */
+        EXPANDED("expanded"),
+
+        /** One-line rows; tapping opens a single row at a time (accordion). */
+        COMPACT("compact");
+
+        companion object {
+            fun fromKey(key: String?): NotificationFeedStyle =
+                values().firstOrNull { it.key == key } ?: EXPANDED
+        }
+    }
+
     private val prefs = context.getSharedPreferences("wisp_settings", Context.MODE_PRIVATE)
 
     fun getAccentColor(): Int = prefs.getInt("accent_color", 0xFFFF9800.toInt())
@@ -45,6 +62,17 @@ class InterfacePreferences(context: Context) {
         MediaLayoutStyle.fromKey(prefs.getString("media_layout_style", null))
     fun setMediaLayoutStyle(style: MediaLayoutStyle) =
         prefs.edit().putString("media_layout_style", style.key).apply()
+
+    /**
+     * Display density of the notifications list. Defaults to
+     * [NotificationFeedStyle.EXPANDED] so the feed reads end-to-end without
+     * tapping every row; the user can flip back to the accordion from the
+     * notifications top bar or from interface settings.
+     */
+    fun getNotificationFeedStyle(): NotificationFeedStyle =
+        NotificationFeedStyle.fromKey(prefs.getString(KEY_NOTIFICATION_FEED_STYLE, null))
+    fun setNotificationFeedStyle(style: NotificationFeedStyle) =
+        prefs.edit().putString(KEY_NOTIFICATION_FEED_STYLE, style.key).apply()
 
     fun getLanguage(): String = prefs.getString("language", "system") ?: "system"
     fun setLanguage(language: String) = prefs.edit().putString("language", language).apply()
@@ -100,6 +128,12 @@ class InterfacePreferences(context: Context) {
     companion object {
         val postUndoTimerOptions = listOf(5, 10, 15, 20, 30)
         const val QUICK_ZAP_MAX_SATS = 10_000L
+
+        /**
+         * Pref key backing [NotificationFeedStyle]. Public so observers can
+         * filter their `OnSharedPreferenceChangeListener` callbacks by it.
+         */
+        const val KEY_NOTIFICATION_FEED_STYLE = "notification_feed_style"
     }
 
     /** Reset all interface preferences to defaults (called on full logout). */
@@ -118,6 +152,7 @@ class InterfacePreferences(context: Context) {
             .remove("post_undo_timer_for_replies")
             .remove("auto_translate")
             .remove("media_layout_style")
+            .remove(KEY_NOTIFICATION_FEED_STYLE)
             .apply()
     }
 }
