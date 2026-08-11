@@ -196,6 +196,7 @@ fun InterfaceScreen(
     var videoAutoPlay by remember { mutableStateOf(interfacePrefs.isVideoAutoPlay()) }
     var mediaLayout by remember { mutableStateOf(interfacePrefs.getMediaLayoutStyle()) }
     var liveStreamsHidden by remember { mutableStateOf(interfacePrefs.isLiveStreamsHidden()) }
+    var notifFeedStyle by remember { mutableStateOf(interfacePrefs.getNotificationFeedStyle()) }
     var autoTranslate by remember { mutableStateOf(interfacePrefs.isAutoTranslate()) }
     var selectedTheme by remember { mutableStateOf(interfacePrefs.getTheme()) }
     var isCustomTheme by remember { mutableStateOf(selectedTheme == "custom") }
@@ -664,6 +665,47 @@ fun InterfaceScreen(
                     },
                     colors = wispSwitchColors()
                 )
+            }
+
+            Spacer(Modifier.height(24.dp))
+
+            // Notifications section
+            Text(
+                text = stringResource(R.string.settings_notifications),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(Modifier.height(8.dp))
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.settings_notif_list_style), style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    stringResource(R.string.settings_notif_list_style_description),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(8.dp))
+                val notifStyleOptions = listOf(
+                    InterfacePreferences.NotificationFeedStyle.EXPANDED to R.string.settings_notif_list_style_expanded,
+                    InterfacePreferences.NotificationFeedStyle.COMPACT to R.string.settings_notif_list_style_compact
+                )
+                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                    notifStyleOptions.forEachIndexed { index, (style, labelRes) ->
+                        SegmentedButton(
+                            selected = notifFeedStyle == style,
+                            onClick = {
+                                notifFeedStyle = style
+                                interfacePrefs.setNotificationFeedStyle(style)
+                                onChanged()
+                            },
+                            shape = SegmentedButtonDefaults.itemShape(
+                                index = index,
+                                count = notifStyleOptions.size
+                            )
+                        ) {
+                            Text(stringResource(labelRes))
+                        }
+                    }
+                }
             }
 
             // Translation section — hidden until translation is reliably enabled.
