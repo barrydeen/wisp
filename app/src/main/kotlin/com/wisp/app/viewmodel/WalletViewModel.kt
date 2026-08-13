@@ -102,6 +102,7 @@ sealed class WalletPage {
     object SparkSetup : WalletPage()
     object SparkRestoreSeed : WalletPage()
     data class SparkBackup(val mnemonic: String) : WalletPage()
+    data class NwcExport(val connectionString: String) : WalletPage()
     object SendInput : WalletPage()
     object ScanQR : WalletPage()
     data class SendAmount(val address: String) : WalletPage()
@@ -831,6 +832,11 @@ class WalletViewModel(
     fun showMnemonicBackup() {
         val mnemonic = sparkRepo.getMnemonic() ?: return
         navigateTo(WalletPage.SparkBackup(mnemonic))
+    }
+
+    fun showNwcExport() {
+        val uri = nwcRepo.getConnectionString() ?: return
+        navigateTo(WalletPage.NwcExport(uri))
     }
 
     fun acknowledgeSeedBackup() {

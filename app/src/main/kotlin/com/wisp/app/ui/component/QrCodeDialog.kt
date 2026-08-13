@@ -186,9 +186,16 @@ fun QrCodeDialog(pubkeyHex: String, avatarUrl: String? = null, onDismiss: () -> 
     }
 }
 
-/** Generate a QR bitmap with high error correction (supports center overlay). */
-internal fun generateQrBitmap(content: String, size: Int = 512): Bitmap {
-    val hints = mapOf(EncodeHintType.ERROR_CORRECTION to ErrorCorrectionLevel.H)
+/** Generate a QR bitmap. Defaults to high error correction (supports a center
+ *  overlay); pass a lower level for long payloads (e.g. NWC connection URIs)
+ *  where high correction pushes module density past what on-screen scanning
+ *  handles comfortably. */
+internal fun generateQrBitmap(
+    content: String,
+    size: Int = 512,
+    errorCorrection: ErrorCorrectionLevel = ErrorCorrectionLevel.H
+): Bitmap {
+    val hints = mapOf(EncodeHintType.ERROR_CORRECTION to errorCorrection)
     val writer = QRCodeWriter()
     val matrix = writer.encode(content, BarcodeFormat.QR_CODE, size, size, hints)
     val bitmap = Bitmap.createBitmap(matrix.width, matrix.height, Bitmap.Config.RGB_565)

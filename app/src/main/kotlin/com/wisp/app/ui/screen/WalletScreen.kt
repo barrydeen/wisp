@@ -84,6 +84,8 @@ import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.QrCode
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.Refresh
@@ -162,6 +164,8 @@ import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
+import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
+import com.wisp.app.ui.component.generateQrBitmap
 import com.wisp.app.BuildConfig
 import com.wisp.app.R
 import com.wisp.app.repo.BalanceUnit
@@ -384,6 +388,21 @@ fun WalletScreen(
                             )
                         }
                     }
+                    is WalletPage.NwcExport -> {
+                        val page = currentPage as WalletPage.NwcExport
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(padding)
+                                .padding(horizontal = 16.dp)
+                                .verticalScroll(rememberScrollState())
+                        ) {
+                            NwcExportContent(
+                                connectionString = page.connectionString,
+                                onDone = { viewModel.navigateBack() }
+                            )
+                        }
+                    }
                     is WalletPage.Home -> {
                         // Preload recent transactions for the inline footer.
                         LaunchedEffect(walletState) {
@@ -568,6 +587,7 @@ fun WalletScreen(
                             viewModel.resetBackupStatus()
                             viewModel.navigateTo(WalletPage.BackupToRelay)
                         },
+                        onExportConnectionString = { viewModel.showNwcExport() },
                         onDeleteWallet = { viewModel.navigateTo(WalletPage.DeleteWalletConfirm) },
                         relayBackupStatuses = viewModel.relayBackupStatuses.collectAsState().value,
                         relayBackupCheckLoading = viewModel.relayBackupCheckLoading.collectAsState().value,
@@ -3973,6 +3993,213 @@ private fun SparkBackupContent(
     Spacer(Modifier.height(32.dp))
 }
 
+// --- NWC connection string export ---
+
+@Composable
+private fun NwcExportContent(
+    connectionString: String,
+    onDone: () -> Unit
+) {
+    val clipboardManager = LocalClipboardManager.current
+    var copied by remember { mutableStateOf(false) }
+    var revealed by remember { mutableStateOf(false) }
+    var showQr by remember { mutableStateOf(false) }
+    val zapColor = com.wisp.app.ui.theme.WispThemeColors.zapColor
+
+    Spacer(Modifier.height(16.dp))
+
+    Text(
+        "Connection String",
+        style = MaterialTheme.typography.headlineSmall,
+        color = MaterialTheme.colorScheme.onSurface
+    )
+    Spacer(Modifier.height(8.dp))
+
+    // Warning card — mirrors wisp-ios NwcConnectionStringView.
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = zapColor.copy(alpha = 0.12f)
+        )
+    ) {
+        Row(
+            modifier = Modifier.padding(14.dp),
+            verticalAlignment = Alignment.Top
+        ) {
+            Icon(
+                Icons.Outlined.Warning,
+                contentDescription = null,
+                tint = zapColor,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(Modifier.width(10.dp))
+            Column {
+                Text(
+                    "Keep this string secret",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Anyone with this connection string can spend from your wallet, up to whatever limits your wallet provider set. Only paste it into apps you trust.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+
+    Spacer(Modifier.height(24.dp))
+
+    if (revealed) {
+        // The raw URI, shown sharp once revealed.
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        ) {
+            Text(
+                connectionString,
+                style = MaterialTheme.typography.bodyMedium,
+                fontFamily = FontFamily.Monospace,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(16.dp)
+            )
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        // Copy + Hide (mirrors iOS: only offered once revealed).
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            OutlinedButton(
+                onClick = {
+                    clipboardManager.setText(AnnotatedString(connectionString))
+                    copied = true
+                },
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(
+                    if (copied) Icons.Default.Check else Icons.Default.ContentCopy,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(if (copied) "Copied ✓" else "Copy")
+            }
+            OutlinedButton(
+                onClick = {
+                    revealed = false
+                    showQr = false
+                },
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(
+                    Icons.Default.VisibilityOff,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("Hide")
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        // Show / Hide QR code toggle.
+        OutlinedButton(
+            onClick = { showQr = !showQr },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Icon(
+                Icons.Default.QrCode,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(if (showQr) "Hide QR code" else "Show QR code")
+        }
+
+        if (showQr) {
+            Spacer(Modifier.height(12.dp))
+            // NWC URIs are long, so error correction stays at M — higher levels
+            // push the module density past what on-screen scanning handles.
+            val qrBitmap = remember(connectionString) {
+                generateQrBitmap(connectionString, errorCorrection = ErrorCorrectionLevel.M)
+            }
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = Color.White
+                )
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(20.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Image(
+                        bitmap = qrBitmap.asImageBitmap(),
+                        contentDescription = "Connection string QR code",
+                        modifier = Modifier.size(240.dp)
+                    )
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Scan from another wallet-connect app to import this connection.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    } else {
+        // Tap to reveal — the string stays hidden until an explicit tap.
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { revealed = true },
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Icon(
+                    Icons.Outlined.Visibility,
+                    contentDescription = "Reveal connection string",
+                    modifier = Modifier.size(32.dp),
+                    tint = zapColor
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Tap to reveal",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+        }
+    }
+
+    Spacer(Modifier.height(24.dp))
+
+    Button(
+        onClick = onDone,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text("Done")
+    }
+
+    Spacer(Modifier.height(32.dp))
+}
+
 // --- Wallet Settings ---
 
 @Composable
@@ -3987,6 +4214,7 @@ private fun WalletSettingsContent(
     onDeleteAddress: () -> Unit = {},
     onBackupMnemonic: () -> Unit,
     onBackupToRelay: () -> Unit = {},
+    onExportConnectionString: () -> Unit = {},
     onDeleteWallet: () -> Unit,
     relayBackupStatuses: List<RelayBackupInfo> = emptyList(),
     relayBackupCheckLoading: Boolean = false,
@@ -4246,6 +4474,48 @@ private fun WalletSettingsContent(
             // wallets can still tap "Backup to Nostr Relays" above; the
             // status / delete plumbing in WalletViewModel stays alive in
             // case we want to surface it again later.
+        } else if (walletMode == WalletMode.NWC) {
+            val zapColor = com.wisp.app.ui.theme.WispThemeColors.zapColor
+            Card(
+                onClick = onExportConnectionString,
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Outlined.VpnKey,
+                        contentDescription = null,
+                        tint = zapColor,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Connection string",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            "View, copy, or scan to move this wallet to another app",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Icon(
+                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.outline,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
         }
 
         // Disclaimer
