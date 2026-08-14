@@ -187,7 +187,16 @@ fun GoogleAuthScreen(
                     )
                     Spacer(Modifier.height(24.dp))
                     Button(
-                        onClick = { viewModel.reset() },
+                        // reset() alone only returns us to Idle, and the
+                        // LaunchedEffect(Unit) above does not re-fire on a state
+                        // change — so Retry has to start the flow itself or it
+                        // strands the member on the "Starting…" spinner.
+                        onClick = {
+                            val activity = context as? ComponentActivity ?: return@Button
+                            Log.d(TAG, "retry tapped")
+                            viewModel.reset()
+                            viewModel.beginSignIn(activity, webClientId)
+                        },
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(stringResource(R.string.btn_retry))

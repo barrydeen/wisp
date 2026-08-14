@@ -8,14 +8,18 @@ import androidx.activity.ComponentActivity
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.credentials.CredentialManager
+import androidx.credentials.CredentialOption
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
+import androidx.credentials.GetCredentialResponse
 import androidx.credentials.exceptions.GetCredentialException
+import androidx.credentials.exceptions.NoCredentialException
 import com.google.android.gms.auth.GoogleAuthUtil
 import com.google.android.gms.auth.api.identity.AuthorizationRequest
 import com.google.android.gms.auth.api.identity.Identity
 import com.google.android.gms.common.api.Scope
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
+import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.android.libraries.identity.googleid.GoogleIdTokenParsingException
 import kotlinx.coroutines.Dispatchers
@@ -30,8 +34,10 @@ import kotlin.coroutines.suspendCoroutine
 
 /**
  * Two-step Google sign-in:
- *   1. Credential Manager returns a GoogleIdTokenCredential. We pull the `sub`
- *      claim out of its signed JWT — that's the stable Google account ID
+ *   1. Credential Manager returns a GoogleIdTokenCredential — the one-tap sheet
+ *      first, escalating to the Sign in with Google button flow when that has
+ *      no credential to offer (see [shouldFallBackToButtonFlow]). We pull the
+ *      `sub` claim out of its signed JWT — that's the stable Google account ID
  *      (`GoogleIdTokenCredential.id` is the email, which can change for
  *      workspace renames). Play Services has already validated the JWT, so we
  *      only decode it; we don't re-verify the signature.
@@ -58,20 +64,28 @@ class GoogleSignInManager(
     }
 
     private suspend fun getGoogleSubFromCredentialManager(activity: ComponentActivity): String {
-        val option = GetGoogleIdOption.Builder()
+        val idOption = GetGoogleIdOption.Builder()
             .setServerClientId(webClientId)
             .setFilterByAuthorizedAccounts(false)
             .setAutoSelectEnabled(false)
             .build()
 
-        val request = GetCredentialRequest.Builder()
-            .addCredentialOption(option)
-            .build()
-
         val response = try {
-            credentialManager.getCredential(activity, request)
+            requestCredential(activity, idOption)
         } catch (e: GetCredentialException) {
-            throw GoogleSignInException("Google sign-in cancelled or unavailable: ${e.message}", e)
+            if (!shouldFallBackToButtonFlow(e)) {
+                throw GoogleSignInException("Google sign-in cancelled or unavailable: ${e.message}", e)
+            }
+            Log.i(TAG, "GetGoogleIdOption returned no credential; retrying with the Sign in with Google button flow", e)
+            val buttonOption = GetSignInWithGoogleOption.Builder(webClientId).build()
+            try {
+                requestCredential(activity, buttonOption)
+            } catch (fallback: GetCredentialException) {
+                throw GoogleSignInException(
+                    "Google sign-in cancelled or unavailable: ${fallback.message}",
+                    fallback
+                )
+            }
         }
 
         val credential = response.credential
@@ -87,6 +101,16 @@ class GoogleSignInManager(
             throw GoogleSignInException("Failed to parse Google ID token", e)
         }
         return extractSubFromJwt(parsed.idToken)
+    }
+
+    private suspend fun requestCredential(
+        activity: ComponentActivity,
+        option: CredentialOption
+    ): GetCredentialResponse {
+        val request = GetCredentialRequest.Builder()
+            .addCredentialOption(option)
+            .build()
+        return credentialManager.getCredential(activity, request)
     }
 
     private fun extractSubFromJwt(idToken: String): String {
@@ -188,3 +212,24 @@ class GoogleSignInManager(
 }
 
 class GoogleSignInException(message: String, cause: Throwable? = null) : Exception(message, cause)
+
+/**
+ * Decides whether a failed `GetGoogleIdOption` request should escalate to
+ * [GetSignInWithGoogleOption].
+ *
+ * `GetGoogleIdOption` drives Credential Manager's one-tap bottom sheet, which
+ * reports [NoCredentialException] — surfaced to the member as "No credentials
+ * available" — in cases that have nothing to do with whether the device holds a
+ * Google account: the account has never authorised this app, or the sheet is
+ * inside the suppression window that follows repeated dismissals.
+ * [GetSignInWithGoogleOption] is the branded button flow. It always presents
+ * the full account picker and is the option Google documents for an explicit
+ * "Sign in with Google" tap, which is exactly our entry point (Continue with
+ * Google, on the splash screen). It yields the same
+ * `TYPE_GOOGLE_ID_TOKEN_CREDENTIAL` credential, so nothing downstream changes.
+ *
+ * Only the no-credential case escalates. Every other [GetCredentialException]
+ * — cancellation above all — is a real answer, and a second dialog on top of a
+ * member who just declined one is worse than failing.
+ */
+internal fun shouldFallBackToButtonFlow(e: GetCredentialException): Boolean = e is NoCredentialException
