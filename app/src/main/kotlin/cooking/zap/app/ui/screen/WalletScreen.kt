@@ -183,6 +183,7 @@ import cooking.zap.app.repo.CurrencyPreferences
 import cooking.zap.app.repo.ExchangeRateRepository
 import cooking.zap.app.repo.WalletMode
 import cooking.zap.app.repo.WalletTransaction
+import cooking.zap.app.ui.component.BrantaBadge
 import cooking.zap.app.ui.component.NsecPasteGuard
 import cooking.zap.app.ui.component.SatsNumpad
 import cooking.zap.app.ui.util.AmountFormatter
@@ -1703,6 +1704,9 @@ private fun SendInputContent(
             )
         }
 
+        // Branta Guardrail — verify the pasted/scanned destination inline.
+        BrantaBadge(paymentString = input)
+
         if (error != null) {
             Spacer(Modifier.height(8.dp))
             Text(
@@ -1991,6 +1995,10 @@ private fun SendConfirmContent(
                 )
             }
         }
+
+        // Branta Guardrail — shows a "Verified by Branta" badge when the invoice
+        // is registered. Renders nothing if unregistered (absence ≠ malicious).
+        BrantaBadge(paymentString = invoice)
 
         if (description != null) {
             Spacer(Modifier.height(12.dp))
