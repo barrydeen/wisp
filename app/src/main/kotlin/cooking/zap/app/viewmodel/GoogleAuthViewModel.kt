@@ -84,7 +84,16 @@ class GoogleAuthViewModel(app: Application) : AndroidViewModel(app) {
         data class Choose(val backups: List<BackupSummary>) : State()
         object Working : State()
         data class Done(val isNewAccount: Boolean) : State()
-        data class Error(val message: String) : State()
+
+        /**
+         * @param message the underlying failure text, shown to the member as-is.
+         * @param duringSignIn whether the flow died before Google sign-in
+         *   completed. Only then may the screen headline the card "Google
+         *   sign-in didn't go through" — every other producer of this state
+         *   (PIN, restore, create, and the Drive listing) runs after the member
+         *   has already signed in, so the default is the claim we cannot make.
+         */
+        data class Error(val message: String, val duringSignIn: Boolean = false) : State()
     }
 
     private val _state = MutableStateFlow<State>(State.Idle)
@@ -125,13 +134,28 @@ class GoogleAuthViewModel(app: Application) : AndroidViewModel(app) {
                 }
             } catch (e: GoogleSignInException) {
                 Log.w(TAG, "GoogleSignInException", e)
-                _state.value = State.Error(e.message ?: "Google sign-in failed.")
+                _state.value = State.Error(
+                    e.message ?: "Google sign-in failed.",
+                    duringSignIn = signInPending()
+                )
             } catch (e: Exception) {
                 Log.w(TAG, "Exception during sign-in flow", e)
-                _state.value = State.Error(e.message ?: "Something went wrong.")
+                _state.value = State.Error(
+                    e.message ?: "Something went wrong.",
+                    duringSignIn = signInPending()
+                )
             }
         }
     }
+
+    /**
+     * Whether we were still signing in when a throw reached [beginSignIn]'s
+     * catches. Both of them span two phases — `manager.signIn`, then the Drive
+     * listing that follows it — and either phase can raise either exception
+     * type, so the type does not say which one failed. The state does:
+     * [State.CheckingDrive] means sign-in already succeeded.
+     */
+    private fun signInPending(): Boolean = _state.value is State.SigningIn
 
     fun submitRestorePin(pin: String, activity: ComponentActivity) {
         if (!BackupCrypto.isValidPin(pin)) return

@@ -179,10 +179,36 @@ fun GoogleAuthScreen(
                 )
 
                 is GoogleAuthViewModel.State.Error -> {
+                    // The provider's text is the only thing this card used to
+                    // say, and it is written for us, not for a member: it
+                    // reports "cancelled" for failures nobody caused and can
+                    // name a reverse-DNS credential type. It stays — it is what
+                    // let us find the mechanism behind the original report —
+                    // but it is demoted under a headline that is true of every
+                    // branch. Only under a sign-in failure, though: this same
+                    // state also carries PIN, restore, create and Drive-listing
+                    // failures, which happen after the member has signed in.
+                    if (s.duringSignIn) {
+                        Text(
+                            text = stringResource(R.string.google_auth_error_headline),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.error,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(Modifier.height(8.dp))
+                    }
                     Text(
                         text = s.message,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.error,
+                        style = if (s.duringSignIn) {
+                            MaterialTheme.typography.bodySmall
+                        } else {
+                            MaterialTheme.typography.bodyMedium
+                        },
+                        color = if (s.duringSignIn) {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        } else {
+                            MaterialTheme.colorScheme.error
+                        },
                         textAlign = TextAlign.Center
                     )
                     Spacer(Modifier.height(24.dp))
