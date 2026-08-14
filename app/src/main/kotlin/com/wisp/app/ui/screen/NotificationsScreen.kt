@@ -45,6 +45,8 @@ import androidx.compose.material.icons.outlined.AddReaction
 import androidx.compose.material.icons.outlined.MailOutline
 import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.outlined.UnfoldLess
+import androidx.compose.material.icons.outlined.UnfoldMore
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import com.wisp.app.ui.component.EmojiReactionPopup
@@ -98,6 +100,7 @@ import com.wisp.app.nostr.NotificationSummary
 import com.wisp.app.nostr.NotificationType
 import com.wisp.app.nostr.ProfileData
 import com.wisp.app.repo.EventRepository
+import com.wisp.app.repo.InterfacePreferences
 import com.wisp.app.repo.Nip05Repository
 import com.wisp.app.repo.TranslationRepository
 import com.wisp.app.ui.component.GalleryCard
@@ -201,8 +204,12 @@ fun NotificationsScreen(
     var showFilterSheet by remember { mutableStateOf(false) }
     val profileVersion = eventRepo?.profileVersion?.collectAsState()?.value ?: 0
 
-    // Track which notification is expanded (only one at a time)
-    var expandedId by rememberSaveable { mutableStateOf<String?>(null) }
+    // Row expansion lives on the view model, which resolves each row against
+    // the current feed style — expanded-by-default, or the one-at-a-time
+    // accordion. See NotificationsViewModel.isRowExpanded.
+    val feedStyle by viewModel.feedStyle.collectAsState()
+    val collapsedIds by viewModel.collapsedItemIds.collectAsState()
+    val expandedId by viewModel.expandedItemId.collectAsState()
 
     // Track inline replies sent by user: replyEventId -> list of sent content strings
     var inlineReplies by remember { mutableStateOf(mapOf<String, List<String>>()) }
@@ -309,12 +316,15 @@ fun NotificationsScreen(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             stringResource(R.string.nav_notifications),
-                            style = MaterialTheme.typography.titleMedium
+                            style = MaterialTheme.typography.titleMedium,
+                            maxLines = 1
                         )
                         Text(
-                            text = "  |  24h",
+                            text = " · 24h",
                             style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                            maxLines = 1,
+                            softWrap = false
                         )
                     }
                 },
@@ -324,6 +334,19 @@ fun NotificationsScreen(
                     }
                 },
                 actions = {
+                    val isExpandedFeed = feedStyle == InterfacePreferences.NotificationFeedStyle.EXPANDED
+                    IconButton(onClick = {
+                        viewModel.setFeedStyle(
+                            if (isExpandedFeed) InterfacePreferences.NotificationFeedStyle.COMPACT
+                            else InterfacePreferences.NotificationFeedStyle.EXPANDED
+                        )
+                    }) {
+                        Icon(
+                            if (isExpandedFeed) Icons.Outlined.UnfoldLess else Icons.Outlined.UnfoldMore,
+                            contentDescription = if (isExpandedFeed) stringResource(R.string.cd_notif_style_compact)
+                                                 else stringResource(R.string.cd_notif_style_expanded)
+                        )
+                    }
                     val allEnabled = enabledTypes.size == NotificationFilter.entries.size && chatRoomsEnabled
                     IconButton(onClick = { showFilterSheet = true }) {
                         Icon(
@@ -387,7 +410,7 @@ fun NotificationsScreen(
                     )
                 }
                 itemsIndexed(items = notifications, key = { _, it -> it.id }, contentType = { _, _ -> "notification" }) { index, item ->
-                    val isExpanded = expandedId == item.id
+                    val isExpanded = viewModel.isRowExpanded(item, feedStyle, collapsedIds, expandedId)
                     val itemIndex = index + 1 // +1 for summary header
                     val coroutineScope = rememberCoroutineScope()
                     ZenNotificationRow(
@@ -405,7 +428,7 @@ fun NotificationsScreen(
                             if (item.type == NotificationType.DM_REACTION && item.dmPeerPubkey != null) {
                                 onDmConversationClick(item.dmPeerPubkey)
                             } else {
-                                expandedId = if (isExpanded) null else item.id
+                                viewModel.toggleRowExpansion(item)
                             }
                         },
                         onProfileClick = onProfileClick,

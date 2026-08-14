@@ -2,6 +2,7 @@ package com.wisp.app.viewmodel
 
 import android.app.Application
 import android.content.Context
+import android.content.SharedPreferences
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -23,6 +24,7 @@ import com.wisp.app.relay.RelayPool
 import com.wisp.app.repo.ContactRepository
 import com.wisp.app.repo.DmRepository
 import com.wisp.app.repo.EventRepository
+import com.wisp.app.repo.InterfacePreferences
 import com.wisp.app.repo.KeyRepository
 import com.wisp.app.repo.MentionCandidate
 import com.wisp.app.repo.MentionSearchRepository
@@ -129,6 +131,109 @@ class NotificationsViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _mentionCandidates = MutableStateFlow<List<MentionCandidate>>(emptyList())
     val mentionCandidates: StateFlow<List<MentionCandidate>> = _mentionCandidates
+
+    // ── Row expansion / feed style ──────────────────────────────────────
+
+    private val interfacePrefs = InterfacePreferences(app)
+
+    private val _feedStyle = MutableStateFlow(interfacePrefs.getNotificationFeedStyle())
+    val feedStyle: StateFlow<InterfacePreferences.NotificationFeedStyle> = _feedStyle
+
+    /**
+     * Rows the user manually folded shut while the feed is
+     * [InterfacePreferences.NotificationFeedStyle.EXPANDED] — the inverse of
+     * [expandedItemId], and without the accordion constraint, so collapsing one
+     * row leaves the rest open. Session-only: what persists is the style
+     * itself, not per-row state.
+     */
+    private val _collapsedItemIds = MutableStateFlow<Set<String>>(emptySet())
+    val collapsedItemIds: StateFlow<Set<String>> = _collapsedItemIds
+
+    /**
+     * Id of the single open row while the feed is
+     * [InterfacePreferences.NotificationFeedStyle.COMPACT] (or of the open DM
+     * row in either style), or null when none is open — opening one closes any
+     * other.
+     */
+    private val _expandedItemId = MutableStateFlow<String?>(null)
+    val expandedItemId: StateFlow<String?> = _expandedItemId
+
+    /**
+     * Interface settings writes the style straight to prefs, so mirror it back
+     * into [feedStyle] rather than leaving this view model — which outlives the
+     * notifications screen — holding the value from when it was created.
+     */
+    private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == InterfacePreferences.KEY_NOTIFICATION_FEED_STYLE) {
+            val style = interfacePrefs.getNotificationFeedStyle()
+            if (style != _feedStyle.value) applyFeedStyle(style)
+        }
+    }
+
+    init {
+        settingsPrefs.registerOnSharedPreferenceChangeListener(prefsListener)
+    }
+
+    override fun onCleared() {
+        settingsPrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
+        super.onCleared()
+    }
+
+    /**
+     * Whether [item]'s detail should render. Resolved against state the caller
+     * has already collected ([feedStyle], [collapsedItemIds], [expandedItemId])
+     * so rows recompose when any of it changes.
+     *
+     * In EXPANDED every row is open unless the user folded it shut; in COMPACT
+     * only the accordion's single open row is.
+     */
+    fun isRowExpanded(
+        item: FlatNotificationItem,
+        style: InterfacePreferences.NotificationFeedStyle,
+        collapsedIds: Set<String>,
+        expandedId: String?
+    ): Boolean =
+        if (style == InterfacePreferences.NotificationFeedStyle.EXPANDED && autoExpands(item)) {
+            item.id !in collapsedIds
+        } else {
+            expandedId == item.id
+        }
+
+    /** Flip [item]'s open/closed state within the current style. */
+    fun toggleRowExpansion(item: FlatNotificationItem) {
+        if (_feedStyle.value == InterfacePreferences.NotificationFeedStyle.EXPANDED && autoExpands(item)) {
+            val collapsed = _collapsedItemIds.value
+            _collapsedItemIds.value =
+                if (item.id in collapsed) collapsed - item.id else collapsed + item.id
+        } else {
+            _expandedItemId.value = if (_expandedItemId.value == item.id) null else item.id
+        }
+    }
+
+    /**
+     * Switch list density and persist it. Per-row overrides accumulated under
+     * the previous style are dropped so the new style starts from its own
+     * baseline (everything open / everything closed).
+     */
+    fun setFeedStyle(style: InterfacePreferences.NotificationFeedStyle) {
+        if (style == _feedStyle.value) return
+        applyFeedStyle(style)
+        interfacePrefs.setNotificationFeedStyle(style)
+    }
+
+    private fun applyFeedStyle(style: InterfacePreferences.NotificationFeedStyle) {
+        _feedStyle.value = style
+        _collapsedItemIds.value = emptySet()
+        _expandedItemId.value = null
+    }
+
+    /**
+     * DM rows stay shut until tapped even in the expanded feed: their expansion
+     * is a live conversation with its own composer, so opening every one at
+     * once would stack the screen with message threads and text fields.
+     */
+    private fun autoExpands(item: FlatNotificationItem): Boolean =
+        item.type != NotificationType.DM
 
     fun init(
         notificationRepository: NotificationRepository,
