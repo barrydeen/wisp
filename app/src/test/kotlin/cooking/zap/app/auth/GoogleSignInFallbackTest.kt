@@ -6,7 +6,9 @@ import androidx.credentials.exceptions.GetCredentialProviderConfigurationExcepti
 import androidx.credentials.exceptions.GetCredentialUnknownException
 import androidx.credentials.exceptions.GetCredentialUnsupportedException
 import androidx.credentials.exceptions.NoCredentialException
+import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -62,5 +64,46 @@ class GoogleSignInFallbackTest {
     @Test
     fun `provider misconfiguration does not escalate`() {
         assertFalse(shouldFallBackToButtonFlow(GetCredentialProviderConfigurationException()))
+    }
+
+    @Test
+    fun `the one-tap credential type is accepted`() {
+        assertTrue(
+            isGoogleIdTokenCredentialType(GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL)
+        )
+    }
+
+    @Test
+    fun `the button-flow credential subtype is accepted`() {
+        assertTrue(
+            isGoogleIdTokenCredentialType(
+                GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_SIWG_CREDENTIAL
+            )
+        )
+    }
+
+    @Test
+    fun `the two accepted types are actually different strings`() {
+        // Guards the test above from passing vacuously if the library ever
+        // collapses the two constants onto one value.
+        assertNotEquals(
+            GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL,
+            GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_SIWG_CREDENTIAL
+        )
+    }
+
+    @Test
+    fun `a passkey credential type is not accepted`() {
+        assertFalse(isGoogleIdTokenCredentialType("androidx.credentials.TYPE_PUBLIC_KEY_CREDENTIAL"))
+    }
+
+    @Test
+    fun `a password credential type is not accepted`() {
+        assertFalse(isGoogleIdTokenCredentialType("android.credentials.TYPE_PASSWORD_CREDENTIAL"))
+    }
+
+    @Test
+    fun `an empty credential type is not accepted`() {
+        assertFalse(isGoogleIdTokenCredentialType(""))
     }
 }

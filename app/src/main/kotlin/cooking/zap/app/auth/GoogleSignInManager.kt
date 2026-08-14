@@ -89,9 +89,7 @@ class GoogleSignInManager(
         }
 
         val credential = response.credential
-        if (credential !is CustomCredential ||
-            credential.type != GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
-        ) {
+        if (credential !is CustomCredential || !isGoogleIdTokenCredentialType(credential.type)) {
             throw GoogleSignInException("Unexpected credential type: ${credential.javaClass.simpleName}")
         }
 
@@ -225,11 +223,35 @@ class GoogleSignInException(message: String, cause: Throwable? = null) : Excepti
  * [GetSignInWithGoogleOption] is the branded button flow. It always presents
  * the full account picker and is the option Google documents for an explicit
  * "Sign in with Google" tap, which is exactly our entry point (Continue with
- * Google, on the splash screen). It yields the same
- * `TYPE_GOOGLE_ID_TOKEN_CREDENTIAL` credential, so nothing downstream changes.
+ * Google, on the splash screen). It requests the same
+ * `TYPE_GOOGLE_ID_TOKEN_CREDENTIAL` credential, so nothing downstream changes
+ * (see [isGoogleIdTokenCredentialType] for the one caveat on what comes back).
  *
  * Only the no-credential case escalates. Every other [GetCredentialException]
  * — cancellation above all — is a real answer, and a second dialog on top of a
  * member who just declined one is worse than failing.
  */
 internal fun shouldFallBackToButtonFlow(e: GetCredentialException): Boolean = e is NoCredentialException
+
+/**
+ * Whether a returned [CustomCredential] carries a Google ID token we can parse.
+ *
+ * Both request options — [GetGoogleIdOption] and [GetSignInWithGoogleOption] —
+ * ask for `TYPE_GOOGLE_ID_TOKEN_CREDENTIAL` (identical string, read out of both
+ * classes in `googleid` 1.1.1), so that is the type we expect on either path.
+ * But the credential is minted by the Play Services APK on the device, not by
+ * the client library, and `googleid` also declares a public
+ * `TYPE_GOOGLE_ID_TOKEN_SIWG_CREDENTIAL` that nothing in the library itself
+ * references. We cannot rule out a provider build labelling the button-flow
+ * credential with it, and an exact-match check would then fail *after* the
+ * member has already picked an account — the worst place to fail.
+ *
+ * Accepting both is safe because the type is not what makes the credential
+ * readable: `GoogleIdTokenCredential.createFrom` reads only the `BUNDLE_KEY_*`
+ * entries and never looks at the type or the subtype key. A bundle without an
+ * ID token throws [GoogleIdTokenParsingException] either way, which the caller
+ * already handles.
+ */
+internal fun isGoogleIdTokenCredentialType(type: String): Boolean =
+    type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL ||
+        type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_SIWG_CREDENTIAL
