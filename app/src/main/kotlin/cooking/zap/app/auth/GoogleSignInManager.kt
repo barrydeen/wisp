@@ -90,7 +90,12 @@ class GoogleSignInManager(
 
         val credential = response.credential
         if (credential !is CustomCredential || !isGoogleIdTokenCredentialType(credential.type)) {
-            throw GoogleSignInException("Unexpected credential type: ${credential.javaClass.simpleName}")
+            // The type string, not the class name: every custom credential is a
+            // `CustomCredential`, so the class tells us nothing, and a provider
+            // minting a type we don't know about is the one case this branch
+            // exists to catch. `type` is declared on the base `Credential`, so
+            // it reads on the `!is CustomCredential` arm too.
+            throw GoogleSignInException("Unexpected credential type: ${credential.type}")
         }
 
         val parsed = try {
