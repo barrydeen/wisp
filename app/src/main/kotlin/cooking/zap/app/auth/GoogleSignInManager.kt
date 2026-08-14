@@ -22,6 +22,7 @@ import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.android.libraries.identity.googleid.GoogleIdTokenParsingException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
@@ -160,7 +161,31 @@ class GoogleSignInManager(
         return getDriveAccessToken(activity)
     }
 
-    private suspend fun getDriveAccessToken(activity: ComponentActivity): String {
+    /**
+     * The Drive-authorization half of [signIn], and the sole entry point to it
+     * — [resolveAuthorization] is reached only from here.
+     *
+     * Everything that escapes is a [DriveAuthorizationException], including
+     * whatever `authorize()` itself raises. That is the whole point of the
+     * wrapper: this step runs under the same `SigningIn` state as the
+     * credential step, so the exception type is the only thing that can tell
+     * a caller the member's Google sign-in actually succeeded and it was the
+     * Drive grant that failed.
+     */
+    private suspend fun getDriveAccessToken(activity: ComponentActivity): String =
+        try {
+            requestDriveAccessToken(activity)
+        } catch (e: CancellationException) {
+            // Never re-type a cancellation: the catch below would turn the
+            // coroutine's own teardown into a member-visible failure.
+            throw e
+        } catch (e: DriveAuthorizationException) {
+            throw e
+        } catch (e: Exception) {
+            throw DriveAuthorizationException("Google Drive authorization failed: ${e.message}", e)
+        }
+
+    private suspend fun requestDriveAccessToken(activity: ComponentActivity): String {
         val authClient = Identity.getAuthorizationClient(activity)
         val request = AuthorizationRequest.Builder()
             .setRequestedScopes(listOf(Scope(DRIVE_APPDATA_SCOPE)))
@@ -170,12 +195,12 @@ class GoogleSignInManager(
 
         if (authResult.hasResolution()) {
             val pendingIntent = authResult.pendingIntent
-                ?: throw GoogleSignInException("Authorization required but no pending intent provided")
+                ?: throw DriveAuthorizationException("Authorization required but no pending intent provided")
             return resolveAuthorization(activity, pendingIntent)
         }
 
         return authResult.accessToken
-            ?: throw GoogleSignInException("No access token returned")
+            ?: throw DriveAuthorizationException("No access token returned")
     }
 
     private suspend fun resolveAuthorization(
@@ -193,12 +218,12 @@ class GoogleSignInManager(
                 val authResult = Identity.getAuthorizationClient(activity)
                     .getAuthorizationResultFromIntent(result.data)
                 val token = authResult.accessToken
-                    ?: throw GoogleSignInException("Authorization granted but no access token returned")
+                    ?: throw DriveAuthorizationException("Authorization granted but no access token returned")
                 cont.resume(token)
             } catch (e: Exception) {
                 cont.resumeWithException(
-                    if (e is GoogleSignInException) e
-                    else GoogleSignInException("Authorization resolution failed: ${e.message}", e)
+                    if (e is DriveAuthorizationException) e
+                    else DriveAuthorizationException("Authorization resolution failed: ${e.message}", e)
                 )
             }
         }
@@ -214,7 +239,24 @@ class GoogleSignInManager(
     }
 }
 
-class GoogleSignInException(message: String, cause: Throwable? = null) : Exception(message, cause)
+open class GoogleSignInException(message: String, cause: Throwable? = null) : Exception(message, cause)
+
+/**
+ * A failure in the **Drive-authorization** half of [GoogleSignInManager.signIn]
+ * — the member signed in to Google successfully and then the `drive.appdata`
+ * grant did not complete.
+ *
+ * It narrows [GoogleSignInException] rather than sitting beside it, so no
+ * existing catch changes meaning; the point is that a caller can now tell the
+ * two halves apart. They share one state ([`SigningIn`]) because they share one
+ * `signIn()` call, so the phase alone cannot distinguish them.
+ *
+ * This is not a corner case. `authorize()` returns a resolution `PendingIntent`
+ * the **first** time an account grants the scope, so the consent screen always
+ * appears for a new member — and backing out of it is one gesture.
+ */
+class DriveAuthorizationException(message: String, cause: Throwable? = null) :
+    GoogleSignInException(message, cause)
 
 /**
  * Decides whether a failed `GetGoogleIdOption` request should escalate to
@@ -260,3 +302,24 @@ internal fun shouldFallBackToButtonFlow(e: GetCredentialException): Boolean = e 
 internal fun isGoogleIdTokenCredentialType(type: String): Boolean =
     type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL ||
         type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_SIWG_CREDENTIAL
+
+/**
+ * Whether a failure that reached [cooking.zap.app.viewmodel.GoogleAuthViewModel]'s
+ * sign-in catches may be headlined "Google sign-in didn't go through".
+ *
+ * Two conditions, because two things can be false about that sentence:
+ *
+ *  - **Phase.** `beginSignIn` runs `signIn()` and then the Drive *listing*
+ *    under one `try`. `signInPending` is the caller's answer to which one it
+ *    was still in, read off the state (`CheckingDrive` means signed in).
+ *  - **Half.** `signIn()` is itself two steps — credentials, then the Drive
+ *    *grant* — and both run under `SigningIn`, so the phase cannot separate
+ *    them. [DriveAuthorizationException] can, and it is the likely failure for
+ *    a first-time member: the consent screen always appears the first time, and
+ *    declining it is one gesture.
+ *
+ * Both point the same way when they are unsure: no headline, and the member
+ * gets the card exactly as it renders today.
+ */
+internal fun claimsSignInFailed(signInPending: Boolean, error: Throwable): Boolean =
+    signInPending && error !is DriveAuthorizationException

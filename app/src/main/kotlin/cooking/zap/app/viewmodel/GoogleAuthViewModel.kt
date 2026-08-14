@@ -10,6 +10,7 @@ import cooking.zap.app.auth.DriveAuthorizationExpiredException
 import cooking.zap.app.auth.DriveBackupService
 import cooking.zap.app.auth.GoogleSignInException
 import cooking.zap.app.auth.GoogleSignInManager
+import cooking.zap.app.auth.claimsSignInFailed
 import cooking.zap.app.nostr.Keys
 import cooking.zap.app.nostr.Nip19
 import cooking.zap.app.nostr.toHex
@@ -89,9 +90,12 @@ class GoogleAuthViewModel(app: Application) : AndroidViewModel(app) {
          * @param message the underlying failure text, shown to the member as-is.
          * @param duringSignIn whether the flow died before Google sign-in
          *   completed. Only then may the screen headline the card "Google
-         *   sign-in didn't go through" — every other producer of this state
-         *   (PIN, restore, create, and the Drive listing) runs after the member
-         *   has already signed in, so the default is the claim we cannot make.
+         *   sign-in didn't go through". Every other producer of this state runs
+         *   after the member has already signed in — PIN, restore, create, the
+         *   Drive listing, and the Drive *grant*, which shares `SigningIn` with
+         *   the credential step and so is separated by exception type rather
+         *   than by state. See `claimsSignInFailed`. The default is the claim
+         *   we cannot make.
          */
         data class Error(val message: String, val duringSignIn: Boolean = false) : State()
     }
@@ -136,13 +140,13 @@ class GoogleAuthViewModel(app: Application) : AndroidViewModel(app) {
                 Log.w(TAG, "GoogleSignInException", e)
                 _state.value = State.Error(
                     e.message ?: "Google sign-in failed.",
-                    duringSignIn = signInPending()
+                    duringSignIn = claimsSignInFailed(signInPending(), e)
                 )
             } catch (e: Exception) {
                 Log.w(TAG, "Exception during sign-in flow", e)
                 _state.value = State.Error(
                     e.message ?: "Something went wrong.",
-                    duringSignIn = signInPending()
+                    duringSignIn = claimsSignInFailed(signInPending(), e)
                 )
             }
         }
@@ -154,6 +158,9 @@ class GoogleAuthViewModel(app: Application) : AndroidViewModel(app) {
      * listing that follows it — and either phase can raise either exception
      * type, so the type does not say which one failed. The state does:
      * [State.CheckingDrive] means sign-in already succeeded.
+     *
+     * This is only half the question; `signIn()` is itself two steps under this
+     * one state. [claimsSignInFailed] is where the two halves combine.
      */
     private fun signInPending(): Boolean = _state.value is State.SigningIn
 
