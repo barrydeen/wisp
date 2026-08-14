@@ -353,6 +353,8 @@
     <string name="cd_seen_on">Seen on</string>
     <string name="cd_sent_with">Sent with</string>
     <string name="cd_filter_notifications">Filter notifications</string>
+    <string name="cd_notif_style_compact">Switch to compact notifications</string>
+    <string name="cd_notif_style_expanded">Switch to expanded notifications</string>
     <string name="filter_all">All</string>
     <string name="filter_replies">Replies</string>
     <string name="filter_zaps">Zaps</string>
@@ -672,6 +674,13 @@
 
     <string name="settings_copy_profile_json">Copy Profile JSON</string>
     <string name="settings_profile_json_copied">Profile JSON copied</string>
+
+    <!-- Notifications display -->
+    <string name="settings_notifications">Notifications</string>
+    <string name="settings_notif_list_style">List style</string>
+    <string name="settings_notif_list_style_description">Expanded: every notification shows its note, zap message, or poll inline. Compact: one-line rows you tap to open.</string>
+    <string name="settings_notif_list_style_expanded">Expanded</string>
+    <string name="settings_notif_list_style_compact">Compact</string>
 
     <!-- Translation (UI for post content translation) -->
     <string name="settings_translation">Translation</string>
