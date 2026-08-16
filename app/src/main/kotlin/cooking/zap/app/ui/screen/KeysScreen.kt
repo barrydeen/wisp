@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -25,6 +27,7 @@ import cooking.zap.app.nostr.Nip19
 import cooking.zap.app.nostr.hexToByteArray
 import cooking.zap.app.repo.KeyRepository
 import cooking.zap.app.repo.SigningMode
+import cooking.zap.app.ui.component.EncryptedKeyExportSection
 import cooking.zap.app.ui.component.PrivateKeyRevealSection
 import cooking.zap.app.ui.component.PublicKeyCard
 
@@ -58,6 +61,7 @@ fun KeysScreen(
         Column(
             modifier = Modifier
                 .padding(padding)
+                .verticalScroll(rememberScrollState())
                 .padding(16.dp)
         ) {
             // Public key section (always shown)
@@ -105,6 +109,26 @@ fun KeysScreen(
                 SigningMode.LOCAL -> {
                     PrivateKeyRevealSection(
                         keypair = keypair,
+                        avatarUrl = avatarUrl
+                    )
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    Text(
+                        text = stringResource(R.string.backup_key_encrypted_label),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = stringResource(R.string.backup_key_encrypted_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    EncryptedKeyExportSection(
+                        keypair = keypair,
+                        npub = npub,
                         avatarUrl = avatarUrl
                     )
                 }
