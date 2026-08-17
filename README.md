@@ -257,7 +257,7 @@ APK downloads are available on the [Releases](../../releases) page.
 
 - [Android Studio](https://developer.android.com/studio) Ladybug or later
 - JDK 17
-- Android SDK 35
+- Android SDK 36
 
 ### Build
 
@@ -341,7 +341,7 @@ Contributions are welcome. Zap Cooking is open source and community help makes i
 | QR Codes | ZXing |
 | Build | Gradle 8.x / AGP 8.x |
 | Min SDK | Android 8.0 (API 26) |
-| Target SDK | Android 15 (API 35) |
+| Target SDK | Android 16 (API 36) |
 
 ---
 

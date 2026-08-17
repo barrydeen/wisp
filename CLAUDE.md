@@ -30,7 +30,7 @@ than emitting an unsigned artifact — see
 [`ZAPCOOKING_ANDROID_BUILD.md`](ZAPCOOKING_ANDROID_BUILD.md) §"Release
 signing". Debug builds and tests need nothing.
 
-JDK 17 and Android SDK 35 are required. Tests: a hermetic JVM unit suite
+JDK 17 and Android SDK 36 are required. Tests: a hermetic JVM unit suite
 under `app/src/test/` plus integration tests under `app/src/androidTest/`
 (network/device required, excluded from the unit run).
 

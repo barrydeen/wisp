@@ -75,12 +75,12 @@ android {
     val debugApplicationIdSuffix = rootProject.extra["debugApplicationIdSuffix"] as String
 
     namespace = "cooking.zap.app"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = baseApplicationId
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 90
         versionName = "1.3.6"
         resValue("string", "app_name", "Zap Cooking")
