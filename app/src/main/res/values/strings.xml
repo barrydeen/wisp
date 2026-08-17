@@ -121,7 +121,7 @@
     <string name="auth_log_in">Log In</string>
     <string name="auth_login_with_signer">Login with Signer</string>
     <string name="auth_or_log_in_with_key">Or log in with your key</string>
-    <string name="auth_nsec_or_npub">nsec or npub…</string>
+    <string name="auth_nsec_or_npub">nsec, ncryptsec, or npub…</string>
     <string name="auth_wisp">Zap Cooking</string>
     <string name="auth_tagline">Food is Open Source</string>
     <string name="auth_hide_key">Hide key</string>
@@ -634,6 +634,7 @@
     <string name="btn_hide_private_key">Hide private key</string>
     <string name="nsec_qr_title">Private key QR</string>
     <string name="nsec_qr_warning">Only show this to devices you trust. Anyone who scans it gains full control of your account.</string>
+    <string name="cd_nsec_qr_code">Private key QR code</string>
 
     <!-- Key backup step (shown right after a new account is created, and re-surfaced as a nudge) -->
     <string name="backup_key_title">Save your backup key</string>
@@ -647,6 +648,32 @@
     <string name="backup_key_warning">This key is the only way to recover your account. There is no password reset. Anyone who has it controls your account — never share it.</string>
     <string name="backup_key_saved">I\'ve saved it</string>
     <string name="backup_key_skip">Skip for now</string>
+    <!-- NIP-49 password-encrypted keys (ncryptsec) -->
+    <string name="ncryptsec_unlock_title">Encrypted key</string>
+    <string name="ncryptsec_unlock_body">This key is protected with a password. Enter it to sign in.</string>
+    <string name="ncryptsec_unlock_action">Unlock</string>
+    <string name="ncryptsec_unlocking">Decrypting — this takes a moment…</string>
+    <string name="ncryptsec_password_label">Password</string>
+    <string name="ncryptsec_password_confirm_label">Confirm password</string>
+    <string name="ncryptsec_password_too_short">Use at least %1$d characters — a short password is easy to crack.</string>
+    <string name="ncryptsec_password_mismatch">Passwords don\'t match</string>
+    <string name="ncryptsec_export_action">Export encrypted key</string>
+    <string name="ncryptsec_export_title">Export encrypted key</string>
+    <string name="ncryptsec_export_body">Choose a password. Your key is encrypted with it, so the result is safe to store in a password manager or cloud backup.</string>
+    <string name="ncryptsec_export_no_reset">There is no password reset. If you forget this password, this backup cannot be recovered.</string>
+    <string name="ncryptsec_export_encrypt_action">Encrypt</string>
+    <string name="ncryptsec_encrypting">Encrypting — this takes a moment…</string>
+    <string name="ncryptsec_export_failed">Couldn\'t encrypt your key</string>
+    <string name="ncryptsec_export_ready_title">Encrypted key</string>
+    <string name="ncryptsec_export_ready_body">Save this somewhere safe. Any Nostr app that supports NIP-49 can restore your account from it with your password.</string>
+    <string name="ncryptsec_export_save_file">Save to file</string>
+    <string name="ncryptsec_copied">Encrypted key copied</string>
+    <string name="ncryptsec_qr_title">Encrypted key QR</string>
+    <string name="ncryptsec_qr_warning">This QR is protected by your password, but anyone who scans it can try to crack it. Share it carefully.</string>
+    <string name="cd_ncryptsec_qr_code">Encrypted key QR code</string>
+    <string name="backup_key_encrypted_label">Password-protected key (ncryptsec)</string>
+    <string name="backup_key_encrypted_hint">Safer to store in the cloud or a password manager — useless to anyone without your password.</string>
+
     <string name="key_backup_banner_text">Back up your key so you never lose your account</string>
     <string name="key_backup_banner_action">Back up</string>
     <string name="key_backup_banner_dismiss">Dismiss</string>

@@ -39,6 +39,7 @@ import androidx.compose.runtime.setValue
 import cooking.zap.app.nostr.Nip19
 import cooking.zap.app.nostr.RemoteSignerBridge
 import cooking.zap.app.nostr.toHex
+import cooking.zap.app.ui.component.NcryptsecUnlockDialog
 import cooking.zap.app.ui.component.NsecPasteGuard
 import cooking.zap.app.ui.component.QrScanner
 import androidx.compose.ui.Alignment
@@ -115,10 +116,14 @@ fun AuthScreen(
                 if (viewModel.logIn()) onAuthenticated(false)
             },
             modifier = androidx.compose.ui.Modifier.fillMaxSize(),
-            promptText = "Scan nsec, npub, or nprofile QR"
+            promptText = "Scan nsec, ncryptsec, npub, or nprofile QR"
         )
         return
     }
+
+    // Shows itself only when the entered key is an ncryptsec awaiting its password —
+    // whether it was typed, pasted, autofilled, or scanned above.
+    NcryptsecUnlockDialog(viewModel = viewModel, onUnlocked = { onAuthenticated(false) })
 
     DisposableEffect(Unit) {
         NsecPasteGuard.nsecPasteAllowed = true

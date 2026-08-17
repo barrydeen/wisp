@@ -19,6 +19,7 @@ developer summary (not a full spec copy).
 | 25 | [25-reactions.md](25-reactions.md) | Not yet | Kind 7 reactions |
 | 42 | [42-authentication.md](42-authentication.md) | Not yet | Relay authentication |
 | 44 | [44-versioned-encryption.md](44-versioned-encryption.md) | Not yet | NIP-44 encryption (for NIP-17) |
+| 49 | [49-private-key-encryption.md](49-private-key-encryption.md) | Implemented | Nip49.kt (`ncryptsec` login + export) |
 | 51 | [51-lists.md](51-lists.md) | Not yet | Lists and sets |
 | 57 | [57-zaps.md](57-zaps.md) | Not yet | Lightning zaps |
 | 65 | [65-relay-list-metadata.md](65-relay-list-metadata.md) | Not yet | Outbox model relay lists |

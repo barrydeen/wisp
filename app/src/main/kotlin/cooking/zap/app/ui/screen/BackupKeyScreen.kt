@@ -36,6 +36,7 @@ import cooking.zap.app.R
 import cooking.zap.app.nostr.Nip19
 import cooking.zap.app.nostr.hexToByteArray
 import cooking.zap.app.repo.KeyRepository
+import cooking.zap.app.ui.component.EncryptedKeyExportSection
 import cooking.zap.app.ui.component.PrivateKeyRevealSection
 import cooking.zap.app.ui.component.PublicKeyCard
 
@@ -135,6 +136,29 @@ fun BackupKeyScreen(
                 Spacer(Modifier.width(8.dp))
                 Text(stringResource(R.string.backup_key_download))
             }
+
+            Spacer(Modifier.height(24.dp))
+
+            // Password-protected form of the same key (NIP-49) — the one that's safe to
+            // put in cloud storage, so it sits right next to the plaintext options.
+            Text(
+                text = stringResource(R.string.backup_key_encrypted_label),
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = stringResource(R.string.backup_key_encrypted_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(8.dp))
+            EncryptedKeyExportSection(
+                keypair = keypair,
+                npub = npub,
+                avatarUrl = avatarUrl,
+                onExportedToFile = onBackupExported
+            )
 
             Spacer(Modifier.height(24.dp))
 

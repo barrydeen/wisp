@@ -2,16 +2,22 @@ package cooking.zap.app.viewmodel
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
 import cooking.zap.app.nostr.Keys
 import cooking.zap.app.nostr.Nip19
+import cooking.zap.app.nostr.Nip49
 import cooking.zap.app.nostr.hexToByteArray
 import cooking.zap.app.nostr.toHex
+import cooking.zap.app.nostr.wipe
 import cooking.zap.app.repo.AccountInfo
 import cooking.zap.app.repo.KeyBackupPreferences
 import cooking.zap.app.repo.KeyRepository
 import cooking.zap.app.repo.SigningMode
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class AuthViewModel(app: Application) : AndroidViewModel(app) {
     val keyRepo = KeyRepository(app)
@@ -38,6 +44,18 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _signingMode = MutableStateFlow(if (keyRepo.isLoggedIn()) keyRepo.getSigningMode() else null)
     val signingModeFlow: StateFlow<SigningMode?> = _signingMode
+
+    /**
+     * An `ncryptsec1…` the user entered that is waiting on its password. Set by [logIn],
+     * cleared by [unlockPendingNcryptsec] on success or by [cancelPendingNcryptsec];
+     * login surfaces show their password prompt while it is non-null.
+     */
+    private val _pendingNcryptsec = MutableStateFlow<String?>(null)
+    val pendingNcryptsec: StateFlow<String?> = _pendingNcryptsec
+
+    /** True while scrypt is running for [unlockPendingNcryptsec] — drives the prompt's spinner. */
+    private val _unlockingNcryptsec = MutableStateFlow(false)
+    val unlockingNcryptsec: StateFlow<Boolean> = _unlockingNcryptsec
 
     val accountsFlow: StateFlow<List<AccountInfo>> = keyRepo.accountsFlow
 
@@ -83,11 +101,20 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
         }
         return when {
             input.startsWith("nsec1") -> loginWithNsec(input)
+            // An ncryptsec needs a password before it becomes a key: park it and let the
+            // login surface prompt, rather than reporting a failure the user can't act on.
+            Nip49.isNcryptsec(input) -> {
+                // The unlock dialog renders `error`; a message left over from an earlier
+                // failed attempt would show before the user has typed anything.
+                _error.value = null
+                _pendingNcryptsec.value = input
+                false
+            }
             input.startsWith("npub1") -> loginWithNpub(input)
             input.startsWith("nprofile1") -> loginWithNprofile(input)
             input.length == 64 && input.all { it in '0'..'9' || it in 'a'..'f' } -> loginWithPubkeyHex(input)
             else -> {
-                _error.value = "Invalid key format — enter an nsec or npub"
+                _error.value = "Invalid key format — enter an nsec, ncryptsec, or npub"
                 false
             }
         }
@@ -96,19 +123,101 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
     private fun loginWithNsec(nsec: String): Boolean {
         return try {
             val privkey = Nip19.nsecDecode(nsec)
-            val keypair = Keys.fromPrivkey(privkey)
-            keyRepo.saveKeypair(keypair)
-            keyRepo.reloadPrefs(keypair.pubkey.toHex())
-            keyBackupPrefs.reload(keypair.pubkey.toHex())
-            _npub.value = Nip19.npubEncode(keypair.pubkey)
-            _signingMode.value = SigningMode.LOCAL
-            _nsecInput.value = ""
-            _error.value = null
+            try {
+                loginWithPrivkey(privkey)
+            } finally {
+                privkey.wipe()
+            }
             true
         } catch (e: Exception) {
             _error.value = "Invalid nsec key: ${e.message}"
             false
         }
+    }
+
+    /**
+     * Decrypt the pending `ncryptsec` with [password] and log in with the recovered key.
+     *
+     * scrypt is deliberately slow and memory-hard (64 MiB, hundreds of ms at the usual
+     * log_n of 16), so it runs on [Dispatchers.Default] with [unlockingNcryptsec] set for
+     * the duration. [onResult] fires on the main thread once the attempt settles.
+     */
+    fun unlockPendingNcryptsec(password: String, onResult: (Boolean) -> Unit) {
+        val ncryptsec = _pendingNcryptsec.value
+        if (ncryptsec == null || _unlockingNcryptsec.value) {
+            onResult(false)
+            return
+        }
+        if (password.isEmpty()) {
+            _error.value = "Enter the password for this key"
+            onResult(false)
+            return
+        }
+
+        _unlockingNcryptsec.value = true
+        _error.value = null
+        viewModelScope.launch {
+            try {
+                val result = withContext(Dispatchers.Default) {
+                    runCatching { Nip49.decrypt(ncryptsec, password) }
+                }
+                _unlockingNcryptsec.value = false
+                result.fold(
+                    onSuccess = { privkey ->
+                        val loggedIn = try {
+                            loginWithPrivkey(privkey)
+                            true
+                        } catch (e: Exception) {
+                            _error.value = "Couldn't use this key: ${e.message}"
+                            false
+                        } finally {
+                            privkey.wipe()
+                        }
+                        if (loggedIn) _pendingNcryptsec.value = null
+                        onResult(loggedIn)
+                    },
+                    onFailure = { e ->
+                        _error.value = ncryptsecFailureMessage(e)
+                        onResult(false)
+                    },
+                )
+            } finally {
+                // Cancellation (or anything runCatching didn't see) must not leave the
+                // dialog stuck on "decrypting" with cancel and submit both disabled.
+                _unlockingNcryptsec.value = false
+            }
+        }
+    }
+
+    /** Dismiss the password prompt without unlocking; the typed key stays in the field. */
+    fun cancelPendingNcryptsec() {
+        if (_unlockingNcryptsec.value) return
+        _pendingNcryptsec.value = null
+        _error.value = null
+    }
+
+    private fun ncryptsecFailureMessage(e: Throwable): String = when (e) {
+        is Nip49.Nip49Error.WrongPassword -> "Wrong password — check it and try again"
+        is Nip49.Nip49Error.TooExpensive -> e.message ?: "This key needs more memory than this device has"
+        is Nip49.Nip49Error.Malformed -> "This isn't a valid ncryptsec key"
+        else -> "Couldn't unlock this key: ${e.message}"
+    }
+
+    /**
+     * Adopt a raw 32-byte private key as the active LOCAL account. Throws if the key is
+     * invalid; callers wipe their copy afterwards (KeyRepository hex-encodes on save and
+     * keeps no reference to the array).
+     */
+    private fun loginWithPrivkey(privkey: ByteArray) {
+        val keypair = Keys.fromPrivkey(privkey)
+        val pubkeyHex = keypair.pubkey.toHex()
+        keyRepo.saveKeypair(keypair)
+        keyRepo.reloadPrefs(pubkeyHex)
+        keyBackupPrefs.reload(pubkeyHex)
+        _npub.value = Nip19.npubEncode(keypair.pubkey)
+        _signingMode.value = SigningMode.LOCAL
+        _nsecInput.value = ""
+        _error.value = null
     }
 
     private fun loginWithNpub(npub: String): Boolean {

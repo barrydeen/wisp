@@ -81,6 +81,7 @@ import cooking.zap.app.auth.NostrCredentialSaver
 import cooking.zap.app.nostr.Nip19
 import cooking.zap.app.nostr.RemoteSignerBridge
 import cooking.zap.app.nostr.toHex
+import cooking.zap.app.ui.component.NcryptsecUnlockDialog
 import cooking.zap.app.ui.component.QrScanner
 import cooking.zap.app.viewmodel.AuthViewModel
 import cooking.zap.app.viewmodel.SplashViewModel
@@ -444,11 +445,21 @@ fun SplashScreen(
                         if (authViewModel.logIn()) onLoggedIn()
                     },
                     modifier = Modifier.fillMaxSize(),
-                    promptText = "Scan nsec, npub, or nprofile QR"
+                    promptText = "Scan nsec, ncryptsec, npub, or nprofile QR"
                 )
             }
         }
     }
+
+    // Lives outside the sheet so a scanned ncryptsec still gets its password prompt
+    // after the sheet has been dismissed for the scanner.
+    NcryptsecUnlockDialog(
+        viewModel = authViewModel,
+        onUnlocked = {
+            showNostrSheet = false
+            onLoggedIn()
+        }
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

@@ -80,9 +80,9 @@ internal fun android.content.Context.findFragmentActivity(): FragmentActivity? {
     return null
 }
 
-/** Copy a private key to the clipboard, flagging it sensitive on API 33+. */
-private fun copyNsecToClipboard(context: android.content.Context, nsec: String) {
-    val clip = ClipData.newPlainText("", nsec)
+/** Copy key material to the clipboard, flagging it sensitive on API 33+. */
+internal fun copyKeyToClipboard(context: android.content.Context, value: String, toastMessage: String) {
+    val clip = ClipData.newPlainText("", value)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         clip.description.extras = PersistableBundle().apply {
             putBoolean("android.content.extra.IS_SENSITIVE", true)
@@ -90,8 +90,11 @@ private fun copyNsecToClipboard(context: android.content.Context, nsec: String) 
     }
     val cm = context.getSystemService(ClipboardManager::class.java)
     cm.setPrimaryClip(clip)
-    Toast.makeText(context, context.getString(R.string.settings_private_key_copied), Toast.LENGTH_SHORT).show()
+    Toast.makeText(context, toastMessage, Toast.LENGTH_SHORT).show()
 }
+
+private fun copyNsecToClipboard(context: android.content.Context, nsec: String) =
+    copyKeyToClipboard(context, nsec, context.getString(R.string.settings_private_key_copied))
 
 /**
  * Public-key row: the npub with QR + copy buttons. Callers render their own
@@ -264,20 +267,35 @@ private fun revealNsecWithDeviceCredential(
     onRevealed: (String) -> Unit
 ) {
     if (keypair == null) return
+    authenticateForKeyAccess(context, title, description) {
+        onRevealed(Nip19.nsecEncode(keypair.privkey))
+    }
+}
+
+/**
+ * Run [onAuthenticated] once the device credential has been confirmed. When no device
+ * lock is configured there is nothing to check against, so the action runs directly —
+ * the same posture the private-key reveal has always taken.
+ */
+internal fun authenticateForKeyAccess(
+    context: android.content.Context,
+    title: String,
+    description: String,
+    onAuthenticated: () -> Unit
+) {
     val activity = context.findFragmentActivity() ?: return
 
     val biometricManager = BiometricManager.from(context)
     val canAuth = biometricManager.canAuthenticate(BiometricManager.Authenticators.DEVICE_CREDENTIAL)
     if (canAuth != BiometricManager.BIOMETRIC_SUCCESS) {
-        // No device lock set — reveal directly.
-        onRevealed(Nip19.nsecEncode(keypair.privkey))
+        onAuthenticated()
         return
     }
 
     val executor = ContextCompat.getMainExecutor(context)
     val callback = object : BiometricPrompt.AuthenticationCallback() {
         override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
-            onRevealed(Nip19.nsecEncode(keypair.privkey))
+            onAuthenticated()
         }
 
         override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
@@ -298,8 +316,19 @@ private fun revealNsecWithDeviceCredential(
     BiometricPrompt(activity, executor, callback).authenticate(promptInfo)
 }
 
+/**
+ * QR for key material. Defaults to the private-key wording; the ncryptsec export passes
+ * its own title/warning since an encrypted key carries a different level of risk.
+ */
 @Composable
-fun NsecQrDialog(nsec: String, avatarUrl: String? = null, onDismiss: () -> Unit) {
+fun NsecQrDialog(
+    nsec: String,
+    avatarUrl: String? = null,
+    title: String = stringResource(R.string.nsec_qr_title),
+    warning: String = stringResource(R.string.nsec_qr_warning),
+    qrContentDescription: String = stringResource(R.string.cd_nsec_qr_code),
+    onDismiss: () -> Unit
+) {
     val qrBitmap = remember(nsec) {
         val hints = mapOf(EncodeHintType.ERROR_CORRECTION to ErrorCorrectionLevel.M)
         val writer = QRCodeWriter()
@@ -314,14 +343,14 @@ fun NsecQrDialog(nsec: String, avatarUrl: String? = null, onDismiss: () -> Unit)
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.nsec_qr_title)) },
+        title = { Text(title) },
         text = {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
-                    text = stringResource(R.string.nsec_qr_warning),
+                    text = warning,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error
                 )
@@ -336,7 +365,7 @@ fun NsecQrDialog(nsec: String, avatarUrl: String? = null, onDismiss: () -> Unit)
                 ) {
                     Image(
                         bitmap = qrBitmap.asImageBitmap(),
-                        contentDescription = "nsec QR code",
+                        contentDescription = qrContentDescription,
                         contentScale = ContentScale.Fit,
                         modifier = Modifier.matchParentSize()
                     )
