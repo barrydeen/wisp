@@ -104,6 +104,9 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
             // An ncryptsec needs a password before it becomes a key: park it and let the
             // login surface prompt, rather than reporting a failure the user can't act on.
             Nip49.isNcryptsec(input) -> {
+                // The unlock dialog renders `error`; a message left over from an earlier
+                // failed attempt would show before the user has typed anything.
+                _error.value = null
                 _pendingNcryptsec.value = input
                 false
             }
@@ -154,29 +157,35 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
         _unlockingNcryptsec.value = true
         _error.value = null
         viewModelScope.launch {
-            val result = withContext(Dispatchers.Default) {
-                runCatching { Nip49.decrypt(ncryptsec, password) }
+            try {
+                val result = withContext(Dispatchers.Default) {
+                    runCatching { Nip49.decrypt(ncryptsec, password) }
+                }
+                _unlockingNcryptsec.value = false
+                result.fold(
+                    onSuccess = { privkey ->
+                        val loggedIn = try {
+                            loginWithPrivkey(privkey)
+                            true
+                        } catch (e: Exception) {
+                            _error.value = "Couldn't use this key: ${e.message}"
+                            false
+                        } finally {
+                            privkey.wipe()
+                        }
+                        if (loggedIn) _pendingNcryptsec.value = null
+                        onResult(loggedIn)
+                    },
+                    onFailure = { e ->
+                        _error.value = ncryptsecFailureMessage(e)
+                        onResult(false)
+                    },
+                )
+            } finally {
+                // Cancellation (or anything runCatching didn't see) must not leave the
+                // dialog stuck on "decrypting" with cancel and submit both disabled.
+                _unlockingNcryptsec.value = false
             }
-            _unlockingNcryptsec.value = false
-            result.fold(
-                onSuccess = { privkey ->
-                    val loggedIn = try {
-                        loginWithPrivkey(privkey)
-                        true
-                    } catch (e: Exception) {
-                        _error.value = "Couldn't use this key: ${e.message}"
-                        false
-                    } finally {
-                        privkey.wipe()
-                    }
-                    if (loggedIn) _pendingNcryptsec.value = null
-                    onResult(loggedIn)
-                },
-                onFailure = { e ->
-                    _error.value = ncryptsecFailureMessage(e)
-                    onResult(false)
-                },
-            )
         }
     }
 

@@ -468,6 +468,7 @@ private fun EncryptedKeyExportDialog(
             avatarUrl = avatarUrl,
             title = stringResource(R.string.ncryptsec_qr_title),
             warning = stringResource(R.string.ncryptsec_qr_warning),
+            qrContentDescription = stringResource(R.string.cd_ncryptsec_qr_code),
             onDismiss = { showQr = false }
         )
     }

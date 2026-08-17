@@ -202,6 +202,51 @@ class Nip49Test {
     }
 
     @Test
+    fun decrypt_emptyPasswordIsATypedFailureNotAnArgumentError() {
+        val ncryptsec = Nip49.encrypt(randomPrivkey(), "hunter2", logN = FAST_LOG_N)
+
+        // decrypt's contract is "everything thrown is a Nip49Error": an empty password
+        // is just a wrong one, not a caller bug.
+        assertThrows(Nip49.Nip49Error.WrongPassword::class.java) {
+            Nip49.decrypt(ncryptsec, "")
+        }
+    }
+
+    @Test
+    fun decrypt_acceptsForeignKeyEncryptedWithEmptyPassword() {
+        // Our encrypt() refuses an empty password, but another client's may not have;
+        // such a key must still open. encryptWith is the seam that can mint one.
+        val privkey = randomPrivkey()
+        val ncryptsec = Nip49.encryptWith(
+            privkey = privkey,
+            password = "",
+            logN = FAST_LOG_N,
+            keySecurity = Nip49.KeySecurity.UNKNOWN,
+            salt = ByteArray(16) { it.toByte() },
+            nonce = ByteArray(24) { it.toByte() },
+        )
+
+        assertBytesEqual(privkey, Nip49.decrypt(ncryptsec, ""))
+    }
+
+    @Test
+    fun encryptWith_rejectsWrongSizedSaltNonceKeyAndLogN() {
+        val salt = ByteArray(16)
+        val nonce = ByteArray(24)
+        fun attempt(privkey: ByteArray = randomPrivkey(), logN: Int = FAST_LOG_N, s: ByteArray = salt, n: ByteArray = nonce) {
+            Nip49.encryptWith(privkey, "pw", logN, Nip49.KeySecurity.UNKNOWN, s, n)
+        }
+
+        // An oversized salt would otherwise copy over the nonce region of the payload
+        // and still bech32-encode into a plausible-looking ncryptsec.
+        assertThrows(IllegalArgumentException::class.java) { attempt(s = ByteArray(17)) }
+        assertThrows(IllegalArgumentException::class.java) { attempt(n = ByteArray(23)) }
+        assertThrows(IllegalArgumentException::class.java) { attempt(privkey = ByteArray(31)) }
+        assertThrows(IllegalArgumentException::class.java) { attempt(logN = 0) }
+        assertThrows(IllegalArgumentException::class.java) { attempt(logN = 23) }
+    }
+
+    @Test
     fun isNcryptsec_recognisesOnlyNcryptsec() {
         assertTrue(Nip49.isNcryptsec("  NCRYPTSEC1abc  "))
         assertFalse(Nip49.isNcryptsec(Nip19.nsecEncode(randomPrivkey())))

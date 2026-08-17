@@ -107,6 +107,13 @@ object Nip49 {
         salt: ByteArray,
         nonce: ByteArray,
     ): String {
+        // Sizes are load-bearing for the fixed payload layout below: an oversized salt
+        // would copyInto straight over the nonce region and still bech32-encode cleanly.
+        require(privkey.size == PRIVKEY_SIZE) { "Private key must be $PRIVKEY_SIZE bytes" }
+        require(salt.size == SALT_SIZE) { "Salt must be $SALT_SIZE bytes" }
+        require(nonce.size == NONCE_SIZE) { "Nonce must be $NONCE_SIZE bytes" }
+        require(logN in 1..MAX_LOG_N) { "log_n must be between 1 and $MAX_LOG_N" }
+
         val symmetricKey = deriveKey(password, salt, logN)
         val ciphertext = try {
             xChaCha20Poly1305(
@@ -134,6 +141,10 @@ object Nip49 {
     /**
      * Decrypt an `ncryptsec1…` string back to the raw 32-byte private key.
      *
+     * An empty password is not rejected here — [encrypt] refuses to create one, but a key
+     * from another client could carry one, and an empty password that is merely wrong
+     * fails the MAC check like any other. Everything thrown is a [Nip49Error].
+     *
      * @throws Nip49Error on malformed input, a wrong password, or an unaffordable log_n.
      */
     fun decrypt(ncryptsec: String, password: String): ByteArray =
@@ -148,7 +159,6 @@ object Nip49 {
 
     fun decryptWithMetadata(ncryptsec: String, password: String): Decrypted {
         val trimmed = ncryptsec.trim()
-        require(password.isNotEmpty()) { "Password must not be empty" }
 
         val payload = try {
             val (hrp, data) = Nip19.bech32Decode(trimmed)

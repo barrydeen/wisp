@@ -326,6 +326,7 @@ fun NsecQrDialog(
     avatarUrl: String? = null,
     title: String = stringResource(R.string.nsec_qr_title),
     warning: String = stringResource(R.string.nsec_qr_warning),
+    qrContentDescription: String = stringResource(R.string.cd_nsec_qr_code),
     onDismiss: () -> Unit
 ) {
     val qrBitmap = remember(nsec) {
@@ -364,7 +365,7 @@ fun NsecQrDialog(
                 ) {
                     Image(
                         bitmap = qrBitmap.asImageBitmap(),
-                        contentDescription = "nsec QR code",
+                        contentDescription = qrContentDescription,
                         contentScale = ContentScale.Fit,
                         modifier = Modifier.matchParentSize()
                     )
