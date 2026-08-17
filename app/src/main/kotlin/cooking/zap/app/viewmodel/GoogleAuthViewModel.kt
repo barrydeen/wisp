@@ -16,6 +16,7 @@ import cooking.zap.app.nostr.Nip19
 import cooking.zap.app.nostr.toHex
 import cooking.zap.app.repo.KeyBackupPreferences
 import cooking.zap.app.repo.KeyRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -136,6 +137,10 @@ class GoogleAuthViewModel(app: Application) : AndroidViewModel(app) {
                 } else {
                     State.EnterPinForRestore()
                 }
+            } catch (e: CancellationException) {
+                // The scope's own teardown (ViewModel cleared mid-flow) is not a
+                // member-visible failure; rethrow so the coroutine cancels cleanly.
+                throw e
             } catch (e: GoogleSignInException) {
                 Log.w(TAG, "GoogleSignInException", e)
                 _state.value = State.Error(
