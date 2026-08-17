@@ -89,6 +89,13 @@
     <string name="google_auth_restore">Restore</string>
     <string name="google_auth_create_first">Create account &amp; back up</string>
     <string name="google_auth_create_another">Create another account</string>
+    <!-- Headline on the sign-in error card. It has to hold whether the member
+         cancelled, was offered no credential, hit an unexpected credential
+         type, a malformed token or a network failure — so it names the outcome
+         and not a cause, and avoids "sign up" / "sign in" wording because that
+         screen is both new-account creation and restore-from-Drive. The
+         provider's own text stays underneath it, unchanged. -->
+    <string name="google_auth_error_headline">Google sign-in didn\'t go through.</string>
 
     <!-- Recovery PIN -->
     <string name="pin_setup_title">Set a recovery PIN</string>
