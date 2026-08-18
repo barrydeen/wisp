@@ -136,6 +136,7 @@ import kotlinx.coroutines.withContext
 import okhttp3.Request
 import org.json.JSONObject
 import java.net.URLEncoder
+import cooking.zap.app.nostr.RecipeParser
 
 // Tag used by Compose's InlineTextContent system to identify inline content placeholders
 private const val INLINE_CONTENT_TAG = "androidx.compose.foundation.text.inlineContent"
@@ -2039,7 +2040,13 @@ private fun ArticleCard(
                             modifier = Modifier.padding(end = 8.dp)
                         ) {
                             Text(
-                                text = "ARTICLE",
+                                // Recipes are kind-30023 like any other long-form post, so the
+                                // badge has to come from the same content gate the recipe feeds
+                                // use — not from the kind alone.
+                                text = stringResource(
+                                    if (RecipeParser.isRecipe(event)) R.string.badge_recipe
+                                    else R.string.badge_article
+                                ),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer,
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
