@@ -667,6 +667,11 @@
     <string name="thread_tap_to_show">Show</string>
     <string name="thread_tap_to_hide">Hide</string>
     <string name="thread_not_spam">Not spam</string>
+    <string name="broadcast_failed">Broadcast failed — no relays reachable</string>
+    <plurals name="broadcast_sent_to_relays">
+        <item quantity="one">Broadcast to %d relay</item>
+        <item quantity="other">Broadcast to %d relays</item>
+    </plurals>
     <plurals name="thread_continue">
         <item quantity="one">Show %1$d more reply</item>
         <item quantity="other">Show %1$d more replies</item>

@@ -203,6 +203,7 @@ fun UserProfileScreen(
     onOpenEmojiLibrary: (() -> Unit)? = null,
     onSearchAuthor: (() -> Unit)? = null,
     onPayInvoice: (suspend (String) -> Boolean)? = null,
+    onBroadcast: ((NostrEvent) -> Unit)? = null,
     onGroupRoom: ((String, String) -> Unit)? = null,
     onLiveStreamClick: ((String, String, String?) -> Unit)? = null,
     fetchGroupPreview: (suspend (String, String) -> cooking.zap.app.repo.GroupPreview?)? = null,
@@ -218,6 +219,7 @@ fun UserProfileScreen(
     val invoiceNoteActions = remember(onPayInvoice, onGroupRoom, onLiveStreamClick, fetchGroupPreview, onAddEmojiSet, onOpenEmojiLibrary) {
         if (onPayInvoice != null || onGroupRoom != null || fetchGroupPreview != null || onAddEmojiSet != null || onLiveStreamClick != null || onOpenEmojiLibrary != null) {
             cooking.zap.app.ui.component.NoteActions(
+            onBroadcast = onBroadcast,
             onProfileClick = { pubkey -> onNavigateToProfile?.invoke(pubkey) },
             onPayInvoice = onPayInvoice,
             onGroupRoom = onGroupRoom,

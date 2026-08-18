@@ -174,6 +174,7 @@ import cooking.zap.app.ui.component.CookingUtilitiesSheet
 import cooking.zap.app.ui.component.FloatingTimerBar
 import cooking.zap.app.ui.component.TimerCompletionOverlay
 import cooking.zap.app.viewmodel.CookingTimerViewModel
+import android.widget.Toast
 
 object Routes {
     const val SPLASH = "splash"
@@ -728,6 +729,20 @@ fun WispNavHost(
     }
     LaunchedEffect(Unit) {
         feedViewModel.zapSuccess.collect { HapticHelper.zapBuzz() }
+    }
+    // One app-wide collector: Broadcast is offered from every note surface, so
+    // toasting here beats repeating it in each screen.
+    LaunchedEffect(Unit) {
+        feedViewModel.broadcastResult.collect { relayCount ->
+            val text = if (relayCount > 0) {
+                context.resources.getQuantityString(
+                    R.plurals.broadcast_sent_to_relays, relayCount, relayCount
+                )
+            } else {
+                context.getString(R.string.broadcast_failed)
+            }
+            Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
+        }
     }
     LaunchedEffect(Unit) {
         var fired = false
@@ -1596,6 +1611,7 @@ fun WispNavHost(
                     composeViewModel.clear()
                     navController.navigate(Routes.COMPOSE)
                 },
+                onBroadcast = { event -> feedViewModel.broadcastEvent(event) },
                 onRepost = { event ->
                     feedViewModel.sendRepost(event)
                 },
@@ -1780,6 +1796,7 @@ fun WispNavHost(
                 onReact = { event, emoji ->
                     feedViewModel.toggleReaction(event, emoji)
                 },
+                onBroadcast = { event -> feedViewModel.broadcastEvent(event) },
                 onRepost = { event ->
                     feedViewModel.sendRepost(event)
                 },
@@ -2535,6 +2552,7 @@ fun WispNavHost(
                 onReact = { event, emoji ->
                     feedViewModel.toggleReaction(event, emoji)
                 },
+                onBroadcast = { event -> feedViewModel.broadcastEvent(event) },
                 onRepost = { event ->
                     feedViewModel.sendRepost(event)
                 },
@@ -2698,6 +2716,7 @@ fun WispNavHost(
                     },
                     onReact = { event, emoji -> feedViewModel.toggleReaction(event, emoji) },
                     onRepost = { event -> feedViewModel.sendRepost(event) },
+                    onBroadcast = { event -> feedViewModel.broadcastEvent(event) },
                     onQuote = { event ->
                         quoteTarget = event
                         replyTarget = null
@@ -2863,6 +2882,7 @@ fun WispNavHost(
                     },
                     onReact = { event, emoji -> feedViewModel.toggleReaction(event, emoji) },
                     onRepost = { event -> feedViewModel.sendRepost(event) },
+                    onBroadcast = { event -> feedViewModel.broadcastEvent(event) },
                     onQuote = { event ->
                         quoteTarget = event
                         replyTarget = null
@@ -3041,6 +3061,7 @@ fun WispNavHost(
                     },
                     onReact = { event, emoji -> feedViewModel.toggleReaction(event, emoji) },
                     onRepost = { event -> feedViewModel.sendRepost(event) },
+                    onBroadcast = { event -> feedViewModel.broadcastEvent(event) },
                     onQuote = { event ->
                         quoteTarget = event
                         replyTarget = null
@@ -3891,6 +3912,7 @@ fun WispNavHost(
                     },
                     onReact = { event, emoji -> feedViewModel.toggleReaction(event, emoji) },
                     onRepost = { event -> feedViewModel.sendRepost(event) },
+                    onBroadcast = { event -> feedViewModel.broadcastEvent(event) },
                     onQuote = { event ->
                         quoteTarget = event
                         replyTarget = null
@@ -3999,6 +4021,7 @@ fun WispNavHost(
                     },
                     onReact = { event, emoji -> feedViewModel.toggleReaction(event, emoji) },
                     onRepost = { event -> feedViewModel.sendRepost(event) },
+                    onBroadcast = { event -> feedViewModel.broadcastEvent(event) },
                     onQuote = { event ->
                         quoteTarget = event
                         replyTarget = null
@@ -4868,6 +4891,7 @@ fun WispNavHost(
                 onReact = { event, emoji ->
                     feedViewModel.toggleReaction(event, emoji)
                 },
+                onBroadcast = { event -> feedViewModel.broadcastEvent(event) },
                 onRepost = { event ->
                     feedViewModel.sendRepost(event)
                 },

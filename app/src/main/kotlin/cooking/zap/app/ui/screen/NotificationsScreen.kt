@@ -192,6 +192,7 @@ fun NotificationsScreen(
     dmZapSats: (senderPubkey: String) -> Long = { 0L },
     onDmConversationClick: (conversationKey: String) -> Unit = {},
     onPayInvoice: (suspend (String) -> Boolean)? = null,
+    onBroadcast: ((NostrEvent) -> Unit)? = null,
     onGroupRoom: ((String, String) -> Unit)? = null,
     /** Navigate to a group room and scroll to a specific message (from group notification click). */
     onGroupNotificationClick: ((groupChatId: String, messageId: String) -> Unit)? = null,
@@ -288,6 +289,7 @@ fun NotificationsScreen(
             onPollVote = onPollVote,
             onZapPollVote = onZapPollVote,
             onPayInvoice = onPayInvoice,
+            onBroadcast = onBroadcast,
             onGroupRoom = onGroupRoom,
             fetchGroupPreview = fetchGroupPreview,
             onAddEmojiSet = onAddEmojiSet,
@@ -1453,6 +1455,7 @@ private fun ReferencedNotePostCard(
                 if (p.onPayInvoice != null || p.onGroupRoom != null || p.fetchGroupPreview != null || p.onAddEmojiSet != null || p.onOpenEmojiLibrary != null) {
                     cooking.zap.app.ui.component.NoteActions(
                         onPayInvoice = p.onPayInvoice,
+                        onBroadcast = p.onBroadcast,
                         onGroupRoom = p.onGroupRoom,
                         fetchGroupPreview = p.fetchGroupPreview,
                         onAddEmojiSet = p.onAddEmojiSet,
@@ -1544,6 +1547,7 @@ private fun ReferencedNotePostCard(
                 if (p.onPayInvoice != null || p.onGroupRoom != null || p.fetchGroupPreview != null || p.onAddEmojiSet != null || p.onOpenEmojiLibrary != null) {
                     cooking.zap.app.ui.component.NoteActions(
                         onPayInvoice = p.onPayInvoice,
+                        onBroadcast = p.onBroadcast,
                         onGroupRoom = p.onGroupRoom,
                         fetchGroupPreview = p.fetchGroupPreview,
                         onAddEmojiSet = p.onAddEmojiSet,
@@ -1599,6 +1603,7 @@ private data class NotifPostCardParams(
     val onPollVote: (String, List<String>) -> Unit = { _, _ -> },
     val onZapPollVote: (String, Int) -> Unit = { _, _ -> },
     val onPayInvoice: (suspend (String) -> Boolean)? = null,
+    val onBroadcast: ((NostrEvent) -> Unit)? = null,
     val onGroupRoom: ((String, String) -> Unit)? = null,
     val fetchGroupPreview: (suspend (String, String) -> cooking.zap.app.repo.GroupPreview?)? = null,
     val onAddEmojiSet: ((String, String) -> Unit)? = null,

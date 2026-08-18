@@ -540,6 +540,8 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     val feedContentFilter: StateFlow<FeedContentFilter> = feedSub.feedContentFilter
     val selectedList: StateFlow<cooking.zap.app.nostr.FollowSet?> = listRepo.selectedList
     val zapInProgress: StateFlow<Set<String>> = socialActions.zapInProgress
+    /** Relay count per re-broadcast; 0 means nothing was reachable. */
+    val broadcastResult: SharedFlow<Int> = socialActions.broadcastResult
     val zapSuccess: SharedFlow<String> = socialActions.zapSuccess
     val zapError: SharedFlow<String> = socialActions.zapError
     val reactionSent: SharedFlow<Unit> = socialActions.reactionSent

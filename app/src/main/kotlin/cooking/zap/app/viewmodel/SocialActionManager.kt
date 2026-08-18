@@ -76,6 +76,14 @@ class SocialActionManager(
     private val _zapError = MutableSharedFlow<String>(extraBufferCapacity = 8)
     val zapError: SharedFlow<String> = _zapError
 
+    /**
+     * Relays that accepted a re-broadcast, emitted per [broadcastEvent] call.
+     * 0 means nothing was reachable — the user needs to know that as much as
+     * they need to know it worked.
+     */
+    private val _broadcastResult = MutableSharedFlow<Int>(extraBufferCapacity = 8)
+    val broadcastResult: SharedFlow<Int> = _broadcastResult
+
     private val _reactionSent = MutableSharedFlow<Unit>(extraBufferCapacity = 8)
     val reactionSent: SharedFlow<Unit> = _reactionSent
 
@@ -251,10 +259,14 @@ class SocialActionManager(
                 // sendToAllRelays covers read + write in a single pass, so send
                 // once to avoid delivering the same EVENT to write relays twice.
                 // Only if nothing was connected do we reconnect write relays and retry.
-                if (relayPool.sendToAllRelays(msg) == 0 && relayPool.ensureWriteRelaysConnected() > 0) {
-                    relayPool.sendToAllRelays(msg)
+                var sent = relayPool.sendToAllRelays(msg)
+                if (sent == 0 && relayPool.ensureWriteRelaysConnected() > 0) {
+                    sent = relayPool.sendToAllRelays(msg)
                 }
-            } catch (_: Exception) {}
+                _broadcastResult.tryEmit(sent)
+            } catch (_: Exception) {
+                _broadcastResult.tryEmit(0)
+            }
         }
     }
 
