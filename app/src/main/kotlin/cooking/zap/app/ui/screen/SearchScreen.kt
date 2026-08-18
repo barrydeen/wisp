@@ -113,6 +113,7 @@ fun SearchScreen(
     onQuote: (NostrEvent) -> Unit = {},
     onZap: (NostrEvent) -> Unit = {},
     onZapInstant: (NostrEvent) -> Unit = {},
+    onBroadcast: ((NostrEvent) -> Unit)? = null,
     zapInProgress: Set<String> = emptySet(),
     zapAnimatingIds: Set<String> = emptySet(),
     onToggleFollow: (String) -> Unit = {},
@@ -156,6 +157,7 @@ fun SearchScreen(
     val noteActions = remember(userPubkey, onHashtagClick) {
         NoteActions(
             onHashtagClick = onHashtagClick,
+            onBroadcast = onBroadcast,
             onProfileClick = onProfileClick,
             onNoteClick = { eventId -> onQuotedNoteClick?.invoke(eventId) },
             userPubkey = userPubkey,
