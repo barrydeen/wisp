@@ -140,6 +140,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharedFlow
 
 import kotlinx.serialization.json.put
+import cooking.zap.app.nostr.RecipeParser
 
 private sealed class ProfileZapStatus {
     object Idle : ProfileZapStatus()
@@ -2343,7 +2344,13 @@ private fun ProfileArticleCard(
                         modifier = Modifier.padding(end = 8.dp)
                     ) {
                         Text(
-                            text = "ARTICLE",
+                            // Recipes are kind-30023 like any other long-form post, so the
+                            // badge has to come from the same content gate the recipe feeds
+                            // use — not from the kind alone.
+                            text = stringResource(
+                                if (RecipeParser.isRecipe(event)) R.string.badge_recipe
+                                else R.string.badge_article
+                            ),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)

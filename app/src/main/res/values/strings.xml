@@ -560,6 +560,8 @@
     <string name="zap_private_requires_dm_relays">Private zap requires DM relays on both sides</string>
     <string name="zap_x_sats">Zap %d sats</string>
     <string name="zap_failed">Zap Failed</string>
+    <string name="badge_article">ARTICLE</string>
+    <string name="badge_recipe">RECIPE</string>
     <string name="lightning_invoice_pay_now">Pay Now</string>
     <string name="lightning_invoice_expired">Expired</string>
     <string name="lightning_invoice_any_amount">Any amount</string>
