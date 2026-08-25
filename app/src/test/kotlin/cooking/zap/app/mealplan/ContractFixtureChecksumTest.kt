@@ -22,6 +22,9 @@ class ContractFixtureChecksumTest {
                 "d8a34927d30a8a636bbc84ed3a384ee5f975d65827ae3302aceffb0239373e18",
             "grocery-generation.vectors.json" to
                 "090faff2b486886c0c14fe83e3a4fe48f2b3de8ddff375f18f1e5c1d125508d0",
+            // From frontend docs/mealplan-contract.md (PR #649).
+            "mealplan-eligibility.vectors.json" to
+                "36e19caaa2ecc7df9005c1dc6f342a92a7cbe4b685faa3461c236fd3c39f531d",
         )
     }
 

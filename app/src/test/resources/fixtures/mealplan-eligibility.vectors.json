@@ -1,0 +1,453 @@
+{
+  "description": "Cross-platform Cheffy meal-slot eligibility vectors. Source: src/lib/mealplan/slotEligibility.ts. Vectors record current behavior, including quirks.",
+  "isRecipeEligibleForSlot": [
+    {
+      "id": "tag-breakfast",
+      "title": "Roast Chicken",
+      "tags": ["breakfast"],
+      "slot": "breakfast",
+      "expected": true
+    },
+    {
+      "id": "category-tag-zapcooking-breakfast",
+      "title": "Roast Chicken",
+      "tags": ["zapcooking-breakfast"],
+      "slot": "breakfast",
+      "expected": true
+    },
+    {
+      "id": "tag-brunch-case",
+      "title": "Roast Chicken",
+      "tags": ["Brunch"],
+      "slot": "breakfast",
+      "expected": true
+    },
+    {
+      "id": "tag-brunch-whitespace",
+      "title": "Roast Chicken",
+      "tags": ["  brunch  "],
+      "slot": "breakfast",
+      "expected": true
+    },
+    {
+      "id": "title-pancakes",
+      "title": "Blueberry Pancakes",
+      "tags": [],
+      "slot": "breakfast",
+      "expected": true
+    },
+    {
+      "id": "title-french-toast",
+      "title": "French Toast",
+      "tags": [],
+      "slot": "breakfast",
+      "expected": true
+    },
+    {
+      "id": "title-overnight-oats",
+      "title": "Overnight Oats",
+      "tags": [],
+      "slot": "breakfast",
+      "expected": true
+    },
+    {
+      "id": "title-shakshuka",
+      "title": "Shakshuka",
+      "tags": [],
+      "slot": "breakfast",
+      "expected": true
+    },
+    {
+      "id": "title-avocado-toast",
+      "title": "Avocado Toast",
+      "tags": [],
+      "slot": "breakfast",
+      "expected": true
+    },
+    {
+      "id": "title-acai",
+      "title": "Acai Bowl",
+      "tags": [],
+      "slot": "breakfast",
+      "expected": true
+    },
+    {
+      "id": "title-muffins-plural-prefix",
+      "title": "Blueberry Muffins",
+      "tags": [],
+      "slot": "breakfast",
+      "expected": true
+    },
+    {
+      "id": "title-word-corned-beef-hash",
+      "title": "Corned Beef Hash",
+      "tags": [],
+      "slot": "breakfast",
+      "expected": true
+    },
+    {
+      "id": "title-word-eggplant-not-eggs",
+      "title": "Eggplant Parmesan",
+      "tags": [],
+      "slot": "breakfast",
+      "expected": false
+    },
+    {
+      "id": "title-word-hash-brown-casserole",
+      "title": "Hash Brown Casserole",
+      "tags": [],
+      "slot": "breakfast",
+      "expected": true
+    },
+    {
+      "id": "hyphen-title-french-toast",
+      "title": "French-Toast",
+      "tags": [],
+      "slot": "breakfast",
+      "expected": true
+    },
+    {
+      "id": "underscore-title-overnight-oats",
+      "title": "overnight_oats",
+      "tags": [],
+      "slot": "breakfast",
+      "expected": true
+    },
+    {
+      "id": "slash-title-avocado-toast",
+      "title": "avocado/toast",
+      "tags": [],
+      "slot": "breakfast",
+      "expected": true
+    },
+    {
+      "id": "hyphen-tag-breakfast-food",
+      "title": "Roast Chicken",
+      "tags": ["breakfast-food"],
+      "slot": "breakfast",
+      "expected": true
+    },
+    {
+      "id": "underscore-tag-breakfast",
+      "title": "Roast Chicken",
+      "tags": ["breakfast_club"],
+      "slot": "breakfast",
+      "expected": true
+    },
+    {
+      "id": "slash-tag-brunch",
+      "title": "Roast Chicken",
+      "tags": ["brunch/morning"],
+      "slot": "breakfast",
+      "expected": true
+    },
+    {
+      "id": "negative-braised-short-ribs",
+      "title": "Braised Short Ribs",
+      "tags": [],
+      "slot": "breakfast",
+      "expected": false
+    },
+    {
+      "id": "substring-trap-no-leading-boundary",
+      "title": "Blueberrypancakes",
+      "tags": [],
+      "slot": "breakfast",
+      "expected": false
+    },
+    {
+      "id": "snack-tag-snacks",
+      "title": "Roast Chicken",
+      "tags": ["snacks"],
+      "slot": "snack",
+      "expected": true
+    },
+    {
+      "id": "snack-title-popcorn",
+      "title": "Popcorn",
+      "tags": [],
+      "slot": "snack",
+      "expected": true
+    },
+    {
+      "id": "snack-title-energy-balls",
+      "title": "Energy Balls",
+      "tags": [],
+      "slot": "snack",
+      "expected": true
+    },
+    {
+      "id": "snack-title-hummus",
+      "title": "Hummus",
+      "tags": [],
+      "slot": "snack",
+      "expected": true
+    },
+    {
+      "id": "snack-hyphen-energy-balls",
+      "title": "energy-balls",
+      "tags": [],
+      "slot": "snack",
+      "expected": true
+    },
+    {
+      "id": "snack-negative-beef-stew",
+      "title": "Beef Stew",
+      "tags": [],
+      "slot": "snack",
+      "expected": false
+    },
+    {
+      "id": "lunch-always-snack-recipe",
+      "title": "Popcorn",
+      "tags": ["snacks"],
+      "slot": "lunch",
+      "expected": true
+    },
+    {
+      "id": "dinner-always-snack-recipe",
+      "title": "Popcorn",
+      "tags": ["snacks"],
+      "slot": "dinner",
+      "expected": true
+    },
+    {
+      "id": "lunch-empty-title-no-tags",
+      "title": "",
+      "tags": [],
+      "slot": "lunch",
+      "expected": true
+    },
+    {
+      "id": "dinner-empty-title-no-tags",
+      "title": "",
+      "tags": [],
+      "slot": "dinner",
+      "expected": true
+    },
+    {
+      "id": "breakfast-empty-title-no-tags",
+      "title": "",
+      "tags": [],
+      "slot": "breakfast",
+      "expected": false
+    },
+    {
+      "id": "quirk-tag-substring-unbreakfast",
+      "title": "Roast Chicken",
+      "tags": ["unbreakfast"],
+      "slot": "breakfast",
+      "expected": true
+    },
+    {
+      "id": "quirk-title-prefix-pancakeland",
+      "title": "Pancakeland",
+      "tags": [],
+      "slot": "breakfast",
+      "expected": true
+    },
+    {
+      "id": "quirk-hashbrown-compact-false",
+      "title": "Hashbrown",
+      "tags": [],
+      "slot": "breakfast",
+      "expected": false
+    }
+  ],
+  "eligibleSlotsForRecipe": [
+    {
+      "id": "breakfast-recipe",
+      "title": "Overnight Oats",
+      "tags": ["breakfast"],
+      "expected": ["breakfast", "lunch", "dinner"]
+    },
+    {
+      "id": "snack-recipe",
+      "title": "Popcorn",
+      "tags": [],
+      "expected": ["lunch", "dinner", "snack"]
+    },
+    {
+      "id": "plain-dinner",
+      "title": "Braised Short Ribs",
+      "tags": [],
+      "expected": ["lunch", "dinner"]
+    },
+    {
+      "id": "breakfast-and-snack",
+      "title": "Yogurt Parfait",
+      "tags": ["snacks"],
+      "expected": ["breakfast", "lunch", "dinner", "snack"]
+    }
+  ],
+  "restrictCandidatesToRequestedSlots": [
+    {
+      "id": "breakfast-only",
+      "candidates": [
+        { "id": "breakfast-tag", "title": "Weeknight Pasta", "tags": ["breakfast"] },
+        { "id": "snack-title", "title": "Popcorn", "tags": [] },
+        { "id": "plain-dinner", "title": "Braised Short Ribs", "tags": [] },
+        { "id": "both", "title": "Yogurt Parfait", "tags": ["snacks"] }
+      ],
+      "mealSlots": ["breakfast"],
+      "expected": ["breakfast-tag", "both"]
+    },
+    {
+      "id": "snack-only",
+      "candidates": [
+        { "id": "breakfast-tag", "title": "Weeknight Pasta", "tags": ["breakfast"] },
+        { "id": "snack-title", "title": "Popcorn", "tags": [] },
+        { "id": "plain-dinner", "title": "Braised Short Ribs", "tags": [] },
+        { "id": "both", "title": "Yogurt Parfait", "tags": ["snacks"] }
+      ],
+      "mealSlots": ["snack"],
+      "expected": ["snack-title", "both"]
+    },
+    {
+      "id": "breakfast-and-dinner",
+      "candidates": [
+        { "id": "breakfast-tag", "title": "Weeknight Pasta", "tags": ["breakfast"] },
+        { "id": "snack-title", "title": "Popcorn", "tags": [] },
+        { "id": "plain-dinner", "title": "Braised Short Ribs", "tags": [] },
+        { "id": "both", "title": "Yogurt Parfait", "tags": ["snacks"] }
+      ],
+      "mealSlots": ["breakfast", "dinner"],
+      "expected": ["breakfast-tag", "snack-title", "plain-dinner", "both"]
+    },
+    {
+      "id": "lunch-and-dinner",
+      "candidates": [
+        { "id": "breakfast-tag", "title": "Weeknight Pasta", "tags": ["breakfast"] },
+        { "id": "snack-title", "title": "Popcorn", "tags": [] },
+        { "id": "plain-dinner", "title": "Braised Short Ribs", "tags": [] },
+        { "id": "both", "title": "Yogurt Parfait", "tags": ["snacks"] }
+      ],
+      "mealSlots": ["lunch", "dinner"],
+      "expected": ["breakfast-tag", "snack-title", "plain-dinner", "both"]
+    },
+    {
+      "id": "empty-slots",
+      "candidates": [
+        { "id": "breakfast-tag", "title": "Weeknight Pasta", "tags": ["breakfast"] },
+        { "id": "snack-title", "title": "Popcorn", "tags": [] },
+        { "id": "plain-dinner", "title": "Braised Short Ribs", "tags": [] },
+        { "id": "both", "title": "Yogurt Parfait", "tags": ["snacks"] }
+      ],
+      "mealSlots": [],
+      "expected": ["breakfast-tag", "snack-title", "plain-dinner", "both"]
+    }
+  ],
+  "insufficientSlotCoverageMessage": [
+    {
+      "id": "breakfast-singular",
+      "mealSlots": ["breakfast"],
+      "found": 1,
+      "requested": 7,
+      "expected": "Cheffy found 1 breakfast recipe that match your preferences. Try broadening your preferences to fill the rest of the week."
+    },
+    {
+      "id": "breakfast-plural",
+      "mealSlots": ["breakfast"],
+      "found": 3,
+      "requested": 7,
+      "expected": "Cheffy found 3 breakfast recipes that match your preferences. Try broadening your preferences to fill the rest of the week."
+    },
+    {
+      "id": "breakfast-found-eq-requested",
+      "mealSlots": ["breakfast"],
+      "found": 7,
+      "requested": 7,
+      "expected": null
+    },
+    {
+      "id": "breakfast-found-zero",
+      "mealSlots": ["breakfast"],
+      "found": 0,
+      "requested": 7,
+      "expected": null
+    },
+    {
+      "id": "breakfast-found-gt-requested",
+      "mealSlots": ["breakfast"],
+      "found": 8,
+      "requested": 7,
+      "expected": null
+    },
+    {
+      "id": "snack-singular",
+      "mealSlots": ["snack"],
+      "found": 1,
+      "requested": 7,
+      "expected": "Cheffy found 1 snack recipe that match your preferences. Try broadening your preferences to fill the rest of the week."
+    },
+    {
+      "id": "snack-plural",
+      "mealSlots": ["snack"],
+      "found": 2,
+      "requested": 7,
+      "expected": "Cheffy found 2 snack recipes that match your preferences. Try broadening your preferences to fill the rest of the week."
+    },
+    {
+      "id": "snack-found-zero",
+      "mealSlots": ["snack"],
+      "found": 0,
+      "requested": 7,
+      "expected": null
+    },
+    {
+      "id": "generic-singular",
+      "mealSlots": ["lunch"],
+      "found": 1,
+      "requested": 7,
+      "expected": "Cheffy found 1 matching recipe — some slots were left empty rather than filled with a poor match."
+    },
+    {
+      "id": "generic-plural",
+      "mealSlots": ["lunch", "dinner"],
+      "found": 4,
+      "requested": 7,
+      "expected": "Cheffy found 4 matching recipes — some slots were left empty rather than filled with a poor match."
+    },
+    {
+      "id": "generic-when-breakfast-not-alone",
+      "mealSlots": ["breakfast", "dinner"],
+      "found": 3,
+      "requested": 7,
+      "expected": "Cheffy found 3 matching recipes — some slots were left empty rather than filled with a poor match."
+    },
+    {
+      "id": "generic-found-eq-requested",
+      "mealSlots": ["dinner"],
+      "found": 7,
+      "requested": 7,
+      "expected": null
+    }
+  ],
+  "noEligibleRecipesMessage": [
+    {
+      "id": "breakfast-only",
+      "mealSlots": ["breakfast"],
+      "expected": "Cheffy could not find breakfast or brunch recipes that match your preferences. Try another source, or add breakfast recipes."
+    },
+    {
+      "id": "snack-only",
+      "mealSlots": ["snack"],
+      "expected": "Cheffy could not find snack recipes that match your preferences. Try another source, or loosen the filters."
+    },
+    {
+      "id": "generic-lunch",
+      "mealSlots": ["lunch"],
+      "expected": "Could not find enough matching recipes. Try another source, or loosen the time and ingredient filters."
+    },
+    {
+      "id": "generic-when-breakfast-not-alone",
+      "mealSlots": ["breakfast", "dinner"],
+      "expected": "Could not find enough matching recipes. Try another source, or loosen the time and ingredient filters."
+    },
+    {
+      "id": "generic-empty-slots",
+      "mealSlots": [],
+      "expected": "Could not find enough matching recipes. Try another source, or loosen the time and ingredient filters."
+    }
+  ]
+}
