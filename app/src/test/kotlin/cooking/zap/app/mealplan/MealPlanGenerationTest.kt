@@ -109,6 +109,26 @@ class MealPlanGenerationTest {
         assertEquals(candidates.take(48).map { it.a }, kept.map { it.a })
     }
 
+    @Test
+    fun filterRecipeCandidates_negativeCapFallsBackToDefault() {
+        val candidates = (1..50).map { i -> recipe("r$i", "Recipe $i") }
+        val kept = MealPlanGeneration.filterRecipeCandidates(
+            candidates,
+            MealPlanGeneration.FilterCandidatesOptions(maxCandidates = -1),
+        )
+        assertEquals(MealPlanGeneration.MAX_CANDIDATES, kept.size)
+    }
+
+    @Test
+    fun filterRecipeCandidates_zeroCapReturnsEmpty() {
+        val candidates = (1..10).map { i -> recipe("r$i", "Recipe $i") }
+        val kept = MealPlanGeneration.filterRecipeCandidates(
+            candidates,
+            MealPlanGeneration.FilterCandidatesOptions(maxCandidates = 0),
+        )
+        assertEquals(emptyList<String>(), kept.map { it.a })
+    }
+
     // ---- resolveTargetSlots -------------------------------------------------
 
     @Test

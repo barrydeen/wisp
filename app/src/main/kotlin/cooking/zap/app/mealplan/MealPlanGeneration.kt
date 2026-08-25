@@ -384,7 +384,10 @@ object MealPlanGeneration {
         val vegetarian = PreferenceStyleId.VEGETARIAN in styles
         val (styleTags, surpriseOnly) = styleMatchers(styles)
         val mealSlots = opts.mealSlots
-        val cap = opts.maxCandidates ?: MAX_CANDIDATES
+        // Web: `opts.maxCandidates ?? MAX_CANDIDATES` then `slice(0, cap)`.
+        // Kotlin `take(n)` throws on n < 0 (JS slice treats negatives as
+        // from-the-end). Invalid caps fall back to the default rather than crash.
+        val cap = opts.maxCandidates?.takeIf { it >= 0 } ?: MAX_CANDIDATES
 
         val hardPassed = mutableListOf<RecipeCandidate>()
         for (c in candidates) {
@@ -442,8 +445,11 @@ object MealPlanGeneration {
      *
      * Hard rejects: unknown day, unknown slot, slot not requested, duplicate
      * slot, overwrite of an occupied slot under fill-empty, unknown
-     * coordinate, ineligible slot, empty/missing plan. Malformed (null)
-     * meal entries are skipped (tolerated), matching web.
+     * coordinate, ineligible slot, empty/missing plan. Web's untyped parser
+     * skips non-object meal rows; this typed [GeneratedMeal] list cannot
+     * represent those, so every entry is validated. `no-target-slots` is a
+     * request-parse error on web, not a validator reject — empty targets
+     * surface here as `unknown-slot` if any meal is returned, matching web.
      */
     fun validateGeneratedPlan(
         plan: GeneratedMealPlan?,
