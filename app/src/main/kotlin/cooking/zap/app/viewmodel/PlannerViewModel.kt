@@ -279,8 +279,8 @@ class PlannerViewModel : ViewModel() {
     // ---- debounce -----------------------------------------------------------
 
     private fun scheduleSave(weekId: String) {
-        scheduledSaveCount++
         synchronized(saveLock) {
+            scheduledSaveCount++
             saveJobs.remove(weekId)?.cancel()
             saveJobs[weekId] = viewModelScope.launch(Dispatchers.Default) {
                 delay(SAVE_DEBOUNCE_MS)

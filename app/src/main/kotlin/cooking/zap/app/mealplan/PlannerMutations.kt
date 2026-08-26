@@ -1,6 +1,7 @@
 package cooking.zap.app.mealplan
 
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -111,10 +112,13 @@ object PlannerMutations {
         return Schema.MealPlan(JsonObject(root))
     }
 
-    /** Web occupancy: a slot key present on the day is already filled. */
+    /** Same occupancy as [MealPlanGeneration.occupiedSlotsFromPlan]: key present and not JsonNull. */
     private fun slotOccupied(plan: Schema.MealPlan, dayKey: String, slotKey: String): Boolean {
-        val slots = plan.day(dayKey)?.get("slots") as? JsonObject ?: return false
-        return slotKey in slots
+        val slotsEl = plan.day(dayKey)?.get("slots") ?: return false
+        if (slotsEl is JsonNull) return false
+        val slots = slotsEl as? JsonObject ?: return false
+        val entry = slots[slotKey]
+        return entry != null && entry !is JsonNull
     }
 
     private fun withDay(

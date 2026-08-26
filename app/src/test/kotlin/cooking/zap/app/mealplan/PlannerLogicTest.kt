@@ -12,6 +12,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -291,6 +292,42 @@ class PlannerLogicTest {
         )
         assertEquals(occupied.json, collided.json)
         assertEquals(PlannerMutations.textSlot("Tacos"), collided.slot("mon", "dinner"))
+    }
+
+    @Test
+    fun applyGeneratedPlan_jsonNullSlotIsUnoccupied_fillEmptyWrites() {
+        val empty = Schema.createEmptyMealPlan(W29)
+        val withNullDinner = Schema.MealPlan(
+            JsonObject(
+                empty.json.toMutableMap().apply {
+                    put(
+                        "days",
+                        buildJsonObject {
+                            put(
+                                "mon",
+                                buildJsonObject {
+                                    put("slots", buildJsonObject { put("dinner", JsonNull) })
+                                },
+                            )
+                        },
+                    )
+                },
+            ),
+        )
+        assertEquals(
+            emptyList<MealPlanGeneration.MealSlotRef>(),
+            MealPlanGeneration.occupiedSlotsFromPlan(withNullDinner, listOf("mon"), listOf("dinner")),
+        )
+
+        val filled = PlannerMutations.applyGeneratedPlan(
+            withNullDinner,
+            listOf(generatedMeal("mon", "dinner", "30023:pk:salmon", "Salmon")),
+            MealPlanGeneration.MealPlanStrategy.FILL_EMPTY,
+        )
+        assertEquals(
+            PlannerMutations.recipeSlot("30023:pk:salmon", "Salmon"),
+            filled.slot("mon", "dinner"),
+        )
     }
 
     private fun sevenDinners() = Schema.DAY_KEYS.map { day ->

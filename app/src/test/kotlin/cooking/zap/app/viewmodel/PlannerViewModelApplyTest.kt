@@ -64,7 +64,6 @@ class PlannerViewModelApplyTest {
                 plan.slot(meal.day, meal.slot),
             )
         }
-        println("PR7-PLANNER apply-full-week scheduledSaves=${vm.scheduledSaveCount} meals=${meals.size}")
     }
 
     @Test
