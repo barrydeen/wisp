@@ -2,6 +2,8 @@ package cooking.zap.app.debug
 
 import android.util.Log
 import cooking.zap.app.mealplan.MealPlanEvents
+import cooking.zap.app.mealplan.MealPlanGeneration
+import cooking.zap.app.mealplan.PlannerLogic
 import cooking.zap.app.mealplan.PlannerMutations
 import cooking.zap.app.mealplan.PlannerWeekState
 import cooking.zap.app.mealplan.Schema
@@ -28,6 +30,61 @@ import kotlinx.serialization.json.jsonObject
  */
 object PlannerStopGateHarness {
     const val TAG = "PR7-PLANNER"
+
+    /**
+     * Full-week Cheffy apply: one [PlannerViewModel.applyGeneratedPlan] must
+     * schedule one save, then [PlannerViewModel.saveNow] publishes once.
+     * Logcat tag [TAG]. Not wired into product UI.
+     */
+    fun applyGeneratedPlanOnce(vm: PlannerViewModel, scope: CoroutineScope) {
+        scope.launch(Dispatchers.Default) {
+            try {
+                val week = vm.currentWeekId.value.ifBlank { Week.currentWeekId() }
+                Log.i(TAG, "apply-full-week: load $week")
+                vm.goToWeek(week)
+                delay(4_000)
+
+                val state = vm.weeks.value[week]
+                if (state is PlannerWeekState.DecryptFailed ||
+                    (state is PlannerWeekState.Loaded && state.readOnly)
+                ) {
+                    Log.e(TAG, "apply-full-week ABORT — state=$state")
+                    return@launch
+                }
+                if (state == null) {
+                    Log.e(TAG, "apply-full-week ABORT — week not loaded")
+                    return@launch
+                }
+
+                val meals = Schema.DAY_KEYS.map { day ->
+                    MealPlanGeneration.GeneratedMeal(
+                        day = day,
+                        slot = "dinner",
+                        a = "30023:cheffy-apply:$day-dinner",
+                        title = "Cheffy $day dinner",
+                        reason = "preview-only — must not be published",
+                        image = "https://img.example/preview.jpg",
+                    )
+                }
+                val before = vm.scheduledSaveCount
+                val ok = vm.applyGeneratedPlan(week, meals)
+                val scheduled = vm.scheduledSaveCount - before
+                Log.i(TAG, "apply-full-week: ok=$ok scheduledSaves=$scheduled (expect 1)")
+                check(ok) { "applyGeneratedPlan rejected" }
+                check(scheduled == 1) { "expected 1 scheduled save, got $scheduled" }
+
+                vm.saveNow()
+                delay(2_000)
+                val plan = PlannerLogic.planOf(vm.weeks.value[week])
+                val titles = Schema.DAY_KEYS.map { day ->
+                    (plan?.slot(day, "dinner")?.get("title") as? JsonPrimitive)?.content
+                }
+                Log.i(TAG, "apply-full-week DONE dirty=${vm.isDirty(week)} dinnerTitles=$titles")
+            } catch (e: Exception) {
+                Log.e(TAG, "apply-full-week FAILED: ${e.message}", e)
+            }
+        }
+    }
 
     fun tagShapeAudit() {
         val week = Week.currentWeekId()

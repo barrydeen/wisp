@@ -27,6 +27,32 @@ object PlannerMutations {
         put("text", text)
     }
 
+    /**
+     * Apply an approved Cheffy plan in one rebuilt [Schema.MealPlan].
+     * [MealPlanGeneration.MealPlanStrategy.FILL_EMPTY] skips slots already
+     * occupied on [plan]; [MealPlanGeneration.MealPlanStrategy.REPLACE_SELECTED]
+     * overwrites every provided slot. Slot entries go through [recipeSlot]
+     * so the title snapshot matches the picker; Cheffy-only fields
+     * (`reason`, `image`) are never written.
+     */
+    fun applyGeneratedPlan(
+        plan: Schema.MealPlan,
+        meals: List<MealPlanGeneration.GeneratedMeal>,
+        strategy: MealPlanGeneration.MealPlanStrategy =
+            MealPlanGeneration.MealPlanStrategy.FILL_EMPTY,
+    ): Schema.MealPlan {
+        var next = plan
+        for (meal in meals) {
+            if (strategy == MealPlanGeneration.MealPlanStrategy.FILL_EMPTY &&
+                slotOccupied(next, meal.day, meal.slot)
+            ) {
+                continue
+            }
+            next = setSlot(next, meal.day, meal.slot, recipeSlot(meal.a, meal.title))
+        }
+        return next
+    }
+
     fun setSlot(
         plan: Schema.MealPlan,
         dayKey: String,
@@ -83,6 +109,12 @@ object PlannerMutations {
         root["createdAt"] = JsonPrimitive(created)
         root["updatedAt"] = JsonPrimitive(updated)
         return Schema.MealPlan(JsonObject(root))
+    }
+
+    /** Web occupancy: a slot key present on the day is already filled. */
+    private fun slotOccupied(plan: Schema.MealPlan, dayKey: String, slotKey: String): Boolean {
+        val slots = plan.day(dayKey)?.get("slots") as? JsonObject ?: return false
+        return slotKey in slots
     }
 
     private fun withDay(

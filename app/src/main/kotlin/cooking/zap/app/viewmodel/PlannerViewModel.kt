@@ -2,6 +2,7 @@ package cooking.zap.app.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import cooking.zap.app.mealplan.MealPlanGeneration
 import cooking.zap.app.mealplan.PlannerLogic
 import cooking.zap.app.mealplan.PlannerMutations
 import cooking.zap.app.mealplan.PlannerWeekState
@@ -74,6 +75,15 @@ class PlannerViewModel : ViewModel() {
     private val pendingSaves = HashSet<String>()
     private val saveLock = Any()
     private val loadMutex = Mutex()
+
+    /**
+     * How many times [scheduleSave] has been invoked on this instance.
+     * Load-bearing for Cheffy apply: seven meals must increment this once,
+     * not seven times. Debounce coalescing would hide a loop of [setSlot]
+     * if tests only counted [PlannerRepository.saveMealPlan] after 2s.
+     */
+    internal var scheduledSaveCount: Int = 0
+        private set
 
     val writeResults: SharedFlow<PlannerRepository.WriteResult>
         get() = requireNotNull(repo).writeResults
@@ -199,11 +209,34 @@ class PlannerViewModel : ViewModel() {
     fun setWeekNotes(weekId: String, notes: String): Boolean =
         mutatePlan(weekId) { PlannerMutations.setWeekNotes(it, notes) }
 
+    /**
+     * Apply an approved Cheffy plan in one [mutatePlan] / one scheduled save.
+     * Fill-empty occupancy is decided inside the transform against the plan
+     * mutatePlan reads from the current week map — not against a preview snapshot.
+     * Returns false (and does not schedule a save) when nothing is applicable.
+     */
+    fun applyGeneratedPlan(
+        weekId: String,
+        meals: List<MealPlanGeneration.GeneratedMeal>,
+        strategy: MealPlanGeneration.MealPlanStrategy =
+            MealPlanGeneration.MealPlanStrategy.FILL_EMPTY,
+    ): Boolean {
+        if (meals.isEmpty()) return false
+        return mutatePlan(weekId) { PlannerMutations.applyGeneratedPlan(it, meals, strategy) }
+    }
+
+    /** Test seam: paint a week state without a repository fetch. */
+    internal fun seedWeekForTest(weekId: String, state: PlannerWeekState) {
+        patchWeeks { it + (weekId to state) }
+    }
+
     private fun mutatePlan(weekId: String, transform: (Schema.MealPlan) -> Schema.MealPlan): Boolean {
         val state = _weeks.value[weekId]
         if (!PlannerLogic.canMutate(state)) return false
         val plan = PlannerLogic.planOf(state!!) ?: return false
-        val next = PlannerLogic.afterMutation(transform(plan))
+        val transformed = transform(plan)
+        if (transformed.json == plan.json) return false
+        val next = PlannerLogic.afterMutation(transformed)
         patchWeeks { it + (weekId to next) }
         scheduleSave(weekId)
         return true
@@ -246,6 +279,7 @@ class PlannerViewModel : ViewModel() {
     // ---- debounce -----------------------------------------------------------
 
     private fun scheduleSave(weekId: String) {
+        scheduledSaveCount++
         synchronized(saveLock) {
             saveJobs.remove(weekId)?.cancel()
             saveJobs[weekId] = viewModelScope.launch(Dispatchers.Default) {
