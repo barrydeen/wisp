@@ -10,6 +10,7 @@ import cooking.zap.app.nostr.FakeNip98Signer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -22,6 +23,7 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class CheffyPlanViewModelTest {
 
+    private val dispatcher = UnconfinedTestDispatcher()
     private val W29 = "2026-W29"
     private val pk = "ab".repeat(32)
     private lateinit var vm: CheffyPlanViewModel
@@ -29,7 +31,7 @@ class CheffyPlanViewModelTest {
 
     @Before
     fun setUp() {
-        Dispatchers.setMain(Dispatchers.Unconfined)
+        Dispatchers.setMain(dispatcher)
         vm = CheffyPlanViewModel()
         signer = FakeNip98Signer(pk)
         vm.open(W29, signedIn = true, readOnly = false)
@@ -215,6 +217,23 @@ class CheffyPlanViewModelTest {
         assertEquals(listOf("mon"), vm.state.value.days)
         vm.toggleDay("mon")
         assertEquals(listOf("mon"), vm.state.value.days)
+    }
+
+    @Test
+    fun applyResult_sortsMealsByDayThenSlot() {
+        vm.applyResult(
+            MealPlanResult.Ok(
+                listOf(
+                    meal("wed", "dinner", "C"),
+                    meal("mon", "snack", "B"),
+                    meal("mon", "breakfast", "A"),
+                ),
+            ),
+        )
+        assertEquals(
+            listOf("mon:breakfast", "mon:snack", "wed:dinner"),
+            vm.state.value.meals.map { MealPlanGeneration.slotKey(it.day, it.slot) },
+        )
     }
 
     @Test

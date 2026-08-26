@@ -337,7 +337,7 @@ class CheffyPlanViewModel : ViewModel() {
                 _state.update {
                     it.copy(
                         phase = Phase.PREVIEW,
-                        meals = result.meals,
+                        meals = sortMeals(result.meals),
                         coverageNote = coverage,
                         message = "",
                         thinkingLine = "",
@@ -469,6 +469,19 @@ class CheffyPlanViewModel : ViewModel() {
             val next = if (value in current) current - value else current + value
             if (next.isEmpty()) return current
             return order.filter { it in next }
+        }
+
+        internal fun sortMeals(
+            meals: List<MealPlanGeneration.GeneratedMeal>,
+        ): List<MealPlanGeneration.GeneratedMeal> {
+            val dayRank = Schema.DAY_KEYS.withIndex().associate { it.value to it.index }
+            val slotRank = Schema.SLOT_KEYS.withIndex().associate { it.value to it.index }
+            return meals.sortedWith(
+                compareBy(
+                    { dayRank[it.day] ?: Int.MAX_VALUE },
+                    { slotRank[it.slot] ?: Int.MAX_VALUE },
+                ),
+            )
         }
     }
 }
