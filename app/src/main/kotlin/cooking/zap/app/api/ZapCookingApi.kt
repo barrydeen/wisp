@@ -1,5 +1,6 @@
 package cooking.zap.app.api
 
+import cooking.zap.app.mealplan.MealPlanGeneration
 import cooking.zap.app.nostr.Nip98
 import cooking.zap.app.nostr.Nip98HeaderCache
 import cooking.zap.app.nostr.NostrSigner
@@ -465,6 +466,75 @@ class ZapCookingApi(
         CreditStatusResult.Error(NETWORK_ERROR_MESSAGE)
     }
 
+    /**
+     * `POST /api/zappy/meal-plan` — Cheffy fills a weekly planner from
+     * client-supplied candidate recipes. NIP-98 with body-hash binding
+     * (the body is unique per call, so [nip98Cache] never hits — every
+     * request is a real signer round trip). Long-timeout compute client:
+     * the model call plus a json_schema→json_object retry routinely
+     * exceeds the general 15s read timeout.
+     *
+     * [onAuthHeaderReady] fires after the Authorization header is in
+     * hand and before the HTTP call is issued — Phase 5's seam between
+     * "waiting on your signer" and "Cheffy is working". Default null;
+     * this PR adds no UI.
+     *
+     * The body is serialized exactly once: that String is what we sign
+     * and what we send. Re-serializing between those two would 401.
+     */
+    suspend fun requestMealPlan(
+        request: MealPlanGeneration.MealPlanGenerationRequest,
+        signer: NostrSigner,
+        onAuthHeaderReady: (() -> Unit)? = null,
+    ): MealPlanResult {
+        val count = request.candidates.size
+        if (count == 0) {
+            return MealPlanResult.InvalidRequest(
+                MealPlanGeneration.GenerationValidationError.NO_CANDIDATES.id,
+                "No recipes were available to plan with.",
+            )
+        }
+        if (count > MealPlanGeneration.MAX_CANDIDATES) {
+            return MealPlanResult.InvalidRequest(
+                MealPlanGeneration.GenerationValidationError.TOO_MANY_CANDIDATES.id,
+                "Too many candidate recipes (max ${MealPlanGeneration.MAX_CANDIDATES}).",
+            )
+        }
+        val bodyString = encodeMealPlanBody(request)
+        return try {
+            val resp = authedRaw(
+                method = "POST",
+                url = "$baseUrl/api/zappy/meal-plan",
+                bodyString = bodyString,
+                signer = signer,
+                httpClient = HttpClientFactory.getComputeClient(),
+                onAuthHeaderReady = onAuthHeaderReady,
+            )
+            when (val mapped = mapMealPlanResponse(resp.code, resp.body)) {
+                is MealPlanResult.Ok -> when (
+                    val validated = MealPlanGeneration.validateGeneratedPlan(
+                        MealPlanGeneration.GeneratedMealPlan(mapped.meals),
+                        request,
+                    )
+                ) {
+                    is MealPlanGeneration.ValidationResult.Ok ->
+                        MealPlanResult.Ok(validated.plan.meals)
+                    is MealPlanGeneration.ValidationResult.Err ->
+                        MealPlanResult.Rejected(validated.error.id, validated.message)
+                }
+                else -> mapped
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: SignerRejectedException) {
+            MealPlanResult.SignFailed
+        } catch (e: SignerCancelledException) {
+            MealPlanResult.SignFailed
+        } catch (e: Exception) {
+            MealPlanResult.Failed(NETWORK_ERROR_MESSAGE)
+        }
+    }
+
     /** Raw status + body of an HTTP response, for callers that map codes themselves. */
     private data class RawResponse(val code: Int, val body: String)
 
@@ -474,6 +544,10 @@ class ZapCookingApi(
      * silently re-signed once, and retried once (Phase 0 decision 1). A
      * null [bodyString] sends a GET; non-null sends a POST whose exact
      * bytes are hash-bound into the header.
+     *
+     * [onAuthHeaderReady] is invoked once, after the header is obtained
+     * and before the HTTP call is issued. Existing callers pass nothing
+     * (default null) and are unchanged.
      */
     private suspend fun authedRaw(
         method: String,
@@ -481,7 +555,9 @@ class ZapCookingApi(
         bodyString: String?,
         signer: NostrSigner,
         httpClient: OkHttpClient,
+        onAuthHeaderReady: (() -> Unit)? = null,
     ): RawResponse = withContext(Dispatchers.IO) {
+        var headerReadyNotified = false
         nip98Cache.withAuthHeader(
             signer = signer,
             method = method,
@@ -489,6 +565,10 @@ class ZapCookingApi(
             bodyString = bodyString,
             isUnauthorized = { it.code == 401 },
         ) { authHeader ->
+            if (!headerReadyNotified) {
+                headerReadyNotified = true
+                onAuthHeaderReady?.invoke()
+            }
             val builder = Request.Builder().url(url).header("Authorization", authHeader)
             if (bodyString != null) {
                 builder.post(bodyString.toRequestBody(jsonMediaType))
@@ -525,6 +605,12 @@ class ZapCookingApi(
 
         private const val NETWORK_ERROR_MESSAGE =
             "Network error — check your connection and try again."
+
+        private const val MEAL_PLAN_UNPARSEABLE_MESSAGE =
+            "Cheffy could not finish that plan. Please try again."
+
+        private const val MEAL_PLAN_NOT_MEMBER_FALLBACK =
+            "Cheffy is available to Cook+ members."
 
         /** Companion-scope decoder for the pure response-mapping helpers below. */
         private val lenientJson = Json { ignoreUnknownKeys = true }
@@ -569,6 +655,48 @@ class ZapCookingApi(
                         resp?.error ?: "Cheffy could not finish that one (HTTP $code)."
                     )
                 }
+            }
+        }
+
+        /**
+         * Map a meal-plan response onto [MealPlanResult]. Pure.
+         *
+         * The body's typed `code` is read first; HTTP status is the
+         * fallback for bodies that fail to parse. `no-candidates` is the
+         * one code that picks its bucket regardless of status — 400 and
+         * 422 otherwise share [MealPlanGeneration.GenerationValidationError]
+         * and must be split by status. Server `error` strings pass
+         * through as user-facing copy. There is no membership-unavailable
+         * mapping: this endpoint fails open on a membership-service outage.
+         */
+        internal fun mapMealPlanResponse(code: Int, body: String): MealPlanResult {
+            val resp = decodeOrNull(MealPlanApiResponse.serializer(), body)
+            if (code in 200..299 && resp != null && resp.ok) {
+                val meals = resp.plan?.meals
+                if (meals != null) {
+                    return MealPlanResult.Ok(meals.map { it.toGeneratedMeal() })
+                }
+                return MealPlanResult.Failed(resp.error ?: MEAL_PLAN_UNPARSEABLE_MESSAGE)
+            }
+            if (resp?.code == "no-candidates") {
+                return MealPlanResult.NoCandidates(
+                    resp.error ?: "No recipes were available to plan with.",
+                )
+            }
+            val error = resp?.error
+            return when (code) {
+                401 -> MealPlanResult.SignInRequired
+                403 -> MealPlanResult.MembersOnly(error ?: MEAL_PLAN_NOT_MEMBER_FALLBACK)
+                429 -> MealPlanResult.RateLimited(resp?.retryAfter)
+                400 -> MealPlanResult.InvalidRequest(
+                    resp?.code.orEmpty(),
+                    error ?: MEAL_PLAN_UNPARSEABLE_MESSAGE,
+                )
+                422 -> MealPlanResult.Rejected(
+                    resp?.code.orEmpty(),
+                    error ?: MEAL_PLAN_UNPARSEABLE_MESSAGE,
+                )
+                else -> MealPlanResult.Failed(error ?: MEAL_PLAN_UNPARSEABLE_MESSAGE)
             }
         }
 
