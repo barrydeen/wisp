@@ -3566,6 +3566,16 @@ fun WispNavHost(
                 debugPlantPlan = debugPlantPlan,
                 debugPlantReadOnlyPlan = debugPlantReadOnlyPlan,
                 debugCleanupPlan = debugCleanupPlan,
+                candidateSource = feedViewModel.mealPlanCandidateSource,
+                zapCookingApi = feedViewModel.zapCookingApi,
+                signer = feedViewModel.signer,
+                onViewMembership = if (BuildConfig.MEMBERSHIP_LINKOUT_ENABLED) {
+                    {
+                        context.startActivity(
+                            Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://zap.cooking/membership"))
+                        )
+                    }
+                } else null,
             )
         }
 

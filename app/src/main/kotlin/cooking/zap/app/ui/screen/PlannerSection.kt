@@ -26,6 +26,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.AddShoppingCart
 import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -54,7 +55,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.SubcomposeAsyncImage
+import androidx.lifecycle.viewmodel.compose.viewModel
+import cooking.zap.app.FeatureFlags
 import cooking.zap.app.R
+import cooking.zap.app.api.ZapCookingApi
+import cooking.zap.app.cheffy.Cheffy
 import cooking.zap.app.mealplan.GroceryGeneration
 import cooking.zap.app.mealplan.PlannerLogic
 import cooking.zap.app.mealplan.PlannerMutations
@@ -62,13 +67,20 @@ import cooking.zap.app.mealplan.PlannerWeekState
 import cooking.zap.app.mealplan.RecipePickerLogic
 import cooking.zap.app.mealplan.Schema
 import cooking.zap.app.mealplan.Week
+import cooking.zap.app.nostr.NostrSigner
 import cooking.zap.app.nostr.GroceryEvents
 import cooking.zap.app.nostr.RecipeFormats
+import cooking.zap.app.repo.CookbookCovers
+import cooking.zap.app.repo.MealPlanCandidateSource
 import cooking.zap.app.repo.RecipeRepository
+import cooking.zap.app.ui.component.CheffyIcon
+import cooking.zap.app.ui.component.CheffyPlanSheet
 import cooking.zap.app.ui.component.GenerateGrocerySheet
 import cooking.zap.app.ui.component.PlannerNotesDialog
 import cooking.zap.app.ui.component.RecipePickerSheet
 import cooking.zap.app.ui.component.SlotEditorDialog
+import cooking.zap.app.ui.util.LocalCanSign
+import cooking.zap.app.viewmodel.CheffyPlanViewModel
 import cooking.zap.app.viewmodel.CookbookViewModel
 import cooking.zap.app.viewmodel.GroceryListViewModel
 import cooking.zap.app.viewmodel.PlannerViewModel
@@ -114,12 +126,20 @@ fun PlannerSection(
     onOpenGroceryList: (listId: String) -> Unit,
     modifier: Modifier = Modifier,
     onDebugLongPress: (() -> Unit)? = null,
+    candidateSource: MealPlanCandidateSource? = null,
+    zapCookingApi: ZapCookingApi? = null,
+    signer: NostrSigner? = null,
+    onViewMembership: (() -> Unit)? = null,
+    onOpenRecipe: ((author: String, dTag: String) -> Unit)? = null,
 ) {
     val weeks by viewModel.weeks.collectAsState()
     val currentWeekId by viewModel.currentWeekId.collectAsState()
     val loading by viewModel.loading.collectAsState()
     val saving by viewModel.saving.collectAsState()
     val canWrite by viewModel.canWrite.collectAsState()
+    val canSign = LocalCanSign.current
+    val cheffyVm: CheffyPlanViewModel = viewModel()
+    val cheffyState by cheffyVm.state.collectAsState()
 
     val state = weeks[currentWeekId]
     val plan = PlannerLogic.planOf(state)
@@ -134,9 +154,19 @@ fun PlannerSection(
     // PR 11: generate-grocery confirm. Plain remember — the sheet's dry-run
     // state is transient; reopening after process death just re-resolves.
     var showGenerate by remember { mutableStateOf(false) }
+    var showCheffy by remember { mutableStateOf(false) }
     val generateScope = rememberCoroutineScope()
 
     val weekSlots = remember(plan) { plan?.let { GroceryGeneration.collectWeekRecipeSlots(it) } }
+    val cheffyPlanEnabled: Boolean? = when {
+        !FeatureFlags.CHEFFY_MEAL_PLAN_ENABLED -> null
+        candidateSource == null || zapCookingApi == null || signer == null -> null
+        !canSign -> null
+        state == null || state is PlannerWeekState.Loading -> null
+        state is PlannerWeekState.DecryptFailed -> null
+        state is PlannerWeekState.Loaded && state.readOnly -> null
+        else -> true
+    }
 
     // Mid-session logout / store-clear: dismiss open editors gracefully.
     LaunchedEffect(userPubkey) {
@@ -144,7 +174,22 @@ fun PlannerSection(
             slotTarget = null
             pickerTarget = null
             notesTarget = null
+            showCheffy = false
+            cheffyVm.onSignedOut()
         }
+    }
+
+    fun runCheffyGenerate() {
+        val current = plan ?: return
+        val source = candidateSource ?: return
+        val api = zapCookingApi ?: return
+        cheffyVm.generate(
+            plan = current,
+            pubkey = userPubkey,
+            signer = signer,
+            discover = { src, pk -> source.collect(src, pk, Int.MAX_VALUE) },
+            request = { req, s, onAuth -> api.requestMealPlan(req, s, onAuth) },
+        )
     }
 
     Column(modifier.fillMaxSize()) {
@@ -159,6 +204,16 @@ fun PlannerSection(
             // renders disabled (tap explains why), true opens the confirm.
             generateEnabled = if (weekSlots == null || !canWrite) null else weekSlots.aTags.isNotEmpty(),
             onGenerate = { showGenerate = true },
+            cheffyPlanEnabled = cheffyPlanEnabled,
+            onCheffyPlan = {
+                val readOnly = state is PlannerWeekState.Loaded && state.readOnly
+                cheffyVm.open(
+                    weekId = currentWeekId,
+                    signedIn = !userPubkey.isNullOrBlank(),
+                    readOnly = readOnly,
+                )
+                showCheffy = true
+            },
             onDebugLongPress = onDebugLongPress,
         )
 
@@ -188,6 +243,16 @@ fun PlannerSection(
                         onSlotTap = { day, slot -> if (editable) slotTarget = "$day|$slot" },
                         onWeekNotesTap = { if (editable) notesTarget = "week" },
                         onDayNotesTap = { day -> if (editable) notesTarget = "day|$day" },
+                        onCheffyPlan = cheffyPlanEnabled?.let {
+                            {
+                                cheffyVm.open(
+                                    weekId = currentWeekId,
+                                    signedIn = !userPubkey.isNullOrBlank(),
+                                    readOnly = false,
+                                )
+                                showCheffy = true
+                            }
+                        },
                     )
             }
         }
@@ -304,6 +369,37 @@ fun PlannerSection(
         )
     }
 
+    if (showCheffy) {
+        CheffyPlanSheet(
+            state = cheffyState,
+            onDismiss = {
+                showCheffy = false
+                cheffyVm.cancelInFlight()
+            },
+            onToggleSlot = cheffyVm::toggleSlot,
+            onToggleDay = cheffyVm::toggleDay,
+            onToggleStyle = cheffyVm::toggleStyle,
+            onMaxMinutes = cheffyVm::setMaxMinutes,
+            onServings = cheffyVm::setServings,
+            onExclude = cheffyVm::setExcludeText,
+            onNotes = cheffyVm::setNotes,
+            onSource = cheffyVm::setSource,
+            onStrategy = cheffyVm::setStrategy,
+            onGenerate = { runCheffyGenerate() },
+            onApply = {
+                if (cheffyVm.apply(viewModel)) showCheffy = false
+            },
+            onRemove = cheffyVm::removeMeal,
+            onView = { meal ->
+                val parsed = CookbookCovers.parseCoordinate(meal.a) ?: return@CheffyPlanSheet
+                onOpenRecipe?.invoke(parsed.author, parsed.dTag)
+            },
+            onBackToForm = cheffyVm::backToForm,
+            onTryAgain = { runCheffyGenerate() },
+            onViewMembership = onViewMembership,
+        )
+    }
+
     notesTarget?.let { target ->
         if (target == "week") {
             PlannerNotesDialog(
@@ -338,6 +434,9 @@ private fun PlannerHeader(
     /** null = hidden; false = disabled (tap explains why); true = active. */
     generateEnabled: Boolean?,
     onGenerate: () -> Unit,
+    /** null = hidden; false = disabled; true = active. Cheffy hides rather than disables. */
+    cheffyPlanEnabled: Boolean? = null,
+    onCheffyPlan: () -> Unit = {},
     onDebugLongPress: (() -> Unit)? = null,
 ) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
@@ -391,6 +490,22 @@ private fun PlannerHeader(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(Modifier.width(8.dp))
+                }
+                if (cheffyPlanEnabled != null) {
+                    TextButton(
+                        onClick = { if (cheffyPlanEnabled) onCheffyPlan() },
+                        colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                            contentColor = if (cheffyPlanEnabled) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                        ),
+                    ) {
+                        CheffyIcon(
+                            size = 16.dp,
+                            expression = Cheffy.Expression.HAPPY,
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(stringResource(R.string.cheffy_plan_header_action))
+                    }
                 }
                 if (generateEnabled != null) {
                     val context = LocalContext.current
@@ -465,6 +580,7 @@ private fun WeekBody(
     onSlotTap: (day: String, slot: String) -> Unit,
     onWeekNotesTap: () -> Unit,
     onDayNotesTap: (day: String) -> Unit,
+    onCheffyPlan: (() -> Unit)? = null,
 ) {
     val monday = remember(weekId) { Week.mondayOfWeek(weekId) }
     val todayKey = remember(isCurrentWeek) {
@@ -492,7 +608,7 @@ private fun WeekBody(
         item(key = "header") {
             Column {
                 if (readOnly) ReadOnlyBanner()
-                if (isEmpty) EmptyBanner()
+                if (isEmpty) EmptyBanner(onCheffyPlan = onCheffyPlan)
                 WeekNotesRow(notes = plan.notes, editable = editable, onTap = onWeekNotesTap)
             }
         }
@@ -533,7 +649,7 @@ private fun ReadOnlyBanner() {
 }
 
 @Composable
-private fun EmptyBanner() {
+private fun EmptyBanner(onCheffyPlan: (() -> Unit)? = null) {
     Column(Modifier.fillMaxWidth().padding(vertical = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Text("📅", style = MaterialTheme.typography.headlineMedium)
         Spacer(Modifier.height(4.dp))
@@ -546,6 +662,12 @@ private fun EmptyBanner() {
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        if (onCheffyPlan != null) {
+            Spacer(Modifier.height(12.dp))
+            Button(onClick = onCheffyPlan) {
+                Text(stringResource(R.string.cheffy_plan_empty_cta))
+            }
+        }
     }
 }
 
