@@ -43,6 +43,17 @@ class MealPlanCandidatesTest {
     }
 
     @Test
+    fun tags_dropMixedCaseMeta_keepPrefixedBreakfast() {
+        val tags = MealPlanCandidates.candidateFromEvent(
+            event(tTags = listOf("ZapCooking", "NostrCooking", "zapcooking-breakfast")),
+        )!!.tags
+        assertFalse("zapcooking" in tags)
+        assertFalse("nostrcooking" in tags)
+        assertTrue("zapcooking-breakfast" in tags)
+        assertEquals(listOf("zapcooking-breakfast"), tags)
+    }
+
+    @Test
     fun tags_dedupeCaseAndCap8And80() {
         val tTags = buildList {
             add("zapcooking")
@@ -192,6 +203,14 @@ class MealPlanCandidatesTest {
                 ),
             ),
         )
+
+        // A d-tag that itself contains ":" is not a recipe coordinate
+        // (`parts.size == 3` fails). Discovery must reject it as a key so it
+        // cannot occupy a cap slot and then be dropped by candidateFromEvent.
+        val colonInD = event(dTag = "foo:bar")
+        assertNull(MealPlanCandidates.coordinateFromEvent(colonInD))
+        assertNull(MealPlanCandidates.candidateFromEvent(colonInD))
+        assertFalse(MealPlanGeneration.isRecipeCoordinate("30023:$author:foo:bar"))
     }
 
     @Test

@@ -197,8 +197,14 @@ object MealPlanCandidates {
     internal fun recipeTags(event: NostrEvent): List<String> {
         val raw = event.tags.mapNotNull { tag ->
             if (tag.size < 2 || tag[0] != "t") return@mapNotNull null
-            val value = tag[1]
-            if (value in META_TAGS) return@mapNotNull null
+            val value = tag[1].trim()
+            if (value.isEmpty()) return@mapNotNull null
+            // Exact equality on the lowercased value — never prefix match.
+            // uniqueTrim stores tags lowercased, so a case-sensitive skip of
+            // "zapcooking" would let "ZapCooking" slip through and be stored
+            // as the meta tag we meant to drop. "zapcooking-breakfast" still
+            // survives (it is not equal to "zapcooking").
+            if (value.lowercase(Locale.ROOT) in META_TAGS) return@mapNotNull null
             value
         }
         return uniqueTrim(raw, MealPlanGeneration.MAX_TAGS_PER_CANDIDATE, lowercase = true)
@@ -231,7 +237,7 @@ object MealPlanCandidates {
         )
     }
 
-    private fun coordinateFromEvent(event: NostrEvent): String? {
+    internal fun coordinateFromEvent(event: NostrEvent): String? {
         val dTag = RecipeParser.dTag(event)
         if (dTag.isEmpty() || event.pubkey.isEmpty()) return null
         if (HiddenRecipes.isHidden(event.kind, event.pubkey, dTag)) return null

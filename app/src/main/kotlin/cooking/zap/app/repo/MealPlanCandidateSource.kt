@@ -5,7 +5,6 @@ import cooking.zap.app.mealplan.MealPlanCandidates
 import cooking.zap.app.mealplan.MealPlanGeneration
 import cooking.zap.app.nostr.ClientMessage
 import cooking.zap.app.nostr.Filter
-import cooking.zap.app.nostr.HiddenRecipes
 import cooking.zap.app.nostr.Nip23RecipeFormat
 import cooking.zap.app.nostr.NostrEvent
 import cooking.zap.app.nostr.RecipeFormats
@@ -152,7 +151,7 @@ class MealPlanCandidateSource(
         fun consider(event: NostrEvent) {
             if (authorGuard != null && event.pubkey != authorGuard) return
             if (!isUsable(event)) return
-            val key = coordinateKey(event) ?: return
+            val key = MealPlanCandidates.coordinateFromEvent(event) ?: return
             val current = byA[key]
             if (current == null || event.created_at > current.created_at ||
                 (event.created_at == current.created_at && event.id < current.id)
@@ -211,16 +210,7 @@ class MealPlanCandidateSource(
     private fun isUsable(event: NostrEvent): Boolean {
         if (RecipeFormats.forEvent(event) == null) return false
         if (eventRepo.deletedEventsRepo?.isEventDeleted(event) == true) return false
-        val dTag = RecipeParser.dTag(event)
-        if (dTag.isEmpty()) return false
-        if (HiddenRecipes.isHidden(event.kind, event.pubkey, dTag)) return false
-        return true
-    }
-
-    private fun coordinateKey(event: NostrEvent): String? {
-        val dTag = RecipeParser.dTag(event)
-        if (dTag.isEmpty()) return null
-        return "${event.kind}:${event.pubkey}:$dTag"
+        return MealPlanCandidates.coordinateFromEvent(event) != null
     }
 
     /** Same widened recipe read union as [RecipeRepository] (copied, not called). */
