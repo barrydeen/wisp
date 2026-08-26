@@ -12,6 +12,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -156,6 +157,198 @@ class PlannerLogicTest {
             plan.json["futureFeature"]?.jsonObject,
         )
     }
+
+    // ---- applyGeneratedPlan (Cheffy, one rebuilt plan) ----------------------
+
+    @Test
+    fun applyGeneratedPlan_writesSevenMealsInOnePlan() {
+        val base = Schema.createEmptyMealPlan(W29)
+        val meals = sevenDinners()
+        val plan = PlannerMutations.applyGeneratedPlan(base, meals)
+
+        for (meal in meals) {
+            assertEquals(
+                PlannerMutations.recipeSlot(meal.a, meal.title),
+                plan.slot(meal.day, meal.slot),
+            )
+        }
+    }
+
+    @Test
+    fun applyGeneratedPlan_fillEmptySkipsOccupied_replaceSelectedOverwrites() {
+        var plan = PlannerMutations.setSlot(
+            Schema.createEmptyMealPlan(W29),
+            "mon", "dinner",
+            PlannerMutations.textSlot("Leftovers"),
+        )
+        val salmon = generatedMeal("mon", "dinner", "30023:pk:salmon", "Salmon")
+        val pasta = generatedMeal("tue", "dinner", "30023:pk:pasta", "Pasta")
+
+        plan = PlannerMutations.applyGeneratedPlan(
+            plan,
+            listOf(salmon, pasta),
+            MealPlanGeneration.MealPlanStrategy.FILL_EMPTY,
+        )
+        assertEquals(PlannerMutations.textSlot("Leftovers"), plan.slot("mon", "dinner"))
+        assertEquals(PlannerMutations.recipeSlot(pasta.a, pasta.title), plan.slot("tue", "dinner"))
+
+        plan = PlannerMutations.applyGeneratedPlan(
+            plan,
+            listOf(salmon),
+            MealPlanGeneration.MealPlanStrategy.REPLACE_SELECTED,
+        )
+        assertEquals(PlannerMutations.recipeSlot(salmon.a, salmon.title), plan.slot("mon", "dinner"))
+    }
+
+    @Test
+    fun applyGeneratedPlan_preservesUnknownFieldsAtEveryLevel() {
+        val base = Schema.createEmptyMealPlan(W29)
+        val withPlanExtra = Schema.MealPlan(
+            JsonObject(base.json + ("futureFeature" to buildJsonObject { put("some", "data") })),
+        )
+        var plan = PlannerMutations.setSlot(
+            withPlanExtra, "mon", "dinner",
+            JsonObject(
+                PlannerMutations.textSlot("Tacos") + ("servings" to JsonPrimitive(2)),
+            ),
+        )
+        plan = PlannerMutations.setDayNotes(plan, "mon", "prep ahead")
+        val mon = plan.day("mon")!!
+        plan = Schema.MealPlan(
+            JsonObject(
+                plan.json.toMutableMap().apply {
+                    put(
+                        "days",
+                        JsonObject(
+                            plan.days.toMutableMap().apply {
+                                put(
+                                    "mon",
+                                    JsonObject(mon + ("prepStyle" to JsonPrimitive("batch"))),
+                                )
+                            },
+                        ),
+                    )
+                },
+            ),
+        )
+
+        plan = PlannerMutations.applyGeneratedPlan(
+            plan,
+            listOf(generatedMeal("tue", "dinner", "30023:pk:pasta", "Pasta")),
+        )
+
+        assertEquals(
+            buildJsonObject { put("some", "data") },
+            plan.json["futureFeature"]?.jsonObject,
+        )
+        assertEquals("prep ahead", plan.day("mon")?.get("notes")?.let { (it as JsonPrimitive).content })
+        assertEquals("batch", plan.day("mon")?.get("prepStyle")?.let { (it as JsonPrimitive).content })
+        assertEquals(
+            JsonPrimitive(2),
+            plan.slot("mon", "dinner")?.get("servings"),
+        )
+        assertEquals(PlannerMutations.recipeSlot("30023:pk:pasta", "Pasta"), plan.slot("tue", "dinner"))
+    }
+
+    @Test
+    fun applyGeneratedPlan_writesTitleSnapshot_andOmitsReasonAndImage() {
+        val meal = generatedMeal(
+            day = "wed",
+            slot = "lunch",
+            a = "30023:pk:salad",
+            title = "Crunchy Salad",
+            reason = "high protein leftover",
+            image = "https://img.example/salad.jpg",
+        )
+        val plan = PlannerMutations.applyGeneratedPlan(
+            Schema.createEmptyMealPlan(W29),
+            listOf(meal),
+        )
+        val slot = plan.slot("wed", "lunch")!!
+        assertEquals("recipe", (slot["type"] as JsonPrimitive).content)
+        assertEquals(meal.a, (slot["a"] as JsonPrimitive).content)
+        assertEquals("Crunchy Salad", (slot["title"] as JsonPrimitive).content)
+        assertFalse("reason" in slot)
+        assertFalse("image" in slot)
+        assertEquals(setOf("type", "a", "title"), slot.keys)
+
+        val dumped = Schema.serializeMealPlan(plan)
+        assertFalse("reason key leaked into plan JSON", """"reason"""" in dumped)
+        assertFalse("image key leaked into plan JSON", """"image"""" in dumped)
+    }
+
+    @Test
+    fun applyGeneratedPlan_emptyOrFullyOccupiedIsUnchanged() {
+        val empty = Schema.createEmptyMealPlan(W29)
+        assertEquals(empty.json, PlannerMutations.applyGeneratedPlan(empty, emptyList()).json)
+
+        val occupied = PlannerMutations.setSlot(
+            empty, "mon", "dinner", PlannerMutations.textSlot("Tacos"),
+        )
+        val collided = PlannerMutations.applyGeneratedPlan(
+            occupied,
+            listOf(generatedMeal("mon", "dinner", "30023:pk:salmon", "Salmon")),
+            MealPlanGeneration.MealPlanStrategy.FILL_EMPTY,
+        )
+        assertEquals(occupied.json, collided.json)
+        assertEquals(PlannerMutations.textSlot("Tacos"), collided.slot("mon", "dinner"))
+    }
+
+    @Test
+    fun applyGeneratedPlan_jsonNullSlotIsUnoccupied_fillEmptyWrites() {
+        val empty = Schema.createEmptyMealPlan(W29)
+        val withNullDinner = Schema.MealPlan(
+            JsonObject(
+                empty.json.toMutableMap().apply {
+                    put(
+                        "days",
+                        buildJsonObject {
+                            put(
+                                "mon",
+                                buildJsonObject {
+                                    put("slots", buildJsonObject { put("dinner", JsonNull) })
+                                },
+                            )
+                        },
+                    )
+                },
+            ),
+        )
+        assertEquals(
+            emptyList<MealPlanGeneration.MealSlotRef>(),
+            MealPlanGeneration.occupiedSlotsFromPlan(withNullDinner, listOf("mon"), listOf("dinner")),
+        )
+
+        val filled = PlannerMutations.applyGeneratedPlan(
+            withNullDinner,
+            listOf(generatedMeal("mon", "dinner", "30023:pk:salmon", "Salmon")),
+            MealPlanGeneration.MealPlanStrategy.FILL_EMPTY,
+        )
+        assertEquals(
+            PlannerMutations.recipeSlot("30023:pk:salmon", "Salmon"),
+            filled.slot("mon", "dinner"),
+        )
+    }
+
+    private fun sevenDinners() = Schema.DAY_KEYS.map { day ->
+        generatedMeal(day, "dinner", "30023:pk:$day-dinner", "Dinner $day")
+    }
+
+    private fun generatedMeal(
+        day: String,
+        slot: String,
+        a: String,
+        title: String,
+        reason: String? = "preview-only reason",
+        image: String? = "https://img.example/preview.jpg",
+    ) = MealPlanGeneration.GeneratedMeal(
+        day = day,
+        slot = slot,
+        a = a,
+        title = title,
+        reason = reason,
+        image = image,
+    )
 
     // ---- supersedes / newest-per-week (NIP-01) ------------------------------
 

@@ -1,6 +1,7 @@
 package cooking.zap.app.mealplan
 
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -25,6 +26,32 @@ object PlannerMutations {
     fun textSlot(text: String): JsonObject = buildJsonObject {
         put("type", "text")
         put("text", text)
+    }
+
+    /**
+     * Apply an approved Cheffy plan in one rebuilt [Schema.MealPlan].
+     * [MealPlanGeneration.MealPlanStrategy.FILL_EMPTY] skips slots already
+     * occupied on [plan]; [MealPlanGeneration.MealPlanStrategy.REPLACE_SELECTED]
+     * overwrites every provided slot. Slot entries go through [recipeSlot]
+     * so the title snapshot matches the picker; Cheffy-only fields
+     * (`reason`, `image`) are never written.
+     */
+    fun applyGeneratedPlan(
+        plan: Schema.MealPlan,
+        meals: List<MealPlanGeneration.GeneratedMeal>,
+        strategy: MealPlanGeneration.MealPlanStrategy =
+            MealPlanGeneration.MealPlanStrategy.FILL_EMPTY,
+    ): Schema.MealPlan {
+        var next = plan
+        for (meal in meals) {
+            if (strategy == MealPlanGeneration.MealPlanStrategy.FILL_EMPTY &&
+                slotOccupied(next, meal.day, meal.slot)
+            ) {
+                continue
+            }
+            next = setSlot(next, meal.day, meal.slot, recipeSlot(meal.a, meal.title))
+        }
+        return next
     }
 
     fun setSlot(
@@ -83,6 +110,15 @@ object PlannerMutations {
         root["createdAt"] = JsonPrimitive(created)
         root["updatedAt"] = JsonPrimitive(updated)
         return Schema.MealPlan(JsonObject(root))
+    }
+
+    /** Same occupancy as [MealPlanGeneration.occupiedSlotsFromPlan]: key present and not JsonNull. */
+    private fun slotOccupied(plan: Schema.MealPlan, dayKey: String, slotKey: String): Boolean {
+        val slotsEl = plan.day(dayKey)?.get("slots") ?: return false
+        if (slotsEl is JsonNull) return false
+        val slots = slotsEl as? JsonObject ?: return false
+        val entry = slots[slotKey]
+        return entry != null && entry !is JsonNull
     }
 
     private fun withDay(
