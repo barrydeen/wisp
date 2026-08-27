@@ -370,6 +370,21 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         signerProvider = { signer },
     )
 
+    /**
+     * Cheffy meal-plan candidate discovery (Phase 5). Dedicated queries so
+     * Plan with Cheffy does not cancel the Recipes tab [recipeRepo] load.
+     */
+    val mealPlanCandidateSource = cooking.zap.app.repo.MealPlanCandidateSource(
+        recipeRepo = recipeRepo,
+        eventRepo = eventRepo,
+        bookmarkRepo = recipeBookmarkRepo,
+        relayPool = relayPool,
+        subManager = subManager,
+        scope = viewModelScope,
+        processingContext = processingDispatcher,
+        userReadRelaysProvider = { getUserPubkey()?.let { relayListRepo.getReadRelays(it) } ?: emptyList() },
+    )
+
     /** zap.cooking backend client (membership today; Phase 2 AI endpoints). */
     val zapCookingApi = cooking.zap.app.api.ZapCookingApi()
 

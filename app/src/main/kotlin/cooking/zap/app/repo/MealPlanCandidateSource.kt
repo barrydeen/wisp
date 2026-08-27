@@ -28,7 +28,8 @@ import kotlin.coroutines.CoroutineContext
  * or My Recipes, and so [RecipeRepository.loadAuthoredRecipes] is never
  * called (that cancels the tab's `loadJob` and flips its spinner).
  *
- * Not wired into any ViewModel / UI — Phase 5 will hold the first caller.
+ * Owned by [cooking.zap.app.viewmodel.FeedViewModel]; [cooking.zap.app.viewmodel.CheffyPlanViewModel]
+ * is the first caller.
  */
 class MealPlanCandidateSource(
     private val recipeRepo: RecipeRepository,
