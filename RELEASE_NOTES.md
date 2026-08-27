@@ -1,4 +1,18 @@
 # Changelog
+## [1.5.0]
+
+🍳 **Plan with Cheffy** — Let Cheffy build your weekly meal plan using real recipes from your Zap Cooking kitchen.
+
+📅 **Smarter meal planning** — Choose the days and meal slots you want to plan, with support for breakfast, lunch, dinner, and other meal types.
+
+🥦 **Plan around your preferences** — Cheffy can account for things like maximum cooking time, vegetarian meals, and ingredients you want to exclude.
+
+👀 **Preview before applying** — Review Cheffy’s proposed week before it changes your planner. Existing meals can be preserved when filling open slots.
+
+🛒 **Planner + grocery flow** — Recipes added by Cheffy continue through the existing meal planner and grocery-list workflow.
+
+✨ Plus reliability improvements and additional testing around meal planning and recipe matching.
+
 
 ## [1.3.6]
 
