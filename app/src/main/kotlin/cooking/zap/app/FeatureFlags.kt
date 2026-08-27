@@ -20,9 +20,8 @@ object FeatureFlags {
 
     /**
      * Plan with Cheffy (meal-planner port Phase 5). Entry points in the
-     * planner header and empty banner. Left **off** until the device
-     * checklist on the Phase 5 PR has fully passed — flipping it here
-     * would ship the sheet without the A14 Cook+ gate.
+     * planner header and empty banner. Enabled 2026-08-26 after the A14
+     * device checklist passed — see #236 for the full results.
      */
-    const val CHEFFY_MEAL_PLAN_ENABLED = false
+    const val CHEFFY_MEAL_PLAN_ENABLED = true
 }
