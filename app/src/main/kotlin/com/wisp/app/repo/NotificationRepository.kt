@@ -118,6 +118,7 @@ class NotificationRepository(
     fun addGroupChatReply(event: NostrEvent, myPubkey: String, replyToId: String, groupId: String) {
         if (event.pubkey == myPubkey) return
         if (muteRepo?.isBlocked(event.pubkey) == true) return
+        if (isWotFiltered(event)) return
         synchronized(lock) {
             if (seenEvents.get(event.id) != null) return
             seenEvents.put(event.id, true)
@@ -164,6 +165,74 @@ class NotificationRepository(
         }
     }
 
+    /**
+     * Web of trust gate shared by all notification entry points. Fails open only
+     * when no network cache exists at all — a stale cache still filters, using
+     * its qualified set as a best-effort approximation.
+     */
+    private fun isWotFiltered(event: NostrEvent): Boolean {
+        if (safetyPrefs?.wotFilterEnabled?.value != true) return false
+        val netRepo = extendedNetworkRepo ?: return false
+        if (!netRepo.hasCachedNetwork()) return false
+        val pubkeyToCheck = if (event.kind == 9735) {
+            eventRepo?.resolveZapSender(event)?.first ?: event.pubkey
+        } else event.pubkey
+        return !netRepo.isInQualifiedNetwork(pubkeyToCheck)
+    }
+
+    /**
+     * Re-apply the web of trust filter to notifications already accepted while the
+     * graph was missing or the filter was off. Called when the filter toggles on or
+     * a network cache arrives. Rows removed here are not resurrected when the filter
+     * is toggled back off — the list repopulates from persistence on next launch.
+     */
+    fun refilterWot() {
+        if (safetyPrefs?.wotFilterEnabled?.value != true) return
+        val netRepo = extendedNetworkRepo ?: return
+        if (!netRepo.hasCachedNetwork()) return
+        fun allowed(pubkey: String) = netRepo.isInQualifiedNetwork(pubkey)
+        synchronized(lock) {
+            val toRemove = mutableListOf<String>()
+            val toUpdate = mutableListOf<NotificationGroup>()
+            for ((key, group) in groupMap) {
+                when (group) {
+                    is NotificationGroup.ReplyNotification ->
+                        if (!allowed(group.senderPubkey)) toRemove.add(key)
+                    is NotificationGroup.QuoteNotification ->
+                        if (!allowed(group.senderPubkey)) toRemove.add(key)
+                    is NotificationGroup.MentionNotification ->
+                        if (!allowed(group.senderPubkey)) toRemove.add(key)
+                    is NotificationGroup.ReactionGroup -> {
+                        val reactions = group.reactions
+                            .mapValues { (_, pks) -> pks.filter { allowed(it) } }
+                            .filterValues { it.isNotEmpty() }
+                        val zaps = group.zapEntries.filter { allowed(it.pubkey) }
+                        if (reactions.isEmpty() && zaps.isEmpty()) {
+                            toRemove.add(key)
+                        } else if (reactions != group.reactions || zaps.size != group.zapEntries.size) {
+                            toUpdate.add(group.copy(
+                                reactions = reactions,
+                                reactionTimestamps = group.reactionTimestamps.filterKeys { allowed(it) },
+                                zapEntries = zaps
+                            ))
+                        }
+                    }
+                }
+            }
+            val removedFlatIds = flatItems.filter { !allowed(it.actorPubkey) }.map { it.id }
+            if (toRemove.isEmpty() && toUpdate.isEmpty() && removedFlatIds.isEmpty()) return
+            toRemove.forEach { groupMap.remove(it) }
+            toUpdate.forEach { groupMap[it.groupId] = it }
+            zapEventIdsByGroup.keys.retainAll(groupMap.keys)
+            if (removedFlatIds.isNotEmpty()) {
+                val removedSet = removedFlatIds.toSet()
+                flatItems.removeAll { it.id in removedSet }
+                removedFlatIds.forEach { flatItemIds.remove(it) }
+            }
+            scheduleRebuildSortedList()
+        }
+    }
+
     fun addEvent(event: NostrEvent, myPubkey: String, replyToMyEvent: Boolean = false, source: String = "") {
         // Reject events whose target pubkey does not match the active account.
         // Catches stale in-flight coroutines (e.g. ObjectBox seeding) that captured
@@ -184,15 +253,7 @@ class NotificationRepository(
             val zapperPubkey = eventRepo?.resolveZapSender(event)?.first
             if (zapperPubkey != null && muteRepo?.isBlocked(zapperPubkey) == true) return
         }
-        if (safetyPrefs?.wotFilterEnabled?.value == true) {
-            val netRepo = extendedNetworkRepo
-            if (netRepo != null && netRepo.isNetworkReady()) {
-                val pubkeyToCheck = if (event.kind == 9735) {
-                    eventRepo?.resolveZapSender(event)?.first ?: event.pubkey
-                } else event.pubkey
-                if (!netRepo.isInQualifiedNetwork(pubkeyToCheck)) return
-            }
-        }
+        if (isWotFiltered(event)) return
         val hasPTag = event.tags.any { it.size >= 2 && it[0] == "p" && it[1] == myPubkey }
         // Kind 6 reposts may omit the p-tag; callers must pre-filter kind 6 ownership.
         // replyToMyEvent bypasses p-tag check for kind 1 replies found via e-tag subscription.

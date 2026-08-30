@@ -125,6 +125,13 @@ class ExtendedNetworkRepository(
         return !isCacheStale(cache)
     }
 
+    /**
+     * True when a computed network cache exists, even if stale. Web of trust
+     * filtering uses this instead of [isNetworkReady] so an outdated qualified
+     * set still filters (best-effort) instead of silently disabling the filter.
+     */
+    fun hasCachedNetwork(): Boolean = _cachedNetwork.value != null
+
     fun isCacheStale(cache: ExtendedNetworkCache): Boolean {
         val ageHours = (System.currentTimeMillis() / 1000 - cache.computedAtEpoch) / 3600
         if (ageHours >= STALE_HOURS) return true

@@ -242,6 +242,14 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         notifRepo.safetyPrefs = safetyPrefs
         notifRepo.contactRepo = contactRepo
         notifRepo.extendedNetworkRepo = extendedNetworkRepo
+        // Re-apply the web of trust filter to notifications already accepted while
+        // the graph was missing (fail-open window) or before the user toggled it on.
+        viewModelScope.launch(Dispatchers.Default) {
+            safetyPrefs.wotFilterEnabled.collect { notifRepo.refilterWot() }
+        }
+        viewModelScope.launch(Dispatchers.Default) {
+            extendedNetworkRepo.cachedNetwork.collect { notifRepo.refilterWot() }
+        }
         viewModelScope.launch(Dispatchers.Default) {
             nspamClassifier = try {
                 val weights = com.wisp.app.ml.NSpamWeights.loadFromAssets(app)

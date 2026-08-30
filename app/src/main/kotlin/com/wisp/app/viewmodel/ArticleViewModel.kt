@@ -61,6 +61,7 @@ class ArticleViewModel : ViewModel() {
     private var topRelayUrls: List<String> = emptyList()
     private var relayListRepoRef: RelayListRepository? = null
     private var relayHintStoreRef: RelayHintStore? = null
+    private var eventRepoRef: EventRepository? = null
     private val activeSubIds = mutableListOf<String>()
 
     // Incremental metadata tracking
@@ -110,6 +111,7 @@ class ArticleViewModel : ViewModel() {
         this.topRelayUrls = topRelayUrls
         this.relayListRepoRef = relayListRepo
         this.relayHintStoreRef = relayHintStore
+        this.eventRepoRef = eventRepo
         this.currentArticleEventId = articleEventId
         _isCommentsLoading.value = true
 
@@ -322,6 +324,8 @@ class ArticleViewModel : ViewModel() {
         val parentToChildren = mutableMapOf<String, MutableList<NostrEvent>>()
 
         for (event in commentEvents.values) {
+            if (eventRepoRef?.muteRepo?.isBlocked(event.pubkey) == true) continue
+            if (eventRepoRef?.isWotFiltered(event.pubkey, event.kind) == true) continue
             val replyTarget = Nip10.getReplyTarget(event)
             val parentId = when {
                 replyTarget != null && replyTarget in commentEvents -> replyTarget
