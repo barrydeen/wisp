@@ -906,6 +906,7 @@
     <string name="action_generate_invite">Generate invite code</string>
     <string name="label_latest_invite_code">Latest invite code</string>
     <string name="action_copy">Copy</string>
+    <string name="wallet_tx_failed">Failed</string>
     <string name="wallet_tx_pending">Pending</string>
     <string name="action_copy_code">Copy code</string>
     <string name="action_copy_invite_link">Copy invite link</string>

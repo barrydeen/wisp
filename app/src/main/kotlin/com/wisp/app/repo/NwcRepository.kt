@@ -342,11 +342,16 @@ class NwcRepository(private val context: Context, private val relayPool: RelayPo
         )
     }
 
-    override suspend fun payInvoice(bolt11: String): Result<String> {
+    override suspend fun payInvoice(bolt11: String): Result<WalletPayment> {
         // Payments can take minutes to settle — don't use the default 10s timeout.
         // A timeout here does NOT mean the payment failed; the wallet may still complete it.
         val result = sendRequest(Nip47.NwcRequest.PayInvoice(bolt11), timeoutMs = 0)
-        return result.map { (it as Nip47.NwcResponse.PayInvoiceResult).preimage }
+        // NIP-47 pay_invoice only yields a preimage once the payment settled,
+        // so a response here is genuinely COMPLETED — unlike Spark, which can
+        // return an in-flight payment.
+        return result.map {
+            WalletPayment((it as Nip47.NwcResponse.PayInvoiceResult).preimage, PaymentSettlement.COMPLETED)
+        }
     }
 
     override suspend fun makeInvoice(amountMsats: Long, description: String, expirySecs: Int): Result<String> {
@@ -369,7 +374,12 @@ class NwcRepository(private val context: Context, private val relayPool: RelayPo
                     amountMsats = tx.amount,
                     feeMsats = tx.feesPaid,
                     createdAt = tx.createdAt,
-                    settledAt = tx.settledAt
+                    settledAt = tx.settledAt,
+                    // NIP-47 list_transactions returns settled and in-flight
+                    // payments and leaves settled_at null until one settles;
+                    // it has no failed state to report.
+                    status = if (tx.settledAt == null) TransactionStatus.PENDING
+                    else TransactionStatus.COMPLETED
                 )
             }
         }
