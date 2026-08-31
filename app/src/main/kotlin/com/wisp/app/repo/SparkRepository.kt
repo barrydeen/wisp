@@ -293,7 +293,6 @@ class SparkRepository(
 
                 val config = defaultConfig(Network.MAINNET)
                 config.apiKey = BREEZ_API_KEY
-                config.supportLnurlVerify = true
 
                 val seed = Seed.Mnemonic(mnemonic, null)
                 val request = ConnectRequest(
