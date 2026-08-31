@@ -308,7 +308,10 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     fun isWotFiltered(pubkey: String, kind: Int): Boolean {
         if (safetyPrefs?.wotFilterEnabled?.value != true) return false
         val netRepo = extendedNetworkRepo ?: return false
-        if (!netRepo.isNetworkReady()) return false
+        // Only a missing cache fails open; a stale cache still filters using its
+        // qualified set as a best-effort approximation (isNetworkReady would
+        // silently disable filtering for 24h+ old graphs and >10% follow drift).
+        if (!netRepo.hasCachedNetwork()) return false
         if (kind in WOT_EXEMPT_KINDS) return false
         if (pubkey == currentUserPubkey) return false
         return !netRepo.isInQualifiedNetwork(pubkey)

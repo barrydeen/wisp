@@ -144,7 +144,9 @@ class EventRouter(
                         eventRepo.cacheEvent(event)
                         if (!Nip10.isStandaloneQuote(event)) {
                             val parentId = Nip10.getReplyTarget(event)
-                            if (parentId != null) eventRepo.addReplyCount(parentId, event.id)
+                            if (parentId != null && !eventRepo.isWotFiltered(event.pubkey, event.kind)) {
+                                eventRepo.addReplyCount(parentId, event.id)
+                            }
                         }
                     }
                     else -> eventRepo.cacheEvent(event)
@@ -168,7 +170,9 @@ class EventRouter(
                 val parentId = if (!Nip10.isStandaloneQuote(event)) {
                     Nip10.getReplyTarget(event)
                 } else null
-                if (parentId != null) eventRepo.addReplyCount(parentId, event.id)
+                if (parentId != null && !eventRepo.isWotFiltered(event.pubkey, event.kind)) {
+                    eventRepo.addReplyCount(parentId, event.id)
+                }
                 // Only bypass the p-tag check if this is a DIRECT reply to one of our own
                 // events. The #e subscription also returns nested thread replies (where our
                 // event is the root ancestor but not the direct parent) — those should not
@@ -214,7 +218,9 @@ class EventRouter(
             if (event.kind == 1) {
                 eventRepo.cacheEvent(event)
                 val parentId = Nip10.getReplyTarget(event)
-                if (parentId != null) eventRepo.addReplyCount(parentId, event.id)
+                if (parentId != null && !eventRepo.isWotFiltered(event.pubkey, event.kind)) {
+                    eventRepo.addReplyCount(parentId, event.id)
+                }
             }
         } else if (subscriptionId.startsWith("zap-count-") || subscriptionId.startsWith("zap-rcpt-")) {
             if (event.kind == 9735) {
@@ -261,7 +267,9 @@ class EventRouter(
                 1 -> {
                     eventRepo.cacheEvent(event)
                     val parentId = Nip10.getReplyTarget(event)
-                    if (parentId != null) eventRepo.addReplyCount(parentId, event.id)
+                    if (parentId != null && !eventRepo.isWotFiltered(event.pubkey, event.kind)) {
+                        eventRepo.addReplyCount(parentId, event.id)
+                    }
                 }
             }
             // Engagement events win the dedup race against "notif" subscription,

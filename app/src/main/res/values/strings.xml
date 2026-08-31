@@ -578,6 +578,7 @@
     <string name="safety_wot_last_computed">Last computed %s ago</string>
     <string name="safety_wot_not_computed">Social graph not computed</string>
     <string name="safety_wot_stale">Social graph is stale</string>
+    <string name="safety_wot_stale_active">Filter remains active using the cached graph; recompute to refresh it</string>
     <string name="safety_wot_compute_now">Compute now</string>
     <string name="safety_wot_recompute">Recompute</string>
     <string name="safety_wot_inactive">Filter is inactive until graph is computed</string>
