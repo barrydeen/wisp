@@ -52,6 +52,12 @@ class ThreadViewModel : ViewModel() {
     private val threadEvents = mutableMapOf<String, NostrEvent>()
     private var rootId: String = ""
     private var scrollTargetId: String? = null
+    /**
+     * The note this thread was opened on (the tapped note), before re-rooting.
+     * `rootId` resolves to the conversation root, so this is the only handle on
+     * "the note they came for": the default reply parent for the sticky bar.
+     */
+    private var seedEventId: String? = null
     /** Anchors whose depth-capped subtree the user expanded inline. */
     private val expandedIds = mutableSetOf<String>()
     private var muteRepo: MuteRepository? = null
@@ -97,6 +103,15 @@ class ThreadViewModel : ViewModel() {
         scheduleRebuild()
     }
 
+    /**
+     * Event backing the sticky reply bar's parent — the note the thread was
+     * opened on, not the re-rooted conversation root. Null only when the seed
+     * event hasn't been fetched yet (cold deep-link); callers fall back to the
+     * focal root.
+     */
+    val composerDefaultParent: NostrEvent?
+        get() = threadEvents[seedEventId]
+
     /** Expand a folded subtree inline. Scroll-position anchoring is handled in the screen. */
     fun expandBranch(anchorId: String) {
         if (expandedIds.add(anchorId)) rebuildTree()
@@ -122,6 +137,7 @@ class ThreadViewModel : ViewModel() {
         safetyPrefs: SafetyPreferences? = null,
         contactRepo: ContactRepository? = null
     ) {
+        seedEventId = eventId
         this.muteRepo = muteRepo
         this.spamClassifier = spamClassifier
         this.spamAuthorCache = spamAuthorCache

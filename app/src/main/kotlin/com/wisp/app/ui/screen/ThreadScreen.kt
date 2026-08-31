@@ -136,10 +136,6 @@ fun ThreadScreen(
     // inserted so the screen keeps its exact position.
     var restoreAnchor by remember { mutableStateOf<Pair<Any, Int>?>(null) }
 
-    // The sticky reply bar targets whichever note is centered in the viewport, not always the root.
-    var focusedReplyEvent by remember { mutableStateOf<NostrEvent?>(null) }
-    val threadState = rememberUpdatedState(flatThread)
-
     LaunchedEffect(listState.isScrollInProgress) {
         if (listState.isScrollInProgress) {
             // Capture position when scroll starts
@@ -179,12 +175,6 @@ fun ThreadScreen(
         val index = flatThread.indexOfFirst { it.key == anchorKey }
         if (index >= 0) listState.scrollToItem(index, anchorOffset)
         restoreAnchor = null
-    }
-
-    LaunchedEffect(listState) {
-        snapshotFlow { listState.firstVisibleItemIndex }.collect { idx ->
-            focusedReplyEvent = (threadState.value.getOrNull(idx) as? ThreadItem.Post)?.event
-        }
     }
 
     val reactionVersion by eventRepo.reactionVersion.collectAsState()
@@ -263,7 +253,10 @@ fun ThreadScreen(
             )
         },
         bottomBar = {
-            val replyTarget = focusedReplyEvent ?: focalEvent
+            // Always targets the note this thread was opened on — never
+            // whatever is scrolled into view. To reply to a specific reply,
+            // tap that note's reply icon.
+            val replyTarget = viewModel.composerDefaultParent ?: focalEvent
             ThreadReplyBar(
                 enabled = replyTarget != null,
                 onClick = { replyTarget?.let { onReply(it) } }
