@@ -447,8 +447,55 @@ internal fun parseContent(content: String, emojiMap: Map<String, String> = empty
         }
     }
 
+    // Blank-line pass: normalize newline runs inside the text itself.
+    //
+    // Independent of the block-adjacency pass above, which only trims text
+    // sitting next to a card. This one is about the prose: a post padded with
+    // blank lines, or paragraphs split by three or more newlines, renders
+    // every extra newline as a real empty line. That reads as a ragged gap
+    // the author usually didn't intend (most often an artifact of the client
+    // it was posted from) and the reader can't collapse.
+    //
+    // One blank line survives as the paragraph break; single newlines are
+    // never touched, so a stanza, an address, or a hand-made list keeps every
+    // break the author typed.
+    if (trimBlankLines && finalResult.isNotEmpty()) {
+        val normalized = mutableListOf<ContentSegment>()
+        val lastIndex = finalResult.size - 1
+        for ((i, segment) in finalResult.withIndex()) {
+            if (segment !is ContentSegment.TextSegment) {
+                normalized.add(segment)
+                continue
+            }
+            var t = blankLineRunRegex.replace(segment.text, "\n\n")
+            // Edges of the rendered post, not of every text run: an interior
+            // segment's newlines are a real break between the inline pieces
+            // around it.
+            if (i == 0) t = leadingBlankLinesRegex.replace(t, "")
+            if (i == lastIndex) t = trailingBlankLinesRegex.replace(t, "")
+            if (t.isEmpty()) continue
+            normalized.add(ContentSegment.TextSegment(t))
+        }
+        return normalized
+    }
+
     return finalResult
 }
+
+// Blank-line normalization (mirrors wisp-ios ContentParser pass 6).
+//
+// A run of two or more newlines, tolerating spaces / tabs / stray CRs on the
+// blank lines between them. The run deliberately ends at its last newline so
+// indentation on the following line isn't swallowed with it.
+private val blankLineRunRegex = Regex("""\n(?:[ \t\r]*\n)+""")
+// Blank lines at the very start of a post, up to and including the last of
+// them. Horizontal whitespace after the final newline is kept, so a
+// deliberately indented first line survives.
+private val leadingBlankLinesRegex = Regex("""\A[ \t\r\n]*\n""")
+// Everything from the first trailing newline to the end of the post. The
+// render call site already does trimEnd('\n', '\r'), but that stops at the
+// first space, so "gm\n  \n  " keeps its blank lines without this.
+private val trailingBlankLinesRegex = Regex("""\n[ \t\r\n]*\z""")
 
 private val bolt11Regex = Regex("""(?i)(lightning:)?(lnbc|lntb|lnbcrt)[0-9a-z]{50,}""")
 
