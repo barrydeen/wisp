@@ -654,6 +654,7 @@ fun WispNavHost(
                 onContinueWithGoogle = {
                     navController.navigate(Routes.GOOGLE_AUTH)
                 },
+                startOnSignIn = authViewModel.isAddingAccount,
                 onCancel = if (authViewModel.isAddingAccount) {
                     {
                         val prev = authViewModel.previousAccountPubkey
