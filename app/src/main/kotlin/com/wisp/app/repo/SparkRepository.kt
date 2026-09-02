@@ -14,6 +14,7 @@ import breez_sdk_spark.ListPaymentsRequest
 import breez_sdk_spark.MaxFee
 import breez_sdk_spark.Network
 import breez_sdk_spark.PaymentDetails
+import breez_sdk_spark.PaymentRequest
 import breez_sdk_spark.PaymentType
 import breez_sdk_spark.PrepareSendPaymentRequest
 import breez_sdk_spark.ReceivePaymentMethod
@@ -434,7 +435,7 @@ class SparkRepository(
             val instance = sdk ?: return@withContext Result.failure(Exception("Not connected"))
             emitStatus("Preparing payment...")
 
-            val prepareReq = PrepareSendPaymentRequest(paymentRequest = bolt11)
+            val prepareReq = PrepareSendPaymentRequest(paymentRequest = PaymentRequest.Input(bolt11))
             val prepareResponse = instance.prepareSendPayment(prepareReq)
 
             emitStatus("Sending payment...")
@@ -457,7 +458,7 @@ class SparkRepository(
     suspend fun prepareSendPayment(bolt11: String): Result<Pair<Long?, Any>> = withContext(Dispatchers.IO) {
         try {
             val instance = sdk ?: return@withContext Result.failure(Exception("Not connected"))
-            val prepareReq = PrepareSendPaymentRequest(paymentRequest = bolt11)
+            val prepareReq = PrepareSendPaymentRequest(paymentRequest = PaymentRequest.Input(bolt11))
             val prepareResponse = instance.prepareSendPayment(prepareReq)
 
             val feeSats = when (val method = prepareResponse.paymentMethod) {
@@ -513,7 +514,8 @@ class SparkRepository(
                     description = description.ifEmpty { "Wisp wallet" },
                     amountSats = amountSats,
                     expirySecs = expirySecs.toUInt(),
-                    paymentHash = null
+                    paymentHash = null,
+                    receiverIdentityPublicKey = null
                 )
                 val response = instance.receivePayment(ReceivePaymentRequest(method))
                 emitStatus("Invoice created")
