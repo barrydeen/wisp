@@ -13,14 +13,14 @@ android {
     val debugApplicationIdSuffix = rootProject.extra["debugApplicationIdSuffix"] as String
 
     namespace = "com.wisp.app"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = baseApplicationId
         minSdk = 26
-        targetSdk = 35
-        versionCode = 85
-        versionName = "1.2.2"
+        targetSdk = 36
+        versionCode = 88
+        versionName = "1.2.3"
         resValue("string", "app_name", "Wisp")
 
         ndk {
