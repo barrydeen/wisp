@@ -91,6 +91,7 @@ import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.ArrowOutward
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
@@ -124,6 +125,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import com.wisp.app.ui.component.WithdrawOnchainSheet
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -212,6 +214,21 @@ fun WalletScreen(
 ) {
     val walletState by viewModel.walletState.collectAsState()
     val currentPage by viewModel.currentPage.collectAsState()
+    var showWithdrawOnchain by remember { mutableStateOf(false) }
+
+    if (showWithdrawOnchain) {
+        WithdrawOnchainSheet(
+            onQuote = { address, speed -> viewModel.sparkRepo.prepareWithdrawOnchain(address, speed) },
+            onConfirm = { quote ->
+                val result = viewModel.sparkRepo.executeWithdrawOnchain(quote)
+                // Reflect the emptied balance and the new row without waiting
+                // for the next poll — the user just moved everything.
+                if (result.isSuccess) viewModel.refreshState()
+                result
+            },
+            onDismiss = { showWithdrawOnchain = false }
+        )
+    }
 
     // Always refresh wallet state when this screen appears
     LaunchedEffect(Unit) {
@@ -590,6 +607,12 @@ fun WalletScreen(
                         },
                         onExportConnectionString = { viewModel.showNwcExport() },
                         onDeleteWallet = { viewModel.navigateTo(WalletPage.DeleteWalletConfirm) },
+                        // Spark only: passing null hides the row, so an NWC
+                        // wallet can't reach a button with no on-chain send
+                        // command behind it.
+                        onWithdrawOnchain = if (viewModel.walletMode.value == WalletMode.SPARK) {
+                            { showWithdrawOnchain = true }
+                        } else null,
                         relayBackupStatuses = viewModel.relayBackupStatuses.collectAsState().value,
                         relayBackupCheckLoading = viewModel.relayBackupCheckLoading.collectAsState().value,
                         deleteBackupStatus = viewModel.deleteBackupStatus.collectAsState().value,
@@ -4232,6 +4255,8 @@ private fun WalletSettingsContent(
     onBackupToRelay: () -> Unit = {},
     onExportConnectionString: () -> Unit = {},
     onDeleteWallet: () -> Unit,
+    /** Spark only — NWC has no on-chain send command. */
+    onWithdrawOnchain: (() -> Unit)? = null,
     relayBackupStatuses: List<RelayBackupInfo> = emptyList(),
     relayBackupCheckLoading: Boolean = false,
     deleteBackupStatus: DeleteBackupStatus = DeleteBackupStatus.Idle,
@@ -4595,6 +4620,44 @@ private fun WalletSettingsContent(
                         style = MaterialTheme.typography.bodyLarge,
                         color = Color(0xFFFF3B30)
                     )
+                }
+            }
+            if (onWithdrawOnchain != null) {
+                Spacer(Modifier.height(8.dp))
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(onClick = onWithdrawOnchain),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.ArrowOutward,
+                            contentDescription = null,
+                            tint = Color(0xFFFF3B30),
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                "Withdraw on-chain",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = Color(0xFFFF3B30)
+                            )
+                            Text(
+                                "Send everything to a Bitcoin address",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 }
             }
             Spacer(Modifier.height(8.dp))
