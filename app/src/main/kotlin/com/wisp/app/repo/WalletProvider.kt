@@ -65,11 +65,81 @@ data class WalletTransaction(
     /** Pubkey of the counterparty (recipient for outgoing, sender for incoming zaps). */
     val counterpartyPubkey: String? = null,
     val status: TransactionStatus = TransactionStatus.COMPLETED,
-    val isOnchain: Boolean = false
+    val isOnchain: Boolean = false,
+    /**
+     * Ticker of the asset this row moved, when it wasn't bitcoin - e.g. "USDB".
+     * Null for every sats payment, which is the overwhelming majority.
+     *
+     * Spark wallets can hold tokens alongside sats, and Payment.amount is
+     * documented as "satoshis OR token base units". This app offers no token
+     * conversion, but a wallet restored from the same seed in an app that does
+     * hands us those payments anyway, and reading their base units as sats
+     * turns a 15.77 USDB transfer into "15,766,673 sats".
+     *
+     * When this is set, amountMsats / feeMsats are zero: there is no honest
+     * sats value for a token transfer, so nothing sats-denominated - including
+     * fiat conversion - may be derived from this row.
+     */
+    val assetTicker: String? = null,
+    /**
+     * Amount already scaled by the token's decimals, at full precision. Kept as
+     * a String because token base units are u128 and overflow Long.
+     */
+    val assetAmount: String? = null,
+    /** Fee in the same asset, scaled the same way. Null when the fee is zero. */
+    val assetFee: String? = null
 ) {
+    /** True when this row moved something other than bitcoin. */
+    val isTokenTransfer: Boolean get() = assetTicker != null
+
+    /** Row-sized amount: two decimal places, full precision kept in [assetAmount]. */
+    val assetAmountCompact: String? get() = assetAmount?.let { TokenAmounts.compact(it) }
     /** In-flight — unconfirmed and unsettled. */
     val pending: Boolean get() = status == TransactionStatus.PENDING
 
     /** Never settled: the sats were not sent and are back in the wallet. */
     val failed: Boolean get() = status == TransactionStatus.FAILED
+}
+
+/**
+ * Formatting for non-bitcoin assets that reach the wallet from another app
+ * sharing the same seed. Pure string / BigDecimal math so it is unit testable
+ * without the SDK.
+ */
+object TokenAmounts {
+    /**
+     * Shift a token's base-unit amount by its decimal places.
+     *
+     * Operates on the decimal string rather than a numeric type on purpose:
+     * base units are u128 and overflow Long, and Double loses cents well
+     * before that. Trailing zeros are dropped so a whole amount reads "150"
+     * rather than "150.000000".
+     */
+    fun scale(baseUnits: String, decimals: Int): String {
+        val digits = baseUnits.trim()
+        if (digits.isEmpty() || !digits.all { it.isDigit() }) return baseUnits
+        if (decimals <= 0) return digits
+
+        val padded = if (digits.length > decimals) digits
+                     else "0".repeat(decimals - digits.length + 1) + digits
+        val whole = padded.substring(0, padded.length - decimals)
+        val fraction = padded.substring(padded.length - decimals).trimEnd('0')
+        return if (fraction.isEmpty()) whole else "$whole.$fraction"
+    }
+
+    /**
+     * Round a scaled amount to two places for the transaction row. USDB is
+     * dollars, and six places is both unreadable at a glance and wrong for
+     * what the number means; the detail row keeps full precision.
+     *
+     * Dust that would round away to "0.00" keeps its full precision instead -
+     * that would otherwise read as nothing having arrived.
+     */
+    fun compact(scaled: String, places: Int = 2): String {
+        if (!scaled.contains('.')) return scaled
+        val value = scaled.toBigDecimalOrNull() ?: return scaled
+        val rounded = value.setScale(places, java.math.RoundingMode.HALF_UP)
+        if (rounded.signum() == 0 && value.signum() != 0) return scaled
+        return java.text.DecimalFormat("#,##0.00").format(rounded)
+    }
 }
