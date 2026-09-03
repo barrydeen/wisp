@@ -117,4 +117,58 @@ class TokenAmountsTest {
         assertEquals("15.77", tx.assetAmountCompact)
         assertEquals("15.766673", tx.assetAmount)
     }
+
+    // --- Conversion labelling ---
+
+    /**
+     * A sats-to-USDB conversion is one payment on each side of the swap, and
+     * both rendered as a bare "Received" - money arriving from someone.
+     * Nothing arrived: the funds changed shape inside the wallet.
+     */
+    @Test
+    fun `bitcoin source reads lowercase as an asset not a ticker`() {
+        val tx = WalletTransaction(
+            type = "incoming", description = null, paymentHash = "h",
+            amountMsats = 0L, createdAt = 0L, settledAt = null,
+            assetTicker = "USDB", assetAmount = "15.766673",
+            conversionFromAsset = "BTC"
+        )
+        assertEquals("Converted from bitcoin", tx.conversionLabel)
+        assertEquals(true, tx.isConversion)
+    }
+
+    @Test
+    fun `sats spelled either way still reads as bitcoin`() {
+        listOf("SATS", "sats", "sat", "btc").forEach { ticker ->
+            val tx = WalletTransaction(
+                type = "incoming", description = null, paymentHash = "h",
+                amountMsats = 0L, createdAt = 0L, settledAt = null,
+                conversionFromAsset = ticker
+            )
+            assertEquals("Converted from bitcoin", tx.conversionLabel)
+        }
+    }
+
+    /** The other direction: USDB converted back into sats. */
+    @Test
+    fun `token source keeps its uppercase ticker`() {
+        val tx = WalletTransaction(
+            type = "incoming", description = null, paymentHash = "h",
+            amountMsats = 20_265_000L, createdAt = 0L, settledAt = null,
+            conversionFromAsset = "USDB"
+        )
+        assertEquals("Converted from USDB", tx.conversionLabel)
+        // A sats row can be a conversion leg without being a token transfer.
+        assertEquals(false, tx.isTokenTransfer)
+    }
+
+    @Test
+    fun `an ordinary payment is not a conversion`() {
+        val tx = WalletTransaction(
+            type = "incoming", description = null, paymentHash = "h",
+            amountMsats = 21_000_000L, createdAt = 0L, settledAt = null
+        )
+        assertEquals(false, tx.isConversion)
+        assertEquals(null, tx.conversionLabel)
+    }
 }

@@ -644,6 +644,13 @@ class SparkRepository(
                         assetAmount = payment.amount.toString()
                         assetFee = payment.fees.toString().takeIf { it != "0" }
                     }
+                    // One leg of a conversion. The step list is ordered
+                    // [cross-chain, AMM] for receives and [AMM, cross-chain]
+                    // for sends, so the FIRST step's source is the true origin
+                    // asset in both directions rather than an intermediate hop.
+                    val conversionFromAsset = payment.conversionDetails
+                        ?.conversions?.firstOrNull()?.from?.asset?.ticker
+
                     val isToken = assetTicker != null
                     // Zero for token rows: there is no honest sats value for a
                     // token transfer. `.toLong()` on a u128 BigInteger also
@@ -679,7 +686,8 @@ class SparkRepository(
                         isOnchain = onchain,
                         assetTicker = assetTicker,
                         assetAmount = assetAmount,
-                        assetFee = assetFee
+                        assetFee = assetFee,
+                        conversionFromAsset = conversionFromAsset
                     )
                 }
                 Result.success(transactions)

@@ -3123,6 +3123,25 @@ private fun TransactionRow(
                         .size(40.dp)
                         .clip(CircleShape)
                 )
+            } else if (tx.isConversion) {
+                // Swap glyph in the accent, not a green down-arrow: nothing
+                // entered the wallet, it changed shape inside it.
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .background(
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                            CircleShape
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.SwapHoriz,
+                        contentDescription = tx.conversionLabel,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
             } else {
                 Box(
                     modifier = Modifier
@@ -3154,7 +3173,12 @@ private fun TransactionRow(
                     val desc = tx.description?.takeIf {
                         it.isNotBlank() && it != "null" && !it.trimStart().startsWith("{")
                     }
-                    desc ?: if (isIncoming) stringResource(R.string.wallet_received) else stringResource(R.string.wallet_sent)
+                    // A conversion has no counterparty and rarely a
+                    // description, so its label sits where "Received" /
+                    // "Sent" would - which is what read as money arriving
+                    // from someone.
+                    desc ?: tx.conversionLabel
+                        ?: if (isIncoming) stringResource(R.string.wallet_received) else stringResource(R.string.wallet_sent)
                 }
                 Text(
                     displayLabel,
@@ -3200,7 +3224,14 @@ private fun TransactionRow(
             Column(horizontalAlignment = Alignment.End) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     val sign = if (isIncoming) "+" else "-"
-                    val signColor = if (isIncoming) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error
+                    // Green means money arrived and red means it left. A
+                    // conversion is neither, so it gets the neutral label
+                    // color; the +/- still shows which leg of the swap it is.
+                    val signColor = when {
+                        tx.isConversion -> MaterialTheme.colorScheme.onSurface
+                        isIncoming -> Color(0xFF2E7D32)
+                        else -> MaterialTheme.colorScheme.error
+                    }
                     when {
                         isHidden -> Text(
                             "$sign* * *",
@@ -3334,14 +3365,17 @@ private fun TransactionDetailPanel(tx: WalletTransaction, onCopy: (String) -> Un
                 TransactionStatus.FAILED -> "Failed — not sent"
             }
         )
+        val conversionType = tx.conversionFromAsset?.let { from ->
+            "Conversion · $from → ${tx.assetTicker ?: "sats"}"
+        }
         if (tx.isTokenTransfer) {
             val ticker = tx.assetTicker ?: ""
-            TxDetailRow("Type", "$ticker transfer")
+            TxDetailRow("Type", conversionType ?: "$ticker transfer")
             // Full precision here; the row above shows two places.
             TxDetailRow("Amount", "${tx.assetAmount ?: "?"} $ticker")
             tx.assetFee?.let { TxDetailRow("Fee", "$it $ticker") }
         } else {
-            TxDetailRow("Type", if (tx.isOnchain) "On-chain" else "Lightning")
+            TxDetailRow("Type", conversionType ?: if (tx.isOnchain) "On-chain" else "Lightning")
             TxDetailRow("Amount", "%,d sats".format(amountSats))
             if (feeSats > 0) TxDetailRow("Network fee", "%,d sats".format(feeSats))
         }

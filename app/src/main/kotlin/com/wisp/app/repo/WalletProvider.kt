@@ -87,10 +87,34 @@ data class WalletTransaction(
      */
     val assetAmount: String? = null,
     /** Fee in the same asset, scaled the same way. Null when the fee is zero. */
-    val assetFee: String? = null
+    val assetFee: String? = null,
+    /**
+     * Ticker of the asset this payment was converted FROM, when it was one leg
+     * of a conversion - "BTC" for sats into a stablecoin, "USDB" for the way
+     * back. Null for an ordinary payment.
+     *
+     * A conversion is not income or a spend: nothing entered or left the
+     * wallet, it changed shape inside it. Labelling one "Received" - which is
+     * what the bare row did - reads as money arriving from someone.
+     */
+    val conversionFromAsset: String? = null
 ) {
     /** True when this row moved something other than bitcoin. */
     val isTokenTransfer: Boolean get() = assetTicker != null
+
+    val isConversion: Boolean get() = conversionFromAsset != null
+
+    /**
+     * Row label for a conversion. Bitcoin reads lowercase - in this sentence
+     * it's the asset, not a ticker symbol.
+     */
+    val conversionLabel: String? get() = conversionFromAsset?.let { from ->
+        val name = when (from.uppercase()) {
+            "BTC", "SATS", "SAT" -> "bitcoin"
+            else -> from
+        }
+        "Converted from $name"
+    }
 
     /** Row-sized amount: two decimal places, full precision kept in [assetAmount]. */
     val assetAmountCompact: String? get() = assetAmount?.let { TokenAmounts.compact(it) }
