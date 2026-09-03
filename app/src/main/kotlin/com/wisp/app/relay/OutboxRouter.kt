@@ -308,6 +308,43 @@ class OutboxRouter(
     }
 
     /**
+     * The strict inbox set for [pubkey]: NIP-65 read (inbox) relays, falling back to relay
+     * hints when no NIP-65 list is cached. Empty when neither exists — callers must NOT
+     * fall back to pool broadcasts.
+     */
+    fun getInboxRelaysStrict(pubkey: String): List<String> {
+        val nip65 = relayListRepo.getReadRelays(pubkey)
+        if (!nip65.isNullOrEmpty()) return nip65
+        val hints = relayHintStore?.getHints(pubkey)
+        if (!hints.isNullOrEmpty()) return hints.toList()
+        return emptyList()
+    }
+
+    /**
+     * Strict inbox routing: subscribe to [filters] on [pubkey]'s inbox relays ONLY.
+     * Unlike [subscribeToUserReadRelays], there is no pool-broadcast fallback — if no
+     * inbox relays are known, nothing is sent. Used for threads and notifications.
+     */
+    fun subscribeToUserInboxStrict(
+        subId: String,
+        pubkey: String,
+        filters: List<Filter>
+    ): Set<String> {
+        val targetedRelays = mutableSetOf<String>()
+        val inboxRelays = getInboxRelaysStrict(pubkey)
+        if (inboxRelays.isEmpty()) return targetedRelays
+
+        val msg = if (filters.size == 1) ClientMessage.req(subId, filters[0])
+        else ClientMessage.req(subId, filters)
+        for (url in inboxRelays) {
+            if (relayPool.sendToRelayOrEphemeral(url, msg)) {
+                targetedRelays.add(url)
+            }
+        }
+        return targetedRelays
+    }
+
+    /**
      * Publish an event to own write relays AND the target user's read (inbox) relays.
      * Used for replies, reactions, and reposts so they reach the intended recipient.
      */

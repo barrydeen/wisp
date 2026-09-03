@@ -63,7 +63,6 @@ class ThreadViewModel : ViewModel() {
     private var muteRepo: MuteRepository? = null
     private val activeMetadataSubs = mutableListOf<String>()
     private var relayPoolRef: RelayPool? = null
-    private var topRelayUrls: List<String> = emptyList()
     private var relayListRepoRef: RelayListRepository? = null
     private var relayHintStoreRef: RelayHintStore? = null
     private var currentUserPubkey: String? = null
@@ -129,7 +128,6 @@ class ThreadViewModel : ViewModel() {
         subManager: SubscriptionManager,
         metadataFetcher: MetadataFetcher,
         muteRepo: MuteRepository? = null,
-        topRelayUrls: List<String> = emptyList(),
         relayListRepo: RelayListRepository? = null,
         relayHintStore: RelayHintStore? = null,
         spamClassifier: NSpamClassifier? = null,
@@ -152,7 +150,6 @@ class ThreadViewModel : ViewModel() {
             }
         }
         this.relayPoolRef = relayPool
-        this.topRelayUrls = topRelayUrls
         this.relayListRepoRef = relayListRepo
         this.relayHintStoreRef = relayHintStore
         this.currentUserPubkey = eventRepo.currentUserPubkey
@@ -276,24 +273,16 @@ class ThreadViewModel : ViewModel() {
                 subManager.awaitEoseWithTimeout("thread-root", 5_000)
             }
 
-            // Phase 2: Now we (hopefully) have the root — use outbox routing for replies
+            // Phase 2: Now we (hopefully) have the root — query ONLY the root author's
+            // inbox relays. No pool broadcast or scored-relay safety net: if the root
+            // author's NIP-65 list (or hints) is unknown, we stay cache-only.
             val rootEvent = _rootEvent.value
             // Include kind 5 so deletions of the root (or any event tagging the root) come through.
             val repliesFilter = Filter(kinds = listOf(1, 5), eTags = listOf(rootId))
             if (rootEvent != null) {
-                outboxRouter.subscribeToUserReadRelays(
-                    "thread-replies", rootEvent.pubkey, repliesFilter
+                outboxRouter.subscribeToUserInboxStrict(
+                    "thread-replies", rootEvent.pubkey, listOf(repliesFilter)
                 )
-            } else {
-                // Root still not found — query all relays as fallback
-                relayPool.sendToAll(
-                    ClientMessage.req("thread-replies", repliesFilter)
-                )
-            }
-            // Also query top scored relays as safety net
-            for (url in topRelayUrls) {
-                relayPool.sendToRelayOrEphemeral(url,
-                    ClientMessage.req("thread-replies", repliesFilter))
             }
 
             // Wait for replies EOSE, then hide spinner
@@ -332,20 +321,17 @@ class ThreadViewModel : ViewModel() {
     }
 
     /**
-     * Send a subscription to author relays + top scored relays.
+     * Send a subscription to the author's inbox relays only (NIP-65 read relays,
+     * falling back to relay hints). No scored-relay safety net.
      */
     private fun sendToEngagementRelays(
         relayPool: RelayPool, subId: String, filter: Filter, authorPubkey: String?
     ) {
         val msg = ClientMessage.req(subId, filter)
-        val sent = mutableSetOf<String>()
         if (authorPubkey != null) {
             for (url in getAuthorRelays(authorPubkey)) {
-                if (relayPool.sendToRelayOrEphemeral(url, msg)) sent.add(url)
+                relayPool.sendToRelayOrEphemeral(url, msg)
             }
-        }
-        for (url in topRelayUrls) {
-            if (url !in sent) relayPool.sendToRelayOrEphemeral(url, msg)
         }
     }
 
