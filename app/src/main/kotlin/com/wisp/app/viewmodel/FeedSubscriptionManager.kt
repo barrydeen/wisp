@@ -1158,24 +1158,23 @@ class FeedSubscriptionManager(
     }
 
     private fun subscribeNotifEngagementInner(eventIds: List<String>) {
-        val eventsByAuthor = mutableMapOf<String, MutableList<String>>()
-        for (id in eventIds) {
-            val event = eventRepo.getEvent(id)
-            val author = event?.pubkey ?: "fallback"
-            eventsByAuthor.getOrPut(author) { mutableListOf() }.add(id)
-        }
-        val safetyNet = relayScoreBoard.getScoredRelays().take(5).map { it.url }
+        // Engagement on our own posts comes from OUR inbox relays only — no
+        // per-author routing fallback, no scored-relay safety net.
+        val myPubkey = pubkeyHex ?: eventRepo.currentUserPubkey ?: return
         val since = notifRepo.getLatestNotifTimestamp()?.let { it - 5 * 60 }
-        outboxRouter.subscribeEngagementByAuthors("engage-notif", eventsByAuthor, activeEngagementSubIds, safetyNet, since)
+
+        activeEngagementSubIds.add("engage-notif")
+        val engagementFilters = eventIds.distinct().chunked(OutboxRouter.MAX_ETAGS_PER_FILTER).map { chunk ->
+            Filter(kinds = listOf(1, 5, 6, 7, 1018, 9735), eTags = chunk, limit = 500, since = since)
+        }
+        outboxRouter.subscribeToUserInboxStrict("engage-notif", myPubkey, engagementFilters)
 
         val zapSubId = "engage-notif-zap"
         activeEngagementSubIds.add(zapSubId)
         val zapFilters = eventIds.chunked(OutboxRouter.MAX_ETAGS_PER_FILTER).map { chunk ->
             Filter(kinds = listOf(9735), eTags = chunk, since = since)
         }
-        val zapMsg = if (zapFilters.size == 1) ClientMessage.req(zapSubId, zapFilters[0])
-        else ClientMessage.req(zapSubId, zapFilters)
-        relayPool.sendToReadRelays(zapMsg)
+        outboxRouter.subscribeToUserInboxStrict(zapSubId, myPubkey, zapFilters)
 
         // Also fetch private zap receipts from DM relays
         if (relayPool.hasDmRelays()) {

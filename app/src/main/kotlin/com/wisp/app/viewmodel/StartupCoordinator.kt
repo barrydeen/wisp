@@ -750,18 +750,9 @@ class StartupCoordinator(
             pTags = listOf(myPubkey),
             limit = 300
         )
-        val notifReqMsg = ClientMessage.req("notif", notifFilter)
-        relayPool.sendToReadRelays(notifReqMsg)
-
-        // Also send to top scored relays for broader coverage
-        val readUrls = relayPool.getReadRelayUrls().toSet()
-        val topScored = relayScoreBoard.getScoredRelays()
-            .take(5)
-            .map { it.url }
-            .filter { it !in readUrls }
-        for (url in topScored) {
-            relayPool.sendToRelay(url, notifReqMsg)
-        }
+        // Notifications come from OUR inbox relays only — no pool-wide read
+        // broadcast, no scored-relay safety net.
+        outboxRouter.subscribeToUserInboxStrict("notif", myPubkey, listOf(notifFilter))
 
         // Fetch private zap receipts from DM relays
         if (relayPool.hasDmRelays()) {
@@ -837,32 +828,14 @@ class StartupCoordinator(
         val filters = myEventIds.chunked(OutboxRouter.MAX_ETAGS_PER_FILTER).map { chunk ->
             Filter(kinds = listOf(1), eTags = chunk, limit = 200, since = since)
         }
-        val replyReqMsg = if (filters.size == 1) ClientMessage.req("notif-replies-etag", filters[0])
-        else ClientMessage.req("notif-replies-etag", filters)
+        // Subscribe on our inbox relays ONLY — replies land where our notes' readers publish.
+        outboxRouter.subscribeToUserInboxStrict("notif-replies-etag", pk, filters)
 
-        relayPool.sendToReadRelays(replyReqMsg)
-        // Replies often land on the relay where the original note was posted
-        val readUrls2 = relayPool.getReadRelayUrls().toSet()
-        val writeNotInRead = relayPool.getWriteRelayUrls().filter { it !in readUrls2 }
-        for (url in writeNotInRead) {
-            relayPool.sendToRelay(url, replyReqMsg)
-        }
-        val topScored2 = relayScoreBoard.getScoredRelays()
-            .take(5)
-            .map { it.url }
-            .filter { it !in readUrls2 && it !in writeNotInRead.toSet() }
-        for (url in topScored2) {
-            relayPool.sendToRelay(url, replyReqMsg)
-        }
         // Also subscribe for quotes of our posts via #q tags
         val quoteFilters = myEventIds.chunked(OutboxRouter.MAX_ETAGS_PER_FILTER).map { chunk ->
             Filter(kinds = listOf(1), qTags = chunk, limit = 200, since = since)
         }
-        val quoteReqMsg = if (quoteFilters.size == 1) ClientMessage.req("notif-quotes-qtag", quoteFilters[0])
-        else ClientMessage.req("notif-quotes-qtag", quoteFilters)
-        relayPool.sendToReadRelays(quoteReqMsg)
-        for (url in writeNotInRead) relayPool.sendToRelay(url, quoteReqMsg)
-        for (url in topScored2) relayPool.sendToRelay(url, quoteReqMsg)
+        outboxRouter.subscribeToUserInboxStrict("notif-quotes-qtag", pk, quoteFilters)
 
         scope.launch {
             subManager.awaitEoseWithTimeout("notif-replies-etag", timeoutMs = 5_000)

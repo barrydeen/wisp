@@ -58,7 +58,6 @@ class ArticleViewModel : ViewModel() {
     private var loadJob: Job? = null
     private var metadataBatchJob: Job? = null
     private var relayPoolRef: RelayPool? = null
-    private var topRelayUrls: List<String> = emptyList()
     private var relayListRepoRef: RelayListRepository? = null
     private var relayHintStoreRef: RelayHintStore? = null
     private var eventRepoRef: EventRepository? = null
@@ -103,12 +102,10 @@ class ArticleViewModel : ViewModel() {
         outboxRouter: OutboxRouter,
         subManager: SubscriptionManager,
         metadataFetcher: MetadataFetcher,
-        topRelayUrls: List<String>,
         relayListRepo: RelayListRepository? = null,
         relayHintStore: RelayHintStore? = null
     ) {
         this.relayPoolRef = relayPool
-        this.topRelayUrls = topRelayUrls
         this.relayListRepoRef = relayListRepo
         this.relayHintStoreRef = relayHintStore
         this.eventRepoRef = eventRepo
@@ -170,22 +167,15 @@ class ArticleViewModel : ViewModel() {
 
         // Two-phase loading matching ThreadViewModel pattern
         loadJob = viewModelScope.launch {
-            // Phase 1a: Subscribe for comments via `a` tag on author's read relays + top relays
+            // Phase 1a: Subscribe for comments via `a` tag — author's inbox relays ONLY.
+            // No pool broadcast or scored-relay safety net.
             val commentFilter = Filter(kinds = listOf(1), aTags = listOf(coordinate))
-            outboxRouter.subscribeToUserReadRelays(commentSubId, author, commentFilter)
-            val aTagMsg = ClientMessage.req(commentSubId, commentFilter)
-            for (url in topRelayUrls) {
-                relayPool.sendToRelayOrEphemeral(url, aTagMsg)
-            }
+            outboxRouter.subscribeToUserInboxStrict(commentSubId, author, listOf(commentFilter))
 
             // Phase 1b: Also subscribe via e-tag — many clients reply with e-tags
             if (articleEventId != null) {
                 val eTagFilter = Filter(kinds = listOf(1), eTags = listOf(articleEventId))
-                outboxRouter.subscribeToUserReadRelays(eTagSubId, author, eTagFilter)
-                val eTagMsg = ClientMessage.req(eTagSubId, eTagFilter)
-                for (url in topRelayUrls) {
-                    relayPool.sendToRelayOrEphemeral(url, eTagMsg)
-                }
+                outboxRouter.subscribeToUserInboxStrict(eTagSubId, author, listOf(eTagFilter))
             }
 
             // Wait for EOSE from both subscriptions
@@ -288,19 +278,15 @@ class ArticleViewModel : ViewModel() {
     }
 
     /**
-     * Send subscription to author's read relays + top scored relays.
-     * Mirrors ThreadViewModel.sendToEngagementRelays().
+     * Send subscription to the author's inbox relays only (NIP-65 read relays,
+     * falling back to relay hints). Mirrors ThreadViewModel.sendToEngagementRelays().
      */
     private fun sendToEngagementRelays(
         relayPool: RelayPool, subId: String, filter: Filter, authorPubkey: String
     ) {
         val msg = ClientMessage.req(subId, filter)
-        val sent = mutableSetOf<String>()
         for (url in getAuthorRelays(authorPubkey)) {
-            if (relayPool.sendToRelayOrEphemeral(url, msg)) sent.add(url)
-        }
-        for (url in topRelayUrls) {
-            if (url !in sent) relayPool.sendToRelayOrEphemeral(url, msg)
+            relayPool.sendToRelayOrEphemeral(url, msg)
         }
     }
 

@@ -1897,7 +1897,6 @@ fun WispNavHost(
                     subManager = feedViewModel.subManager,
                     metadataFetcher = feedViewModel.metadataFetcher,
                     muteRepo = feedViewModel.muteRepo,
-                    topRelayUrls = feedViewModel.getScoredRelays().take(5).map { it.url },
                     relayListRepo = feedViewModel.relayListRepo,
                     relayHintStore = feedViewModel.relayHintStore,
                     spamClassifier = feedViewModel.nspamClassifier,
@@ -2392,7 +2391,6 @@ fun WispNavHost(
                     outboxRouter = feedViewModel.outboxRouter,
                     subManager = feedViewModel.subManager,
                     metadataFetcher = feedViewModel.metadataFetcher,
-                    topRelayUrls = feedViewModel.getScoredRelays().take(5).map { it.url },
                     relayListRepo = feedViewModel.relayListRepo,
                     relayHintStore = feedViewModel.relayHintStore
                 )
