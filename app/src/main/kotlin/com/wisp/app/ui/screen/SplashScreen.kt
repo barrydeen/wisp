@@ -87,14 +87,18 @@ fun SplashScreen(
     onAccountCreated: () -> Unit,
     onLoggedIn: () -> Unit,
     onContinueWithGoogle: () -> Unit,
-    onCancel: (() -> Unit)? = null
+    onCancel: (() -> Unit)? = null,
+    // Adding an account opens sign-in straight away rather than making the
+    // user tap through the intro, which is first-run framing. Dismissing the
+    // sheet falls back to this screen, where the Cancel pill lives.
+    startOnSignIn: Boolean = false
 ) {
     val profilePictures by viewModel.profilePictures.collectAsState()
     val liveMetrics by viewModel.liveMetrics.collectAsState()
     val backgroundColor = MaterialTheme.colorScheme.background
     val surfaceVariant = MaterialTheme.colorScheme.surfaceVariant
 
-    var showNostrSheet by remember { mutableStateOf(false) }
+    var showNostrSheet by remember { mutableStateOf(startOnSignIn) }
     var showQrScanner by remember { mutableStateOf(false) }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize().background(backgroundColor)) {
@@ -156,13 +160,13 @@ fun SplashScreen(
             Text(
                 text = "Cancel",
                 style = MaterialTheme.typography.labelLarge,
-                color = androidx.compose.ui.graphics.Color.White,
+                color = androidx.compose.ui.graphics.Color.Black,
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .statusBarsPadding()
                     .padding(start = 16.dp, top = 16.dp)
                     .clip(CircleShape)
-                    .background(androidx.compose.ui.graphics.Color.White.copy(alpha = 0.25f))
+                    .background(androidx.compose.ui.graphics.Color.White.copy(alpha = 0.92f))
                     .clickable(onClick = onCancel)
                     .padding(horizontal = 20.dp, vertical = 8.dp)
             )
