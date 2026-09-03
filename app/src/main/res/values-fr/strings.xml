@@ -395,7 +395,6 @@
     <string name="onboarding_network_description">Wisp découvre quels relais vos amis utilisent réellement, puis se connecte directement à ces relais. Cela signifie une livraison plus rapide et moins de posts manqués — aucun serveur central nécessaire.</string>
     <string name="onboarding_quick_follow">Suivi rapide</string>
     <string name="onboarding_long_press_hint">Appuyez longuement sur n\'importe quelle photo de profil pour suivre ou ne plus suivre</string>
-    <string name="onboarding_utxo">utxo</string>
     <string name="onboarding_try_it">Essayez — appuyez longuement sur l\'image ci-dessus</string>
     <string name="onboarding_lightning_wallet_info">Wisp prend en charge les zaps avec un portefeuille Lightning intégré ou Nostr Wallet Connect. Vous pouvez le configurer à tout moment depuis l\'écran Portefeuille.</string>
     <string name="onboarding_setting_things_up">Configuration en cours</string>

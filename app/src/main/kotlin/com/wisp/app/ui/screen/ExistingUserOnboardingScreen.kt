@@ -43,11 +43,31 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil3.compose.AsyncImage
 import com.wisp.app.R
-import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.viewmodel.FeedViewModel
 import kotlinx.coroutines.delay
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material3.Icon
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 
 private enum class OnboardingStep {
     WELCOME, DECENTRALIZATION, LONG_PRESS_DEMO, NWC_SETUP, WAITING
@@ -142,13 +162,14 @@ private fun WelcomeStep(onContinue: () -> Unit) {
             verticalArrangement = Arrangement.Center,
             modifier = Modifier.fillMaxWidth()
         ) {
-            AsyncImage(
-                model = null,
+            // The app's own mark, matching iOS's WelcomeStep. This used to be
+            // an AsyncImage with a null model, so it only ever rendered the
+            // generic profile placeholder.
+            Icon(
+                painter = painterResource(R.drawable.ic_wisp_logo),
                 contentDescription = stringResource(R.string.onboarding_wisp_logo),
-                placeholder = painterResource(R.drawable.ic_profile_placeholder),
-                fallback = painterResource(R.drawable.ic_profile_placeholder),
-                error = painterResource(R.drawable.ic_profile_placeholder),
-                modifier = Modifier.size(120.dp)
+                tint = Color.Unspecified,
+                modifier = Modifier.size(96.dp)
             )
 
             Spacer(Modifier.height(24.dp))
@@ -214,9 +235,38 @@ private fun DecentralizationStep(onContinue: () -> Unit) {
 }
 
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
 private fun LongPressDemoStep(onContinue: () -> Unit) {
-    var showFollowBadge by remember { mutableStateOf(false) }
-    var hasLongPressed by remember { mutableStateOf(false) }
+    var didLongPress by remember { mutableStateOf(false) }
+    var showFollowed by remember { mutableStateOf(false) }
+
+    // Breathing glow, 0.4 -> 0.8 over 1.5s, autoreversing — matches iOS's
+    // FollowStep, which animates the symbol's shadow opacity the same way.
+    val glow by rememberInfiniteTransition(label = "glow").animateFloat(
+        initialValue = 0.4f,
+        targetValue = 0.8f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1500, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "glowAmount"
+    )
+    val scale by animateFloatAsState(
+        targetValue = if (showFollowed) 1.1f else 1f,
+        animationSpec = spring(dampingRatio = 0.7f),
+        label = "followScale"
+    )
+
+    // "Followed!" is transient on iOS — it reverts after a second while
+    // didLongPress stays set, so Continue remains enabled.
+    LaunchedEffect(showFollowed) {
+        if (showFollowed) {
+            delay(1000)
+            showFollowed = false
+        }
+    }
+
+    val primary = MaterialTheme.colorScheme.primary
 
     Box(
         modifier = Modifier
@@ -229,15 +279,77 @@ private fun LongPressDemoStep(onContinue: () -> Unit) {
             verticalArrangement = Arrangement.Center,
             modifier = Modifier.fillMaxWidth()
         ) {
+            // Generic figure rather than a real account: the press is a
+            // simulation and must not read as following someone specific.
+            Box(contentAlignment = Alignment.Center) {
+                // Halo is a sibling behind the avatar, not a modifier on it:
+                // drawn on the avatar it lands inside clip(CircleShape) and
+                // gets sheared off at the rim into a hard edge. On its own
+                // larger box it can fade out past the avatar, which is what
+                // iOS's shadow(radius: 20) does.
+                Box(
+                    modifier = Modifier
+                        .size(168.dp)
+                        .drawBehind {
+                            val r = size.minDimension / 2f
+                            drawCircle(
+                                brush = Brush.radialGradient(
+                                    colors = listOf(primary.copy(alpha = glow), Color.Transparent),
+                                    center = center,
+                                    radius = r
+                                ),
+                                radius = r
+                            )
+                        }
+                )
+
+                // No clip and no background: the vector draws its own circle
+                // with a soft antialiased edge, and nothing renders a tap
+                // target. The press area is bounded in code instead —
+                // AccountCircle fills 20 of its 24-unit viewport, so the
+                // drawn circle's radius is 20/24 of the box's half-width, and
+                // long-presses outside that are ignored.
+                Icon(
+                    imageVector = Icons.Filled.AccountCircle,
+                    contentDescription = null,
+                    tint = primary,
+                    modifier = Modifier
+                        .size(88.dp)
+                        .scale(scale)
+                        .pointerInput(Unit) {
+                            detectTapGestures(
+                                onLongPress = { offset ->
+                                    val centre = Offset(size.width / 2f, size.height / 2f)
+                                    val drawnRadius = size.width / 2f * (20f / 24f)
+                                    if ((offset - centre).getDistance() <= drawnRadius) {
+                                        showFollowed = true
+                                        didLongPress = true
+                                    }
+                                }
+                            )
+                        }
+                )
+            }
+
+            Spacer(Modifier.height(24.dp))
+
+            AnimatedVisibility(visible = showFollowed) {
+                Text(
+                    text = stringResource(R.string.onboarding_followed),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = primary
+                )
+            }
+
             Text(
                 text = stringResource(R.string.onboarding_quick_follow),
-                fontSize = 24.sp,
+                fontSize = 28.sp,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground,
                 textAlign = TextAlign.Center
             )
 
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(24.dp))
 
             Text(
                 text = stringResource(R.string.onboarding_long_press_hint),
@@ -246,47 +358,38 @@ private fun LongPressDemoStep(onContinue: () -> Unit) {
                 textAlign = TextAlign.Center
             )
 
-            Spacer(Modifier.height(32.dp))
-
-            // Demo profile picture with breathing glow
-            ProfilePicture(
-                url = UTXO_PICTURE,
-                size = 80,
-                highlighted = true,
-                showFollowBadge = showFollowBadge,
-                onLongPress = {
-                    showFollowBadge = !showFollowBadge
-                    hasLongPressed = true
+            AnimatedVisibility(visible = !didLongPress) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Spacer(Modifier.height(24.dp))
+                    Text(
+                        text = stringResource(R.string.onboarding_try_it),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = primary
+                    )
                 }
-            )
-
-            Spacer(Modifier.height(12.dp))
-
-            Text(
-                text = stringResource(R.string.onboarding_utxo),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            Spacer(Modifier.height(8.dp))
-
-            AnimatedVisibility(visible = !hasLongPressed) {
-                Text(
-                    text = stringResource(R.string.onboarding_try_it),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
             }
 
-            Spacer(Modifier.height(32.dp))
+            Spacer(Modifier.height(40.dp))
 
-            if (hasLongPressed) {
-                Button(onClick = onContinue) {
-                    Text(stringResource(R.string.btn_continue))
-                }
-            } else {
-                OutlinedButton(onClick = onContinue) {
-                    Text(stringResource(R.string.btn_continue))
+            // Matches iOS: always on screen, dimmed and inert until the
+            // gesture has been tried.
+            Button(
+                onClick = onContinue,
+                enabled = didLongPress,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .alpha(if (didLongPress) 1f else 0.4f)
+            ) {
+                Text(stringResource(R.string.btn_continue))
+            }
+
+            // Not in iOS. Without it, a disabled Continue plus the screen's
+            // BackHandler leaves anyone who can't perform a long-press with
+            // no way off this step. Once the gesture has landed Continue is
+            // live, so the escape hatch has nothing left to do.
+            AnimatedVisibility(visible = !didLongPress) {
+                TextButton(onClick = onContinue) {
+                    Text(stringResource(R.string.btn_skip))
                 }
             }
         }

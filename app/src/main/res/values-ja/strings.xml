@@ -395,7 +395,6 @@
     <string name="onboarding_network_description">Wispは友達が実際に使っているリレーを発見し、直接それに接続します。これにより、より 빠른配信と投稿の見逃しが少なくなります— центрарサーバー的必要がありません。</string>
     <string name="onboarding_quick_follow">クイックフォロー</string>
     <string name="onboarding_long_press_hint">プロフィール写真をロングプレスするとフォロー/フォロー解除できます</string>
-    <string name="onboarding_utxo">utxo</string>
     <string name="onboarding_try_it">試してみよう— 上記の画像をロングプレス</string>
     <string name="onboarding_lightning_wallet_info">Wispは組み込みLightningウォレットまたはNostr Wallet Connectでサップをサポートします。ウォレット画面からいつでも設定できます。</string>
     <string name="onboarding_setting_things_up">設定中</string>
