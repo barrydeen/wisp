@@ -14,6 +14,12 @@ import breez_sdk_spark.ListPaymentsRequest
 import breez_sdk_spark.MaxFee
 import breez_sdk_spark.Network
 import breez_sdk_spark.PaymentDetails
+import breez_sdk_spark.PaymentStatus
+import breez_sdk_spark.PrepareSendPaymentResponse
+import breez_sdk_spark.OptimizationMode
+import breez_sdk_spark.OptimizeLeavesRequest
+import breez_sdk_spark.OnchainConfirmationSpeed
+import breez_sdk_spark.FeePolicy
 import breez_sdk_spark.PaymentRequest
 import breez_sdk_spark.PaymentType
 import breez_sdk_spark.PrepareSendPaymentRequest
@@ -429,6 +435,165 @@ class SparkRepository(
                 Result.failure(Exception("Payment failed"))
             }
         }
+
+    // ---- Withdraw on-chain ----
+
+    /**
+     * The most recent quote and its signed-off SDK request. Execution reuses
+     * this so the amount and destination the user confirmed are exactly what
+     * gets sent, and so the SDK request type never leaves this file.
+     */
+    private var preparedWithdrawal: Pair<WithdrawOnchainQuote, PrepareSendPaymentResponse>? = null
+
+    /**
+     * Quote draining the entire spendable balance to a Bitcoin address.
+     *
+     * Uses FeePolicy.FEES_INCLUDED with amount = balance, which the SDK
+     * documents as the way to drain: the wallet spends exactly the balance and
+     * the fee comes out of it. The default FEES_EXCLUDED adds the fee on top,
+     * so a send of the full balance could never succeed.
+     *
+     * Nothing is signed or broadcast here - this exists so the confirmation
+     * screen can show a real fee from the SDK rather than an estimate.
+     */
+    suspend fun prepareWithdrawOnchain(
+        address: String,
+        speed: WithdrawOnchainSpeed
+    ): Result<WithdrawOnchainQuote> = withContext(Dispatchers.IO) {
+        try {
+            val instance = sdk ?: return@withContext Result.failure(Exception("Not connected"))
+
+            // Synced read: quoting against a stale cached balance produces a
+            // fee for an amount that no longer exists.
+            val info = instance.getInfo(GetInfoRequest(ensureSynced = true))
+            val balanceSats = info.balanceSats.toLong()
+            if (balanceSats <= 0L) {
+                return@withContext Result.failure(Exception("This wallet has no spendable balance."))
+            }
+
+            emitStatus("Quoting withdrawal...")
+            val prepared = instance.prepareSendPayment(
+                PrepareSendPaymentRequest(
+                    paymentRequest = PaymentRequest.Input(address),
+                    amount = java.math.BigInteger.valueOf(balanceSats),
+                    feePolicy = FeePolicy.FEES_INCLUDED
+                )
+            )
+
+            val method = prepared.paymentMethod
+            if (method !is SendPaymentMethod.BitcoinAddress) {
+                // Parsed as something else - a Lightning invoice or Spark
+                // address pasted into the field. Refuse rather than silently
+                // sending somewhere the user didn't intend.
+                return@withContext Result.failure(Exception("That isn't a Bitcoin address."))
+            }
+
+            val tier = when (speed) {
+                WithdrawOnchainSpeed.SLOW -> method.feeQuote.speedSlow
+                WithdrawOnchainSpeed.MEDIUM -> method.feeQuote.speedMedium
+                WithdrawOnchainSpeed.FAST -> method.feeQuote.speedFast
+            }
+            // Both components are real cost: the service fee and the L1
+            // broadcast fee.
+            val feeSats = tier.userFeeSat.toLong() + tier.l1BroadcastFeeSat.toLong()
+
+            val quote = WithdrawOnchainQuote(
+                address = address,
+                spendSats = balanceSats,
+                feeSats = feeSats,
+                speed = speed
+            )
+            preparedWithdrawal = quote to prepared
+            Result.success(quote)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Broadcast a quoted withdrawal. Returns the payment id.
+     *
+     * Retries once through optimizeLeaves on an insufficient-funds error:
+     * Spark spends from individual leaves, so a nominally sufficient balance
+     * can still fail leaf selection - most often right after a conversion
+     * credits many small leaves. Consolidating and retrying is what makes a
+     * full drain land instead of failing on arithmetic that looks correct.
+     */
+    suspend fun executeWithdrawOnchain(
+        quote: WithdrawOnchainQuote
+    ): Result<String> = withContext(Dispatchers.IO) {
+        val instance = sdk ?: return@withContext Result.failure(Exception("Not connected"))
+
+        // Only ever send the quote the user actually confirmed. If the held
+        // quote doesn't match, the screen has drifted from what was signed
+        // off - re-quote rather than send different terms.
+        val held = preparedWithdrawal
+        if (held == null || held.first != quote) {
+            return@withContext Result.failure(
+                Exception("This quote expired. Check the amount and try again.")
+            )
+        }
+
+        val sdkSpeed = when (quote.speed) {
+            WithdrawOnchainSpeed.SLOW -> OnchainConfirmationSpeed.SLOW
+            WithdrawOnchainSpeed.MEDIUM -> OnchainConfirmationSpeed.MEDIUM
+            WithdrawOnchainSpeed.FAST -> OnchainConfirmationSpeed.FAST
+        }
+
+        suspend fun send(prepared: PrepareSendPaymentResponse) = instance.sendPayment(
+            SendPaymentRequest(
+                prepareResponse = prepared,
+                options = SendPaymentOptions.BitcoinAddress(confirmationSpeed = sdkSpeed)
+            )
+        )
+
+        try {
+            emitStatus("Sending on-chain...")
+            val response = send(held.second)
+            // A FAILED payment comes back WITHOUT throwing - the same trap
+            // payInvoice documents - so the status is inspected, not trusted.
+            if (response.payment.status == PaymentStatus.FAILED) {
+                emitStatus("Withdrawal failed")
+                return@withContext Result.failure(
+                    Exception("The withdrawal failed - your funds were not sent.")
+                )
+            }
+            Result.success(response.payment.id)
+        } catch (e: Exception) {
+            if (e.message?.contains("insufficient funds", ignoreCase = true) != true) {
+                emitStatus("Withdrawal failed")
+                return@withContext Result.failure(e)
+            }
+
+            emitStatus("Consolidating leaves...")
+            runCatching { instance.optimizeLeaves(OptimizeLeavesRequest(mode = OptimizationMode.FULL)) }
+
+            // Re-quote after consolidation: the spendable balance can differ,
+            // and the old prepare response references an arrangement of
+            // leaves that no longer exists.
+            val requote = prepareWithdrawOnchain(quote.address, quote.speed)
+            val reprepared = preparedWithdrawal?.second
+            if (requote.isFailure || reprepared == null) {
+                return@withContext Result.failure(
+                    requote.exceptionOrNull()
+                        ?: Exception("Couldn't re-quote the withdrawal after consolidating.")
+                )
+            }
+            try {
+                emitStatus("Retrying on-chain send...")
+                val response = send(reprepared)
+                if (response.payment.status == PaymentStatus.FAILED) {
+                    return@withContext Result.failure(
+                        Exception("The withdrawal failed - your funds were not sent.")
+                    )
+                }
+                Result.success(response.payment.id)
+            } catch (retry: Exception) {
+                emitStatus("Withdrawal failed")
+                Result.failure(retry)
+            }
+        }
+    }
 
     override suspend fun payInvoice(bolt11: String): Result<WalletPayment> = withContext(Dispatchers.IO) {
         try {
