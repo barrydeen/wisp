@@ -395,7 +395,6 @@
     <string name="onboarding_network_description">Wisp ontdekt welke relays je vrienden daadwerkelijk gebruiken en maakt rechtstreeks verbinding met die relays. Dit betekent snellere levering en minder gemiste posts — geen centrale server nodig.</string>
     <string name="onboarding_quick_follow">Snel Volgen</string>
     <string name="onboarding_long_press_hint">Houd een profielfoto lang ingedrukt om te volgen of te ontvolgen</string>
-    <string name="onboarding_utxo">utxo</string>
     <string name="onboarding_try_it">Probeer het — houd de afbeelding hierboven lang ingedrukt</string>
     <string name="onboarding_lightning_wallet_info">Wisp ondersteunt zaps met een ingebedde Lightning portemonnee of Nostr Wallet Connect. Je kunt dit altijd instellen via het Portemonnee scherm.</string>
     <string name="onboarding_setting_things_up">Instellen bezig</string>

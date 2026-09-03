@@ -376,7 +376,6 @@
     <string name="onboarding_network_description">Wisp обнаруживает, какие рилэи используют ваши друзья, и подключается напрямую к ним. Это означает более быструю доставку и меньше пропущенных постов — без центрального сервера.</string>
     <string name="onboarding_quick_follow">Быстрая подписка</string>
     <string name="onboarding_long_press_hint">Удерживайте аватар, чтобы подписаться или отписаться</string>
-    <string name="onboarding_utxo">utxo</string>
     <string name="onboarding_try_it">Попробуйте — удерживайте картинку выше</string>
     <string name="onboarding_lightning_wallet_info">Wisp поддерживает запы со встроенным Lightning-кошельком или Nostr Wallet Connect. Настроить можно в любой момент через экран кошелька.</string>
     <string name="onboarding_setting_things_up">Настройка</string>
