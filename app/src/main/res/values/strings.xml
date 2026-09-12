@@ -294,6 +294,7 @@
     <string name="account_switcher_title">Accounts</string>
     <string name="account_switcher_add">Sign in with another account</string>
     <string name="cd_seen_on">Seen on</string>
+    <string name="poll_votes">Votes</string>
     <string name="cd_sent_with">Sent with</string>
     <string name="cd_filter_notifications">Filter notifications</string>
     <string name="cd_notif_style_compact">Switch to compact notifications</string>

@@ -785,6 +785,7 @@ fun PostCard(
                     voteCounts = pollVoteCounts,
                     totalVotes = pollTotalVotes,
                     userVotes = userPollVotes,
+                    isAuthor = isOwnEvent,
                     onVote = onPollVote
                 )
             } else if (event.kind == Nip69.KIND_ZAP_POLL) {
@@ -793,6 +794,7 @@ fun PostCard(
                     satsCounts = zapPollSatsCounts,
                     totalSats = zapPollTotalSats,
                     userVote = userZapPollVote,
+                    isAuthor = isOwnEvent,
                     onVote = onZapPollVote
                 )
             }
@@ -887,6 +889,21 @@ fun PostCard(
                         eventRepo = eventRepo
                     )
                 }
+                if (event.kind == Nip88.KIND_POLL) {
+                    // Keyed on the tally so a vote arriving while the drawer is
+                    // open re-reads the voter lists.
+                    val votersByOption = remember(event.id, pollTotalVotes, pollVoteCounts) {
+                        eventRepo?.getPollVoters(event.id) ?: emptyMap()
+                    }
+                    PollVotesSection(
+                        event = event,
+                        voteCounts = pollVoteCounts,
+                        totalVotes = pollTotalVotes,
+                        votersByOption = votersByOption,
+                        resolveProfile = profileResolver,
+                        onProfileClick = navToProfile
+                    )
+                }
                 if (displayIcons.isNotEmpty()) {
                     SeenOnSection(relayIcons = displayIcons, onRelayClick = onRelayClick)
                 }
@@ -911,13 +928,16 @@ private fun PollSection(
     voteCounts: Map<String, Int>,
     totalVotes: Int,
     userVotes: List<String>,
+    isAuthor: Boolean,
     onVote: (List<String>) -> Unit
 ) {
     val options = remember(event.id) { Nip88.parsePollOptions(event) }
     val pollType = remember(event.id) { Nip88.parsePollType(event) }
     val isEnded = remember(event.id) { Nip88.isPollEnded(event) }
     val hasVoted = userVotes.isNotEmpty()
-    val showResults = hasVoted || isEnded
+    // The author sees the tally on their own poll without having to vote on it.
+    // Everyone else votes first, so the running count can't sway their choice.
+    val showResults = hasVoted || isEnded || isAuthor
 
     Column(
         modifier = Modifier
@@ -1086,12 +1106,13 @@ private fun ZapPollSection(
     satsCounts: Map<Int, Long>,
     totalSats: Long,
     userVote: Int?,
+    isAuthor: Boolean,
     onVote: (Int) -> Unit
 ) {
     val options = remember(event.id) { Nip69.parseZapPollOptions(event) }
     val isClosed = remember(event.id) { Nip69.isZapPollClosed(event) }
     val hasVoted = userVote != null
-    val showResults = hasVoted || isClosed || totalSats > 0
+    val showResults = hasVoted || isClosed || isAuthor
 
     Column(
         modifier = Modifier

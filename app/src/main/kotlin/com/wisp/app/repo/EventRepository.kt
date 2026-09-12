@@ -611,6 +611,25 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         return userPollVotes.get(pollId) ?: emptyList()
     }
 
+    /**
+     * Per-choice voter lists for the details drawer, newest vote first so the
+     * freshest voters surface at the top of each choice. Built from the
+     * latest-wins voter state, so each voter appears under their current choice
+     * only — a revote moves them rather than counting twice.
+     */
+    fun getPollVoters(pollId: String): Map<String, List<String>> {
+        val voters = pollVoters.get(pollId) ?: return emptyMap()
+        val out = mutableMapOf<String, MutableList<String>>()
+        voters.entries
+            .sortedByDescending { it.value.first }
+            .forEach { entry ->
+                for (optionId in entry.value.second) {
+                    out.getOrPut(optionId) { mutableListOf() }.add(entry.key)
+                }
+            }
+        return out
+    }
+
     private fun addZapPollVote(zapReceipt: NostrEvent, pollId: String, sats: Long, zapperPubkey: String?) {
         val optionIndex = Nip69.getZapPollOptionFromZapReceipt(zapReceipt) ?: return
         val pubkey = zapperPubkey ?: return

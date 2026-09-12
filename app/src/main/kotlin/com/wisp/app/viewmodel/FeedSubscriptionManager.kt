@@ -65,6 +65,10 @@ class FeedSubscriptionManager(
 ) {
     companion object {
         val FEED_KINDS = listOf(1, 6, 1068, 6969, 30023, 20, 21, 22)
+        // How many of a poll's advertised relays to reach past the persistent
+        // pool. iOS uses 3 and gets complete tallies; the votes land on the
+        // first few relays a poll lists, not the long tail.
+        private const val MAX_POLL_RELAY_HINTS = 3
         private const val KEY_LAST_FEED_TYPE = "last_feed_type"
         private const val KEY_LAST_RELAY_URL = "last_relay_url"
         private const val KEY_LAST_RELAY_SET_NAME = "last_relay_set_name"
@@ -1055,7 +1059,10 @@ class FeedSubscriptionManager(
                 val sentAll = relayPool.sendToAllRelays(msg)
                 Log.d("POLL", "[FeedSub] sent poll vote REQ to $sentAll persistent relays")
                 for (poll in nip88Polls) {
-                    for (url in Nip88.parsePollRelays(poll)) {
+                    // Cap the fan-out. A poll advertises as many relays as its
+                    // author's client cared to list — one in the wild carries 480 —
+                    // and every uncapped entry here becomes an ephemeral connection.
+                    for (url in Nip88.parsePollRelays(poll).take(MAX_POLL_RELAY_HINTS)) {
                         if (url !in sentUrls) relayPool.sendToRelayOrEphemeral(url, msg)
                     }
                 }
@@ -1077,7 +1084,7 @@ class FeedSubscriptionManager(
                 else ClientMessage.req(zapPollSubId, zapPollFilters)
                 relayPool.sendToAllRelays(zapPollMsg)
                 for (poll in zapPolls) {
-                    for (url in Nip69.parseZapPollRelays(poll)) {
+                    for (url in Nip69.parseZapPollRelays(poll).take(MAX_POLL_RELAY_HINTS)) {
                         if (url !in sentUrls) relayPool.sendToRelayOrEphemeral(url, zapPollMsg)
                     }
                 }
