@@ -1,5 +1,6 @@
 package com.wisp.app.ui.component
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -55,6 +56,16 @@ fun WithdrawOnchainSheet(
     var sentPaymentId by remember { mutableStateOf<String?>(null) }
     var showScanner by remember { mutableStateOf(false) }
     var showConfirm by remember { mutableStateOf(false) }
+    var quoteRequestId by remember { mutableStateOf(0) }
+
+    // Bumped on every input change. A quote request still in flight when the
+    // address or speed changes must not apply afterward: it priced terms the
+    // user has already moved on from, and the Withdraw button would confirm
+    // the stale destination rather than the one now in the field.
+    val invalidateQuote = {
+        quote = null
+        quoteRequestId++
+    }
 
     if (showScanner) {
         // Full height, as every other sheet in the app does. The default
@@ -72,7 +83,7 @@ fun WithdrawOnchainSheet(
                         // BIP-21 QRs encode "bitcoin:addr?amount=..."; the SDK
                         // parser wants the bare address.
                         address = normalizeBitcoinAddress(raw)
-                        quote = null
+                        invalidateQuote()
                         error = null
                         showScanner = false
                     },
@@ -85,6 +96,11 @@ fun WithdrawOnchainSheet(
     // Without this the sheet opens partially expanded, leaving the amount
     // field, fee-speed chips and the Withdraw button below the fold.
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    // Back press does nothing while a broadcast is in flight. This Material3
+    // version has no interactiveDismissEnabled, so a swipe can still dismiss -
+    // but the send belongs to viewModelScope, completes regardless, and
+    // refreshes the wallet on its own.
+    BackHandler(enabled = sending) {}
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(
             modifier = Modifier
@@ -159,7 +175,7 @@ fun WithdrawOnchainSheet(
                     address = it
                     // Any edit invalidates the quote - it was priced for a
                     // different destination.
-                    quote = null
+                    invalidateQuote()
                     error = null
                 },
                 placeholder = { Text("bc1...") },
@@ -170,7 +186,7 @@ fun WithdrawOnchainSheet(
                     Row {
                         IconButton(onClick = {
                             clipboard.getText()?.text?.let { address = normalizeBitcoinAddress(it) }
-                            quote = null
+                            invalidateQuote()
                         }) { Icon(Icons.Default.ContentPaste, "Paste") }
                         // Scanning beats pasting for an irreversible send: no
                         // truncation, no clipboard hijack, no transcription.
@@ -188,11 +204,11 @@ fun WithdrawOnchainSheet(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { speed = option; quote = null }
+                        .clickable { speed = option; invalidateQuote() }
                         .padding(vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    RadioButton(selected = speed == option, onClick = { speed = option; quote = null })
+                    RadioButton(selected = speed == option, onClick = { speed = option; invalidateQuote() })
                     Column {
                         Text(option.label, style = MaterialTheme.typography.bodyMedium)
                         Text(
@@ -255,9 +271,17 @@ fun WithdrawOnchainSheet(
                     if (q == null) {
                         scope.launch {
                             quoting = true; error = null
+                            val requestId = quoteRequestId + 1
+                            quoteRequestId = requestId
+                            // Only surface the result if the inputs it was
+                            // priced for are still the current ones.
                             onQuote(address.trim(), speed)
-                                .onSuccess { quote = it }
-                                .onFailure { error = it.message ?: "Something went wrong." }
+                                .onSuccess { if (quoteRequestId == requestId) quote = it }
+                                .onFailure {
+                                    if (quoteRequestId == requestId) {
+                                        error = it.message ?: "Something went wrong."
+                                    }
+                                }
                             quoting = false
                         }
                     } else {

@@ -219,13 +219,10 @@ fun WalletScreen(
     if (showWithdrawOnchain) {
         WithdrawOnchainSheet(
             onQuote = { address, speed -> viewModel.sparkRepo.prepareWithdrawOnchain(address, speed) },
-            onConfirm = { quote ->
-                val result = viewModel.sparkRepo.executeWithdrawOnchain(quote)
-                // Reflect the emptied balance and the new row without waiting
-                // for the next poll — the user just moved everything.
-                if (result.isSuccess) viewModel.refreshState()
-                result
-            },
+            // Runs on viewModelScope (see WalletViewModel.withdrawOnchain):
+            // the broadcast outlives the sheet, and the balance/rows refresh
+            // without waiting for the next poll.
+            onConfirm = { quote -> viewModel.withdrawOnchain(quote).await() },
             onDismiss = { showWithdrawOnchain = false }
         )
     }
