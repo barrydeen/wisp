@@ -6,6 +6,7 @@ import com.wisp.app.nostr.ClientMessage
 import com.wisp.app.nostr.Filter
 import com.wisp.app.nostr.Nip09
 import com.wisp.app.nostr.Nip10
+import com.wisp.app.nostr.Nip22
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.relay.OutboxRouter
 import com.wisp.app.relay.RelayPool
@@ -212,7 +213,10 @@ class ThreadViewModel : ViewModel() {
                     return@collect
                 }
 
-                if (event.kind != 1) return@collect
+                // Admit NIP-22 comments (kind 1111). Clients increasingly reply with
+                // comments rather than kind 1, so a kind-1-only gate shows those
+                // threads as empty — every reply on some notes is a 1111.
+                if (event.kind != 1 && event.kind != Nip22.KIND_COMMENT) return@collect
 
                 // Silently drop events the user has already deleted on some other client/session.
                 if (eventRepo.deletedEventsRepo?.isDeleted(event.id) == true) return@collect
@@ -222,9 +226,24 @@ class ThreadViewModel : ViewModel() {
 
                 if (Nip10.isStandaloneQuote(event)) return@collect
 
-                // Validate: event must reference the thread root (some relays ignore eTags filter)
+                // Validate: event must reference the thread root (some relays ignore eTags filter).
+                //
+                // A NIP-22 comment scopes to its root with an UPPERCASE `E`; the
+                // lowercase `e` names its immediate parent. So a reply to a
+                // comment carries `e` = that comment and `E` = the root, and a
+                // lowercase-only check drops it — comment threads then render
+                // flat one level deep. Relays aren't the problem: `#e` filters
+                // are case-insensitive per NIP-01, so these do arrive.
+                //
+                // Uppercase `A`/`I` roots aren't checked here because their
+                // values are addressable coordinates and external identifiers
+                // rather than event ids, so they can never equal `rootId`.
+                // Threads rooted on those need coordinate comparison instead.
                 if (event.id != rootId &&
-                    event.tags.none { it.size >= 2 && it[0] == "e" && it[1] == rootId }) {
+                    event.tags.none {
+                        it.size >= 2 && it[1] == rootId &&
+                            (it[0] == "e" || (it[0] == "E" && Nip22.isComment(event)))
+                    }) {
                     return@collect
                 }
 
@@ -278,7 +297,7 @@ class ThreadViewModel : ViewModel() {
             // author's NIP-65 list (or hints) is unknown, we stay cache-only.
             val rootEvent = _rootEvent.value
             // Include kind 5 so deletions of the root (or any event tagging the root) come through.
-            val repliesFilter = Filter(kinds = listOf(1, 5), eTags = listOf(rootId))
+            val repliesFilter = Filter(kinds = listOf(1, 5, Nip22.KIND_COMMENT), eTags = listOf(rootId))
             if (rootEvent != null) {
                 outboxRouter.subscribeToUserInboxStrict(
                     "thread-replies", rootEvent.pubkey, listOf(repliesFilter)

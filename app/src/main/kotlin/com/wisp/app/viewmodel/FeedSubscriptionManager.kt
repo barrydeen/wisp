@@ -1055,7 +1055,7 @@ class FeedSubscriptionManager(
                 val sentAll = relayPool.sendToAllRelays(msg)
                 Log.d("POLL", "[FeedSub] sent poll vote REQ to $sentAll persistent relays")
                 for (poll in nip88Polls) {
-                    for (url in Nip88.parsePollRelays(poll)) {
+                    for (url in Nip88.cappedPollRelays(poll)) {
                         if (url !in sentUrls) relayPool.sendToRelayOrEphemeral(url, msg)
                     }
                 }
@@ -1077,7 +1077,7 @@ class FeedSubscriptionManager(
                 else ClientMessage.req(zapPollSubId, zapPollFilters)
                 relayPool.sendToAllRelays(zapPollMsg)
                 for (poll in zapPolls) {
-                    for (url in Nip69.parseZapPollRelays(poll)) {
+                    for (url in Nip69.cappedZapPollRelays(poll)) {
                         if (url !in sentUrls) relayPool.sendToRelayOrEphemeral(url, zapPollMsg)
                     }
                 }
