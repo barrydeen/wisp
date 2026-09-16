@@ -23,9 +23,12 @@ import com.wisp.app.repo.WalletModeRepository
 import com.wisp.app.repo.WalletProvider
 import android.util.Log
 import com.wisp.app.repo.WalletTransaction
+import com.wisp.app.repo.WithdrawOnchainQuote
 import com.wisp.app.repo.ZapSender
 import com.wisp.app.relay.RelayPool
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -1345,6 +1348,20 @@ class WalletViewModel(
             )
         }
     }
+
+    /**
+     * Broadcast a confirmed on-chain withdrawal on the viewModelScope, so
+     * dismissing the sheet (or leaving the screen) mid-send cannot cancel a
+     * broadcast that is already in flight. The sheet awaits this for its
+     * result; if it's gone by then, the payment still completes and
+     * refreshState runs.
+     */
+    fun withdrawOnchain(quote: WithdrawOnchainQuote): Deferred<Result<String>> =
+        viewModelScope.async {
+            val result = sparkRepo.executeWithdrawOnchain(quote)
+            if (result.isSuccess) refreshState()
+            result
+        }
 
     // --- Receive flow ---
 
