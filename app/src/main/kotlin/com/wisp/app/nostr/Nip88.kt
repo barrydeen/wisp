@@ -66,11 +66,28 @@ object Nip88 {
     }
 
     /** Extract relay URLs from a poll event's relay tags. */
+    /**
+     * How many of a poll's advertised relays to actually reach past the
+     * persistent pool. A poll advertises as many relays as its author's client
+     * cared to list — one in the wild carries 480 — and every entry beyond the
+     * pool becomes an ephemeral connection. iOS uses 3 and still gets complete
+     * tallies: votes land on the first few relays a poll lists, not the tail.
+     */
+    const val MAX_POLL_RELAY_HINTS = 3
+
     fun parsePollRelays(event: NostrEvent): List<String> {
         return event.tags
             .filter { it.size >= 2 && it[0] == "relay" }
             .map { it[1] }
     }
+
+    /**
+     * The advertised relays, capped. Every caller that opens connections should
+     * use this rather than [parsePollRelays] — the uncapped list is for callers
+     * that only want to read or display the hints.
+     */
+    fun cappedPollRelays(event: NostrEvent): List<String> =
+        parsePollRelays(event).take(MAX_POLL_RELAY_HINTS)
 
     fun isPollEnded(event: NostrEvent): Boolean {
         val endsAt = parseEndsAt(event) ?: return false

@@ -226,9 +226,24 @@ class ThreadViewModel : ViewModel() {
 
                 if (Nip10.isStandaloneQuote(event)) return@collect
 
-                // Validate: event must reference the thread root (some relays ignore eTags filter)
+                // Validate: event must reference the thread root (some relays ignore eTags filter).
+                //
+                // A NIP-22 comment scopes to its root with an UPPERCASE `E`; the
+                // lowercase `e` names its immediate parent. So a reply to a
+                // comment carries `e` = that comment and `E` = the root, and a
+                // lowercase-only check drops it — comment threads then render
+                // flat one level deep. Relays aren't the problem: `#e` filters
+                // are case-insensitive per NIP-01, so these do arrive.
+                //
+                // Uppercase `A`/`I` roots aren't checked here because their
+                // values are addressable coordinates and external identifiers
+                // rather than event ids, so they can never equal `rootId`.
+                // Threads rooted on those need coordinate comparison instead.
                 if (event.id != rootId &&
-                    event.tags.none { it.size >= 2 && it[0] == "e" && it[1] == rootId }) {
+                    event.tags.none {
+                        it.size >= 2 && it[1] == rootId &&
+                            (it[0] == "e" || (it[0] == "E" && Nip22.isComment(event)))
+                    }) {
                     return@collect
                 }
 
