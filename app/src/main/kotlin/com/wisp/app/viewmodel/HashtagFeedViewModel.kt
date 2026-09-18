@@ -187,7 +187,7 @@ class HashtagFeedViewModel(app: Application) : AndroidViewModel(app) {
             eventIds.chunked(50).forEachIndexed { index, batch ->
                 val subId = if (index == 0) engagePrefix else "$engagePrefix-$index"
                 activeSubIds.add(subId)
-                val filter = Filter(kinds = listOf(1, 1111, 5, 6, 7, 1018, 9735), eTags = batch, limit = 500)
+                val filter = Filter(kinds = listOf(1, Nip22.KIND_COMMENT, 5, 6, 7, 1018, 9735), eTags = batch, limit = 500)
                 relayPool.sendToRelayOrEphemeral(SearchViewModel.DEFAULT_SEARCH_RELAY, ClientMessage.req(subId, filter))
             }
         }

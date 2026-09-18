@@ -216,7 +216,7 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
 
         // Request fresh profile, posts, follow list, and relay list
         val profileFilter = Filter(kinds = listOf(0), authors = listOf(pubkey), limit = 1)
-        val postsFilter = Filter(kinds = listOf(1, 1111, 6, 1068, 6969, 30023, 20, 21, 22), authors = listOf(pubkey), limit = 50)
+        val postsFilter = Filter(kinds = listOf(1, Nip22.KIND_COMMENT, 6, 1068, 6969, 30023, 20, 21, 22), authors = listOf(pubkey), limit = 50)
         // Gallery posts can be old and curated — fetch separately with no since filter, higher limit
         val galleryFilter = Filter(kinds = listOf(20, 21, 22), authors = listOf(pubkey), limit = 100)
         val followFilter = Filter(kinds = listOf(3), authors = listOf(pubkey), limit = 1)
@@ -480,7 +480,7 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
                     Filter(kinds = listOf(7), eTags = batch),
                     Filter(kinds = listOf(6), eTags = batch),
                     Filter(kinds = listOf(9735), eTags = batch),
-                    Filter(kinds = listOf(1, 1111), eTags = batch)
+                    Filter(kinds = listOf(1, Nip22.KIND_COMMENT), eTags = batch)
                 )
                 relayPool.sendToReadRelays(ClientMessage.req(subId, filters))
             }
@@ -493,7 +493,7 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
                 Filter(kinds = listOf(7), eTags = batch),
                 Filter(kinds = listOf(6), eTags = batch),
                 Filter(kinds = listOf(9735), eTags = batch),
-                Filter(kinds = listOf(1, 1111), eTags = batch)
+                Filter(kinds = listOf(1, Nip22.KIND_COMMENT), eTags = batch)
             )
             for (url in topRelayUrls) {
                 relayPool.sendToRelayOrEphemeral(url, ClientMessage.req(subId, filters))
@@ -534,7 +534,7 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
         if (oldestNoteTimestamp == Long.MAX_VALUE) { isLoadingMoreNotes = false; return }
 
         val pool = relayPoolRef ?: run { isLoadingMoreNotes = false; return }
-        val filter = Filter(kinds = listOf(1, 1111, 6, 1068, 6969, 30023, 20, 21, 22), authors = listOf(targetPubkey), until = oldestNoteTimestamp - 1, limit = 50)
+        val filter = Filter(kinds = listOf(1, Nip22.KIND_COMMENT, 6, 1068, 6969, 30023, 20, 21, 22), authors = listOf(targetPubkey), until = oldestNoteTimestamp - 1, limit = 50)
 
         val router = outboxRouterRef
         if (router != null) {
@@ -561,7 +561,7 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
         if (oldestReplyTimestamp == Long.MAX_VALUE) { isLoadingMoreReplies = false; return }
 
         val pool = relayPoolRef ?: run { isLoadingMoreReplies = false; return }
-        val filter = Filter(kinds = listOf(1, 1111), authors = listOf(targetPubkey), until = oldestReplyTimestamp - 1, limit = 50)
+        val filter = Filter(kinds = listOf(1, Nip22.KIND_COMMENT), authors = listOf(targetPubkey), until = oldestReplyTimestamp - 1, limit = 50)
 
         val router = outboxRouterRef
         if (router != null) {
@@ -688,7 +688,7 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
         val genCheck = { if (isReplies) profileFeedRepliesGen == gen else profileFeedNotesGen == gen }
         val setLoading = { v: Boolean -> if (isReplies) _sortedRepliesLoading.value = v else _sortedNotesLoading.value = v }
         val pubkey = targetPubkey
-        val filter = if (isReplies) Filter(kinds = listOf(1, 1111), authors = listOf(pubkey), limit = 100)
+        val filter = if (isReplies) Filter(kinds = listOf(1, Nip22.KIND_COMMENT), authors = listOf(pubkey), limit = 100)
         else Filter(kinds = listOf(1), authors = listOf(pubkey), limit = 100)
 
         var connected = false
@@ -711,7 +711,7 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
             pool.relayEvents.collect { (event, _, subscriptionId) ->
                 if (subscriptionId != subId) return@collect
                 if (!genCheck()) return@collect
-                if ((event.kind == 1 || (isReplies && event.kind == 1111)) && seenIds.add(event.id)) {
+                if ((event.kind == 1 || (isReplies && event.kind == Nip22.KIND_COMMENT)) && seenIds.add(event.id)) {
                     eventRepoRef?.cacheEvent(event)
                     if (isReplies) {
                         val current = _sortedReplies.value.toMutableList()

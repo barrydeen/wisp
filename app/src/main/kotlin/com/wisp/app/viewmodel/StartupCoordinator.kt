@@ -4,6 +4,7 @@ import android.util.Log
 import com.wisp.app.nostr.Blossom
 import com.wisp.app.nostr.ClientMessage
 import com.wisp.app.nostr.Filter
+import com.wisp.app.nostr.Nip22
 import com.wisp.app.nostr.Nip30
 import com.wisp.app.nostr.Nip51
 import com.wisp.app.db.EventPersistence
@@ -746,7 +747,7 @@ class StartupCoordinator(
         }
 
         val notifFilter = Filter(
-            kinds = listOf(1, 1111, 6, 7, 9735),
+            kinds = listOf(1, Nip22.KIND_COMMENT, 6, 7, 9735),
             pTags = listOf(myPubkey),
             limit = 300
         )
@@ -769,9 +770,9 @@ class StartupCoordinator(
         // engagement subscriptions start.
         val selfNotesSince = eventRepo.getLatestEventTimestamp(myPubkey, 1)
         val selfNotesFilter = if (selfNotesSince != null) {
-            Filter(kinds = listOf(1, 1111), authors = listOf(myPubkey), since = selfNotesSince)
+            Filter(kinds = listOf(1, Nip22.KIND_COMMENT), authors = listOf(myPubkey), since = selfNotesSince)
         } else {
-            Filter(kinds = listOf(1, 1111), authors = listOf(myPubkey), limit = 200)
+            Filter(kinds = listOf(1, Nip22.KIND_COMMENT), authors = listOf(myPubkey), limit = 200)
         }
         val selfNotesMsg = ClientMessage.req("self-notes", selfNotesFilter)
         relayPool.sendToWriteRelays(selfNotesMsg)
@@ -826,7 +827,7 @@ class StartupCoordinator(
 
         val since = notifRepo.getLatestNotifTimestamp()?.let { it - 5 * 60 }
         val filters = myEventIds.chunked(OutboxRouter.MAX_ETAGS_PER_FILTER).map { chunk ->
-            Filter(kinds = listOf(1, 1111), eTags = chunk, limit = 200, since = since)
+            Filter(kinds = listOf(1, Nip22.KIND_COMMENT), eTags = chunk, limit = 200, since = since)
         }
         // Subscribe on our inbox relays ONLY — replies land where our notes' readers publish.
         outboxRouter.subscribeToUserInboxStrict("notif-replies-etag", pk, filters)

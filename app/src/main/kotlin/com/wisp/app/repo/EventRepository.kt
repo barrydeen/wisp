@@ -875,7 +875,8 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
      * (kind 0) are parsed so avatars/names are available immediately. Call rebuildFeedFromCache()
      * after this to populate feedList from the seeded eventCache.
      *
-     * Only kinds 0 and 1 are added to seenEventIds. Engagement events (kind 6, 7, 9735)
+     * Only display kinds (profiles, notes, comments, gallery, polls, articles)
+     * are added to seenEventIds. Engagement events (kind 6, 7, 9735)
      * are intentionally excluded so the engagement subscription can fetch them fresh from
      * relays without being deduped — their counts/caches are not populated here.
      */

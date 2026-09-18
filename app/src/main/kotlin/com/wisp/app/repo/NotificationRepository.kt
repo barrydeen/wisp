@@ -257,7 +257,7 @@ class NotificationRepository(
         if (isWotFiltered(event)) return
         val hasPTag = event.tags.any { it.size >= 2 && it[0] == "p" && it[1] == myPubkey }
         // Kind 6 reposts may omit the p-tag; callers must pre-filter kind 6 ownership.
-        // replyToMyEvent bypasses p-tag check for kind 1 replies found via e-tag subscription.
+        // replyToMyEvent bypasses p-tag check for kind 1 / 1111 replies found via e-tag subscription.
         if (!hasPTag && event.kind != 6 && event.kind != Nip88.KIND_POLL_RESPONSE &&
             !(replyToMyEvent && (event.kind == 1 || event.kind == Nip22.KIND_COMMENT))) {
             if (DiagnosticLogger.isEnabled) {

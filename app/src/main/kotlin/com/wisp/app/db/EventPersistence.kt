@@ -1,6 +1,7 @@
 package com.wisp.app.db
 
 import android.util.Log
+import com.wisp.app.nostr.Nip22
 import com.wisp.app.nostr.NostrEvent
 import io.objectbox.Box
 import io.objectbox.query.QueryBuilder.StringOrder
@@ -151,7 +152,7 @@ class EventPersistence(
     fun getRecentNotificationEvents(limit: Int = 500): List<NostrEvent> {
         return try {
             val entities = box.query(
-                EventEntity_.kind.oneOf(intArrayOf(1, 6, 7, 1111, 9735))
+                EventEntity_.kind.oneOf(intArrayOf(1, 6, 7, Nip22.KIND_COMMENT, 9735))
             )
                 .order(EventEntity_.createdAt, io.objectbox.query.QueryBuilder.DESCENDING)
                 .build()
@@ -235,6 +236,6 @@ class EventPersistence(
 
     companion object {
         // 1111 = NIP-22 comments — persisted so thread replies and notifications survive restarts
-        private val PERSISTED_KINDS = setOf(0, 1, 6, 7, 9735, 20, 21, 22, 1068, 6969, 1111, 30023, 36787)
+        private val PERSISTED_KINDS = setOf(0, 1, 6, 7, 9735, 20, 21, 22, 1068, 6969, Nip22.KIND_COMMENT, 30023, 36787)
     }
 }
