@@ -56,3 +56,8 @@ Wisp ingests 1111 as a reply everywhere but always publishes kind 1.
 - Do not render 1111 as a standalone feed post.
 - Do not require a `k` tag when consuming — many senders omit it.
 - Reply counts must dedup by reply event id (same as kind 1).
+- Nested replies (`e` = parent comment) reference the thread root ONLY via
+  uppercase `E` — they match `#E`, not `#e`, and must be admitted/validated
+  via `Nip22.referencesRoot`, not a lowercase-`e` check. Thread REQs need an
+  ORed second filter (`kinds 1111 + #E`); one filter object would AND `#e`
+  and `#E` and match almost nothing.

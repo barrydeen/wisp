@@ -331,7 +331,9 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         if (muteRepo?.isBlocked(event.pubkey) == true) return
         if ((event.kind == 1 || event.kind == Nip22.KIND_COMMENT || event.kind == 30023 || event.kind == 20 || event.kind == 21 || event.kind == 22 || event.kind == Nip69.KIND_ZAP_POLL) && muteRepo?.containsMutedWord(event.content) == true) return
         if (event.kind == 1 || event.kind == Nip22.KIND_COMMENT) {
-            val threadRoot = Nip10.getRootId(event) ?: Nip10.getReplyTarget(event) ?: event.id
+            // NIP-22 replies-to-comments reference the thread root only via
+            // uppercase E scope — prefer it over the lowercase-e parent.
+            val threadRoot = Nip22.getRootScopeId(event) ?: Nip10.getRootId(event) ?: Nip10.getReplyTarget(event) ?: event.id
             if (muteRepo?.isThreadMuted(threadRoot) == true) return
         }
         if (deletedEventsRepo?.isDeleted(event.id) == true) return

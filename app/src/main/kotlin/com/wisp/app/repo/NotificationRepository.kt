@@ -989,7 +989,11 @@ class NotificationRepository(
 
     private fun resolveThreadRoot(event: NostrEvent): String? {
         return when (event.kind) {
-            1, Nip22.KIND_COMMENT -> Nip10.getRootId(event) ?: Nip10.getReplyTarget(event)
+            1 -> Nip10.getRootId(event) ?: Nip10.getReplyTarget(event)
+            // NIP-22 replies-to-comments reference the thread root only via
+            // uppercase E scope (lowercase e names the parent comment).
+            Nip22.KIND_COMMENT -> Nip22.getRootScopeId(event)
+                ?: Nip10.getRootId(event) ?: Nip10.getReplyTarget(event)
             7 -> {
                 val refId = event.tags.lastOrNull { it.size >= 2 && it[0] == "e" }?.get(1)
                     ?: return null
