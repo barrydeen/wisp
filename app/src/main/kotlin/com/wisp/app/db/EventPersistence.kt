@@ -147,11 +147,11 @@ class EventPersistence(
         }
     }
 
-    /** Query recent notification-relevant events (kinds 1, 6, 7, 9735) for seeding NotificationRepository. */
+    /** Query recent notification-relevant events (kinds 1, 6, 7, 1111, 9735) for seeding NotificationRepository. */
     fun getRecentNotificationEvents(limit: Int = 500): List<NostrEvent> {
         return try {
             val entities = box.query(
-                EventEntity_.kind.oneOf(intArrayOf(1, 6, 7, 9735))
+                EventEntity_.kind.oneOf(intArrayOf(1, 6, 7, 1111, 9735))
             )
                 .order(EventEntity_.createdAt, io.objectbox.query.QueryBuilder.DESCENDING)
                 .build()
@@ -234,6 +234,7 @@ class EventPersistence(
     }
 
     companion object {
-        private val PERSISTED_KINDS = setOf(0, 1, 6, 7, 9735, 20, 21, 22, 1068, 6969, 30023, 36787)
+        // 1111 = NIP-22 comments — persisted so thread replies and notifications survive restarts
+        private val PERSISTED_KINDS = setOf(0, 1, 6, 7, 9735, 20, 21, 22, 1068, 6969, 1111, 30023, 36787)
     }
 }

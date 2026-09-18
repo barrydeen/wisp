@@ -396,7 +396,7 @@ class MetadataFetcher(
         val subId = "reply-count-${replyCountBatchCounter++}"
         val eventIds = pendingReplyCountIds.toList()
         pendingReplyCountIds.clear()
-        val filter = Filter(kinds = listOf(1), eTags = eventIds)
+        val filter = Filter(kinds = listOf(1, 1111), eTags = eventIds)
         relayPool.sendToReadRelays(ClientMessage.req(subId, filter))
         scope.launch {
             subManager.awaitEoseWithTimeout(subId)

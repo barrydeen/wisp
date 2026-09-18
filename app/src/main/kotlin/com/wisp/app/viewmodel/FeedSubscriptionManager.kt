@@ -1165,7 +1165,7 @@ class FeedSubscriptionManager(
 
         activeEngagementSubIds.add("engage-notif")
         val engagementFilters = eventIds.distinct().chunked(OutboxRouter.MAX_ETAGS_PER_FILTER).map { chunk ->
-            Filter(kinds = listOf(1, 5, 6, 7, 1018, 9735), eTags = chunk, limit = 500, since = since)
+            Filter(kinds = listOf(1, 1111, 5, 6, 7, 1018, 9735), eTags = chunk, limit = 500, since = since)
         }
         outboxRouter.subscribeToUserInboxStrict("engage-notif", myPubkey, engagementFilters)
 

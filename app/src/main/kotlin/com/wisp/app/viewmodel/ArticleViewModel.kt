@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.wisp.app.nostr.ClientMessage
 import com.wisp.app.nostr.Filter
 import com.wisp.app.nostr.Nip10
+import com.wisp.app.nostr.Nip22
 import com.wisp.app.nostr.Nip57
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.relay.OutboxRouter
@@ -128,7 +129,7 @@ class ArticleViewModel : ViewModel() {
         collectorJob = viewModelScope.launch {
             relayPool.relayEvents.collect { (event, relayUrl, subId) ->
                 if (subId == commentSubId || subId == eTagSubId) {
-                    if (event.kind != 1) return@collect
+                    if (event.kind != 1 && event.kind != Nip22.KIND_COMMENT) return@collect
                     val isNew = event.id !in commentEvents
                     if (isNew) {
                         commentEvents[event.id] = event
@@ -169,12 +170,12 @@ class ArticleViewModel : ViewModel() {
         loadJob = viewModelScope.launch {
             // Phase 1a: Subscribe for comments via `a` tag — author's inbox relays ONLY.
             // No pool broadcast or scored-relay safety net.
-            val commentFilter = Filter(kinds = listOf(1), aTags = listOf(coordinate))
+            val commentFilter = Filter(kinds = listOf(1, Nip22.KIND_COMMENT), aTags = listOf(coordinate))
             outboxRouter.subscribeToUserInboxStrict(commentSubId, author, listOf(commentFilter))
 
             // Phase 1b: Also subscribe via e-tag — many clients reply with e-tags
             if (articleEventId != null) {
-                val eTagFilter = Filter(kinds = listOf(1), eTags = listOf(articleEventId))
+                val eTagFilter = Filter(kinds = listOf(1, Nip22.KIND_COMMENT), eTags = listOf(articleEventId))
                 outboxRouter.subscribeToUserInboxStrict(eTagSubId, author, listOf(eTagFilter))
             }
 
