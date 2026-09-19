@@ -6,6 +6,7 @@ import com.wisp.app.nostr.ClientMessage
 import com.wisp.app.nostr.Filter
 import com.wisp.app.nostr.Nip09
 import com.wisp.app.nostr.Nip10
+import com.wisp.app.nostr.Nip22
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.relay.OutboxRouter
 import com.wisp.app.relay.RelayPool
@@ -212,7 +213,7 @@ class ThreadViewModel : ViewModel() {
                     return@collect
                 }
 
-                if (event.kind != 1) return@collect
+                if (event.kind != 1 && event.kind != Nip22.KIND_COMMENT) return@collect
 
                 // Silently drop events the user has already deleted on some other client/session.
                 if (eventRepo.deletedEventsRepo?.isDeleted(event.id) == true) return@collect
@@ -222,9 +223,10 @@ class ThreadViewModel : ViewModel() {
 
                 if (Nip10.isStandaloneQuote(event)) return@collect
 
-                // Validate: event must reference the thread root (some relays ignore eTags filter)
-                if (event.id != rootId &&
-                    event.tags.none { it.size >= 2 && it[0] == "e" && it[1] == rootId }) {
+                // Validate: event must reference the thread root (some relays ignore eTags filter).
+                // NIP-22 replies-to-comments point at the root only via uppercase E
+                // scope — lowercase e names the parent comment — so accept either.
+                if (event.id != rootId && !Nip22.referencesRoot(event, rootId)) {
                     return@collect
                 }
 
@@ -278,10 +280,18 @@ class ThreadViewModel : ViewModel() {
             // author's NIP-65 list (or hints) is unknown, we stay cache-only.
             val rootEvent = _rootEvent.value
             // Include kind 5 so deletions of the root (or any event tagging the root) come through.
-            val repliesFilter = Filter(kinds = listOf(1, 5), eTags = listOf(rootId))
+            // Include kind 1111 (NIP-22 comments) — treated as replies.
+            // Two ORed filters: lowercase #e catches direct replies (kind 1 and
+            // top-level 1111s); uppercase #E catches nested NIP-22 comment replies
+            // whose lowercase e points at the parent comment, not the root.
+            // They must be separate filters — one object would AND the conditions.
+            val repliesFilters = listOf(
+                Filter(kinds = listOf(1, Nip22.KIND_COMMENT, 5), eTags = listOf(rootId)),
+                Filter(kinds = listOf(Nip22.KIND_COMMENT), bigETags = listOf(rootId))
+            )
             if (rootEvent != null) {
                 outboxRouter.subscribeToUserInboxStrict(
-                    "thread-replies", rootEvent.pubkey, listOf(repliesFilter)
+                    "thread-replies", rootEvent.pubkey, repliesFilters
                 )
             }
 

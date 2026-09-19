@@ -4,6 +4,7 @@ import android.util.Log
 import android.util.LruCache
 import com.wisp.app.nostr.Nip09
 import com.wisp.app.nostr.Nip10
+import com.wisp.app.nostr.Nip22
 import com.wisp.app.nostr.Nip30
 import com.wisp.app.nostr.Bolt11
 import com.wisp.app.nostr.Nip57
@@ -328,16 +329,18 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         if (!seenEventIds.add(event.id)) return  // atomic dedup across all relay threads
         if (event.created_at > System.currentTimeMillis() / 1000 + 30) return  // reject future-dated notes (30s grace for clock skew)
         if (muteRepo?.isBlocked(event.pubkey) == true) return
-        if ((event.kind == 1 || event.kind == 30023 || event.kind == 20 || event.kind == 21 || event.kind == 22 || event.kind == Nip69.KIND_ZAP_POLL) && muteRepo?.containsMutedWord(event.content) == true) return
-        if (event.kind == 1) {
-            val threadRoot = Nip10.getRootId(event) ?: Nip10.getReplyTarget(event) ?: event.id
+        if ((event.kind == 1 || event.kind == Nip22.KIND_COMMENT || event.kind == 30023 || event.kind == 20 || event.kind == 21 || event.kind == 22 || event.kind == Nip69.KIND_ZAP_POLL) && muteRepo?.containsMutedWord(event.content) == true) return
+        if (event.kind == 1 || event.kind == Nip22.KIND_COMMENT) {
+            // NIP-22 replies-to-comments reference the thread root only via
+            // uppercase E scope — prefer it over the lowercase-e parent.
+            val threadRoot = Nip22.getRootScopeId(event) ?: Nip10.getRootId(event) ?: Nip10.getReplyTarget(event) ?: event.id
             if (muteRepo?.isThreadMuted(threadRoot) == true) return
         }
         if (deletedEventsRepo?.isDeleted(event.id) == true) return
         if (isWotFiltered(event.pubkey, event.kind)) return
         // Track liveness: only count followed authors with recent active-content kinds,
         // so historical fetches, profile metadata, and strangers don't inflate the online count.
-        if (event.kind == 1 || event.kind == 6 || event.kind == 7 || event.kind == 30023 || event.kind == 20 || event.kind == 21 || event.kind == 22) {
+        if (event.kind == 1 || event.kind == 6 || event.kind == 7 || event.kind == Nip22.KIND_COMMENT || event.kind == 30023 || event.kind == 20 || event.kind == 21 || event.kind == 22) {
             val eventTimeMs = event.created_at * 1000L
             val cutoff = System.currentTimeMillis() - 10 * 60 * 1000L
             if (eventTimeMs >= cutoff && (contactRepo?.isFollowing(event.pubkey) == true || event.pubkey == currentUserPubkey)) {
@@ -368,6 +371,10 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                 // Only show root notes in feed, not replies
                 val isReply = Nip10.isReply(event)
                 if (!isReply) binaryInsert(event, fromFeed = true)
+            }
+            Nip22.KIND_COMMENT -> {
+                // NIP-22 comments never appear in feeds — cached only, rendered in
+                // thread/article views and counted as replies.
             }
             30023 -> {
                 binaryInsert(event, fromFeed = true)
@@ -737,7 +744,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     fun getRecentEventIdsByAuthor(pubkey: String, limit: Int = 50): List<String> {
         return eventCache.values
             .asSequence()
-            .filter { it.kind == 1 && it.pubkey == pubkey }
+            .filter { (it.kind == 1 || it.kind == Nip22.KIND_COMMENT) && it.pubkey == pubkey }
             .sortedByDescending { it.created_at }
             .take(limit)
             .map { it.id }
@@ -870,13 +877,14 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
      * (kind 0) are parsed so avatars/names are available immediately. Call rebuildFeedFromCache()
      * after this to populate feedList from the seeded eventCache.
      *
-     * Only kinds 0 and 1 are added to seenEventIds. Engagement events (kind 6, 7, 9735)
+     * Only display kinds (profiles, notes, comments, gallery, polls, articles)
+     * are added to seenEventIds. Engagement events (kind 6, 7, 9735)
      * are intentionally excluded so the engagement subscription can fetch them fresh from
      * relays without being deduped — their counts/caches are not populated here.
      */
     fun seedFromObjectBox(events: List<NostrEvent>) {
         for (event in events) {
-            if (event.kind != 0 && event.kind != 1 && event.kind != 20 && event.kind != 21 && event.kind != 22 && event.kind != 1068 && event.kind != 6969 && event.kind != 30023) continue
+            if (event.kind != 0 && event.kind != 1 && event.kind != Nip22.KIND_COMMENT && event.kind != 20 && event.kind != 21 && event.kind != 22 && event.kind != 1068 && event.kind != 6969 && event.kind != 30023) continue
             if (muteRepo?.isBlocked(event.pubkey) == true) continue
             if (!seenEventIds.add(event.id)) continue
             eventCache[event.id] = event

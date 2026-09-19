@@ -4,6 +4,7 @@ import android.content.SharedPreferences
 import android.util.Log
 import com.wisp.app.nostr.ClientMessage
 import com.wisp.app.nostr.Filter
+import com.wisp.app.nostr.Nip22
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.ProfileData
 import com.wisp.app.relay.ConsoleLogType
@@ -1165,7 +1166,7 @@ class FeedSubscriptionManager(
 
         activeEngagementSubIds.add("engage-notif")
         val engagementFilters = eventIds.distinct().chunked(OutboxRouter.MAX_ETAGS_PER_FILTER).map { chunk ->
-            Filter(kinds = listOf(1, 5, 6, 7, 1018, 9735), eTags = chunk, limit = 500, since = since)
+            Filter(kinds = listOf(1, Nip22.KIND_COMMENT, 5, 6, 7, 1018, 9735), eTags = chunk, limit = 500, since = since)
         }
         outboxRouter.subscribeToUserInboxStrict("engage-notif", myPubkey, engagementFilters)
 

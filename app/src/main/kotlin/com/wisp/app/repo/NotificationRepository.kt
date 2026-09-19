@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.util.LruCache
 import com.wisp.app.nostr.Nip10
+import com.wisp.app.nostr.Nip22
 import com.wisp.app.nostr.Nip30
 import com.wisp.app.nostr.Nip57
 import com.wisp.app.nostr.Nip69
@@ -256,8 +257,9 @@ class NotificationRepository(
         if (isWotFiltered(event)) return
         val hasPTag = event.tags.any { it.size >= 2 && it[0] == "p" && it[1] == myPubkey }
         // Kind 6 reposts may omit the p-tag; callers must pre-filter kind 6 ownership.
-        // replyToMyEvent bypasses p-tag check for kind 1 replies found via e-tag subscription.
-        if (!hasPTag && event.kind != 6 && event.kind != Nip88.KIND_POLL_RESPONSE && !(replyToMyEvent && event.kind == 1)) {
+        // replyToMyEvent bypasses p-tag check for kind 1 / 1111 replies found via e-tag subscription.
+        if (!hasPTag && event.kind != 6 && event.kind != Nip88.KIND_POLL_RESPONSE &&
+            !(replyToMyEvent && (event.kind == 1 || event.kind == Nip22.KIND_COMMENT))) {
             if (DiagnosticLogger.isEnabled) {
                 DiagnosticLogger.log("NOTIF", "REJECTED:no_ptag id=${event.id.take(12)} kind=${event.kind} " +
                     "pubkey=${event.pubkey.take(8)} myPubkey=${myPubkey.take(8)} source=$source " +
@@ -303,7 +305,7 @@ class NotificationRepository(
         // extraction runs several regex passes over up to ten notes per
         // author; doing it under the lock stalls every caller — including
         // the main thread — long enough to trip the input-dispatch ANR.
-        if (event.kind == 1) warmSpamScore(event)
+        if (event.kind == 1 || event.kind == Nip22.KIND_COMMENT) warmSpamScore(event)
 
         synchronized(lock) {
             // Atomic check-then-put inside lock to prevent race when the same
@@ -322,7 +324,7 @@ class NotificationRepository(
             val merged = when (event.kind) {
                 6 -> mergeRepost(event)
                 7 -> mergeReaction(event)
-                1 -> mergeKind1(event)
+                1, Nip22.KIND_COMMENT -> mergeKind1(event)
                 9735 -> mergeZap(event)
                 Nip88.KIND_POLL_RESPONSE -> mergeVote(event)
                 else -> false
@@ -360,7 +362,7 @@ class NotificationRepository(
                 if (event.created_at >= soundEligibleAfter && appIsActive) {
                     when (event.kind) {
                         9735 -> _zapReceived.tryEmit(Unit)
-                        1 -> {
+                        1, Nip22.KIND_COMMENT -> {
                             // Replies get the ICQ flower effect; quotes/mentions get generic blip
                             val isQuote = event.tags.any { it.size >= 2 && it[0] == "q" }
                             val isReply = !isQuote && Nip10.getReplyTarget(event) != null
@@ -988,6 +990,10 @@ class NotificationRepository(
     private fun resolveThreadRoot(event: NostrEvent): String? {
         return when (event.kind) {
             1 -> Nip10.getRootId(event) ?: Nip10.getReplyTarget(event)
+            // NIP-22 replies-to-comments reference the thread root only via
+            // uppercase E scope (lowercase e names the parent comment).
+            Nip22.KIND_COMMENT -> Nip22.getRootScopeId(event)
+                ?: Nip10.getRootId(event) ?: Nip10.getReplyTarget(event)
             7 -> {
                 val refId = event.tags.lastOrNull { it.size >= 2 && it[0] == "e" }?.get(1)
                     ?: return null
