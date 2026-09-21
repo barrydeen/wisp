@@ -116,6 +116,8 @@ import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -133,6 +135,7 @@ import com.wisp.app.repo.ProfileRepository
 import com.wisp.app.repo.PowPreferences
 import com.wisp.app.R
 import com.wisp.app.ui.component.EmojiShortcodePopup
+import com.wisp.app.ui.component.AltTextEditorDialog
 import com.wisp.app.ui.component.EmojiVisualTransformation
 import com.wisp.app.ui.component.MentionOutputTransformation
 import com.wisp.app.ui.component.ProfilePicture
@@ -182,6 +185,21 @@ fun ComposeScreen(
     val hashtags by viewModel.hashtags.collectAsState()
     val powEnabled by viewModel.powEnabled.collectAsState()
     val galleryMode by viewModel.galleryMode.collectAsState()
+    // Alt text (NIP-92 imeta) — per-image editor state
+    val altTexts by viewModel.altTexts.collectAsState()
+    var altEditorUrl by remember { mutableStateOf<String?>(null) }
+
+    altEditorUrl?.let { url ->
+        AltTextEditorDialog(
+            url = url,
+            initialAlt = altTexts[url] ?: "",
+            onSave = { value ->
+                viewModel.setAltText(url, value)
+                altEditorUrl = null
+            },
+            onDismiss = { altEditorUrl = null }
+        )
+    }
     val pollEnabled by viewModel.pollEnabled.collectAsState()
     val pollOptions by viewModel.pollOptions.collectAsState()
     val pollType by viewModel.pollType.collectAsState()
@@ -328,6 +346,9 @@ fun ComposeScreen(
                         uploadedUrls = uploadedUrls,
                         uploadProgress = uploadProgress,
                         countdownSeconds = countdownSeconds,
+                        savedAltUrls = altTexts.keys,
+                        isImageUpload = { viewModel.isImageUpload(it) },
+                        onEditAlt = { altEditorUrl = it },
                         onPickMedia = {
                             photoPickerLauncher.launch(
                                 PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
@@ -695,6 +716,38 @@ fun ComposeScreen(
                                 viewModel.updateContent(newTfv)
                             }
                         )
+                    }
+
+                    // Attached-images strip (inline note/reply mode) — per-image
+                    // alt chip, the non-gallery counterpart of the gallery's
+                    // "+ ALT" overlay.
+                    val altImageUrls = uploadedUrls.filter { viewModel.isImageUpload(it) }
+                    if (altImageUrls.isNotEmpty()) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp)
+                        ) {
+                            altImageUrls.forEach { url ->
+                                Box {
+                                    AsyncImage(
+                                        model = url,
+                                        contentDescription = null,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier
+                                            .size(56.dp)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                                    )
+                                    AltChip(
+                                        saved = url in altTexts,
+                                        onClick = { altEditorUrl = url },
+                                        modifier = Modifier.align(Alignment.TopStart)
+                                    )
+                                }
+                            }
+                        }
                     }
 
                     // Text field with GIF keyboard support via BasicTextField(TextFieldState)
@@ -1449,6 +1502,9 @@ private fun GalleryComposeSection(
     uploadedUrls: List<String>,
     uploadProgress: String?,
     countdownSeconds: Int?,
+    savedAltUrls: Set<String>,
+    isImageUpload: (String) -> Boolean,
+    onEditAlt: (String) -> Unit,
     onPickMedia: () -> Unit,
     onRemoveUrl: (String) -> Unit
 ) {
@@ -1509,16 +1565,27 @@ private fun GalleryComposeSection(
                     state = pagerState,
                     modifier = Modifier.fillMaxSize()
                 ) { page ->
+                    val pageUrl = uploadedUrls[page]
                     Box(modifier = Modifier.fillMaxSize()) {
                         AsyncImage(
-                            model = uploadedUrls[page],
+                            model = pageUrl,
                             contentDescription = "Uploaded media ${page + 1}",
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize()
                         )
+                        // Alt chip (top-start) — "+ ALT" undescribed, "✓ ALT" saved
+                        if (isImageUpload(pageUrl)) {
+                            AltChip(
+                                saved = pageUrl in savedAltUrls,
+                                onClick = { onEditAlt(pageUrl) },
+                                modifier = Modifier
+                                    .align(Alignment.TopStart)
+                                    .padding(8.dp)
+                            )
+                        }
                         // Remove button
                         IconButton(
-                            onClick = { onRemoveUrl(uploadedUrls[page]) },
+                            onClick = { onRemoveUrl(pageUrl) },
                             modifier = Modifier
                                 .align(Alignment.TopEnd)
                                 .padding(8.dp)
@@ -1595,5 +1662,33 @@ private fun GalleryComposeSection(
                 }
             }
         }
+    }
+}
+
+/**
+ * The composer's per-image alt chip: "+ ALT" on an undescribed image,
+ * "✓ ALT" (accent) once a description is saved. Tapping opens the editor;
+ * saving nothing (clear) removes the imeta on publish.
+ */
+@Composable
+private fun AltChip(
+    saved: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val cdText = stringResource(R.string.cd_add_alt_text)
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(if (saved) MaterialTheme.colorScheme.primary else Color.Black.copy(alpha = 0.6f))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 6.dp, vertical = 3.dp)
+            .semantics { contentDescription = cdText }
+    ) {
+        Text(
+            text = if (saved) stringResource(R.string.alt_chip_saved) else stringResource(R.string.alt_chip_add),
+            style = MaterialTheme.typography.labelSmall,
+            color = if (saved) MaterialTheme.colorScheme.onPrimary else Color.White
+        )
     }
 }

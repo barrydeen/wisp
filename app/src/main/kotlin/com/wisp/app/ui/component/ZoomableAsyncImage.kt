@@ -60,7 +60,9 @@ internal fun ZoomableAsyncImage(
     onDismissDrag: (yOffset: Float) -> Unit,
     modifier: Modifier = Modifier,
     maxScale: Float = 4f,
-    dismissThreshold: Float = 120f
+    dismissThreshold: Float = 120f,
+    /** Single tap (double-tap still zooms) — used by fullscreen viewers to toggle their overlay chrome. */
+    onTap: (() -> Unit)? = null
 ) {
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
@@ -111,6 +113,7 @@ internal fun ZoomableAsyncImage(
                 )
                 .pointerInput(Unit) {
                     detectTapGestures(
+                        onTap = { if (onTap != null) onTap() },
                         onDoubleTap = { tapOffset ->
                             scope.launch {
                                 if (scale > 1f) {
