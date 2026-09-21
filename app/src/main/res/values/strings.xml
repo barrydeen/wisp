@@ -947,9 +947,10 @@
     <string name="alt_badge">ALT</string>
     <string name="alt_description_title">Description</string>
     <string name="cd_view_image_description">View image description</string>
-    <string name="alt_chip_add">+ ALT</string>
-    <string name="alt_chip_saved">✓ ALT</string>
+    <string name="alt_chip_add">+ALT</string>
+    <string name="alt_chip_saved">✓ALT</string>
     <string name="cd_add_alt_text">Add alt text</string>
+    <string name="cd_remove_image">Remove image</string>
     <string name="alt_editor_explainer">A short description makes your photo accessible to screen reader users — and gives everyone context if the image doesn\'t load.</string>
     <string name="alt_editor_hint">Describe this image…</string>
     <string name="alt_editor_chars_remaining">%1$d remaining</string>
