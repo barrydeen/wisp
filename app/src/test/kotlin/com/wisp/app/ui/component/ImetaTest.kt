@@ -95,6 +95,48 @@ class ImetaTest {
         assertNull(sanitizeAltText(""))
     }
 
+    // ---- Line breaks (imeta alt linebreak contract) ----
+
+    /** Single breaks survive, runs cap at one paragraph gap, CRLF/CR normalizes. */
+    @Test
+    fun `normalizeAltBreaks vectors`() {
+        assertEquals("two\nlines", normalizeAltBreaks("two\nlines"))
+        assertEquals("a\n\nb", normalizeAltBreaks("a\n\n\n\n\nb"))
+        assertEquals("a\nb", normalizeAltBreaks("a\r\nb"))
+        assertEquals("a\nb", normalizeAltBreaks("a\rb"))
+        assertEquals("first\n\nsecond", normalizeAltBreaks("  first \n\n  second  "))
+        assertEquals("", normalizeAltBreaks("   "))
+    }
+
+    /** Read path: the slot splits on the first space only, so interior breaks survive. */
+    @Test
+    fun `parse keeps interior line breaks`() {
+        val map = parseImetaTags(
+            listOf(listOf("imeta", "url https://host/multi.jpg", "m image/jpeg", "alt First paragraph\n\nSecond paragraph"))
+        )
+        assertEquals("First paragraph\n\nSecond paragraph", map["https://host/multi.jpg"]?.alt)
+    }
+
+    /** Read path: runaway break runs are capped so remote events can't balloon the layout. */
+    @Test
+    fun `parse caps runaway break runs`() {
+        val map = parseImetaTags(
+            listOf(listOf("imeta", "url https://host/ballooning.jpg", "alt a\n\n\n\n\n\nb"))
+        )
+        assertEquals("a\n\nb", map["https://host/ballooning.jpg"]?.alt)
+    }
+
+    /** Authoring path: structure survives, CRLF and bloat don't. */
+    @Test
+    fun `sanitizeAltText preserves paragraphs and caps runs`() {
+        assertEquals(
+            "A screenshot.\n\nBelow it, a quoted post.",
+            sanitizeAltText("A screenshot.\n\nBelow it, a quoted post.")
+        )
+        assertEquals("a\n\nb", sanitizeAltText("a\r\n\n\n\n\nb"))
+        assertNull(sanitizeAltText("\n\n  \n"))
+    }
+
     @Test
     fun `multiple imeta tags map each url independently`() {
         val map = parseImetaTags(
