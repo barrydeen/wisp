@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -30,6 +31,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -49,6 +51,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -91,6 +94,10 @@ fun FullScreenMediaPager(
         val scope = rememberCoroutineScope()
         val pagerState = rememberPagerState(initialPage = startPage, pageCount = { items.size })
         var dismissDragY by remember { mutableFloatStateOf(0f) }
+        // Immersive toggle: tapping the image (or video poster) hides every
+        // overlay — buttons, counter, dots, alt caption, play button — until
+        // the next tap brings them back.
+        var chromeVisible by remember { mutableStateOf(true) }
         // Track each page's contribution so the bg fade only follows the
         // page the user is actually pulling, not a stale value from a page
         // they swiped past.
@@ -109,11 +116,12 @@ fun FullScreenMediaPager(
                 when (item) {
                     is MediaPagerItem.Image -> ZoomableAsyncImage(
                         model = item.url,
-                        contentDescription = "Image ${page + 1} of ${items.size}",
+                        contentDescription = item.alt ?: "Image ${page + 1} of ${items.size}",
                         onSwipeDownDismiss = onDismiss,
                         onDismissDrag = { y ->
                             if (page == pagerState.currentPage) dismissDragY = y
-                        }
+                        },
+                        onTap = { chromeVisible = !chromeVisible }
                     )
                     is MediaPagerItem.Video -> VideoPagerPage(
                         url = item.url,
@@ -122,12 +130,43 @@ fun FullScreenMediaPager(
                         onSwipeDownDismiss = onDismiss,
                         onDismissDrag = { y ->
                             if (page == pagerState.currentPage) dismissDragY = y
-                        }
+                        },
+                        onTap = { chromeVisible = !chromeVisible },
+                        showChrome = chromeVisible
                     )
                 }
             }
 
-            if (items.size > 1) {
+            // Alt text caption (NIP-92 imeta), pinned to the bottom of the
+            // pane — a preview that opens the full Description sheet on tap.
+            // Part of the toggleable chrome.
+            var altSheetText by remember { mutableStateOf<String?>(null) }
+            val currentAlt = (items.getOrNull(pagerState.currentPage) as? MediaPagerItem.Image)?.alt
+            if (chromeVisible && !currentAlt.isNullOrBlank()) {
+                Text(
+                    text = currentAlt,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp)
+                        .padding(bottom = if (items.size > 1) 56.dp else 24.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color.Black.copy(alpha = 0.55f))
+                        .clickable { altSheetText = currentAlt }
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                )
+            }
+            AltDescriptionSheet(
+                alt = altSheetText.orEmpty(),
+                visible = altSheetText != null,
+                onDismiss = { altSheetText = null }
+            )
+
+            if (chromeVisible && items.size > 1) {
                 Surface(
                     shape = RoundedCornerShape(16.dp),
                     color = Color.Black.copy(alpha = 0.5f),
@@ -163,7 +202,7 @@ fun FullScreenMediaPager(
                 }
             }
 
-            Row(
+            if (chromeVisible) Row(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(16.dp)
@@ -215,7 +254,8 @@ fun FullScreenMediaPager(
 /** Items the pager knows how to render. */
 sealed interface MediaPagerItem {
     val url: String
-    data class Image(override val url: String) : MediaPagerItem
+    /** [alt] is the NIP-92 imeta description; shown as a caption and read by screen readers when present. */
+    data class Image(override val url: String, val alt: String? = null) : MediaPagerItem
     /** [posterModel] is a Coil-compatible model used as a still — typically
      *  the video URL itself (Coil 3's video frame decoder pulls frame 0) or
      *  a thumbhash painter. */
@@ -228,7 +268,9 @@ private fun VideoPagerPage(
     posterModel: Any?,
     onPlay: () -> Unit,
     onSwipeDownDismiss: () -> Unit,
-    onDismissDrag: (Float) -> Unit
+    onDismissDrag: (Float) -> Unit,
+    onTap: () -> Unit = {},
+    showChrome: Boolean = true
 ) {
     val scope = rememberCoroutineScope()
     val touchSlop = LocalViewConfiguration.current.touchSlop
@@ -249,12 +291,14 @@ private fun VideoPagerPage(
             .pointerInput(Unit) {
                 // Same direction-locked drag pattern as ZoomableAsyncImage:
                 // horizontal drags fall through to the parent pager,
-                // vertical drags drive swipe-to-dismiss.
+                // vertical drags drive swipe-to-dismiss. A release that never
+                // crossed touch slop is a tap — toggles the viewer chrome.
                 awaitEachGesture {
                     awaitFirstDown(requireUnconsumed = false)
                     var totalDx = 0f
                     var totalDy = 0f
                     var verticalLocked = false
+                    var crossedSlop = false
                     val velocityTracker = VelocityTracker()
                     while (true) {
                         val event = awaitPointerEvent(PointerEventPass.Main)
@@ -265,6 +309,7 @@ private fun VideoPagerPage(
                             totalDx += delta.x
                             totalDy += delta.y
                             val crossed = abs(totalDx) > touchSlop || abs(totalDy) > touchSlop
+                            if (crossed) crossedSlop = true
                             if (crossed) {
                                 if (abs(totalDy) > abs(totalDx) && totalDy > 0f) {
                                     verticalLocked = true
@@ -290,6 +335,10 @@ private fun VideoPagerPage(
                                 val projectedY = dragY + velocityY * 0.3f
                                 if (projectedY >= 120f) onSwipeDownDismiss()
                                 else scope.launch { dragYAnim.animateTo(0f) }
+                            } else if (!crossedSlop && !change.isConsumed) {
+                                // A consumed release means a child (play button)
+                                // handled the tap — don't also toggle chrome.
+                                onTap()
                             }
                             return@awaitEachGesture
                         }
@@ -307,21 +356,23 @@ private fun VideoPagerPage(
                     .graphicsLayer(translationY = dragY)
             )
         }
-        Box(
-            modifier = Modifier
-                .align(Alignment.Center)
-                .size(80.dp)
-                .clip(CircleShape)
-                .background(Color.Black.copy(alpha = 0.6f))
-                .clickable { onPlay() },
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = Icons.Filled.PlayArrow,
-                contentDescription = "Play video",
-                tint = Color.White,
-                modifier = Modifier.size(40.dp)
-            )
+        if (showChrome) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .size(80.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.6f))
+                    .clickable { onPlay() },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.PlayArrow,
+                    contentDescription = "Play video",
+                    tint = Color.White,
+                    modifier = Modifier.size(40.dp)
+                )
+            }
         }
     }
 }
