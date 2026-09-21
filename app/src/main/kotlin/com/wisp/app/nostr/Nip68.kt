@@ -36,7 +36,7 @@ object Nip68 {
                     thumbhash = fields["thumbhash"],
                     blurhash = fields["blurhash"],
                     dim = fields["dim"],
-                    alt = fields["alt"],
+                    alt = fields["alt"]?.trim()?.takeIf { it.isNotEmpty() },
                     hash = fields["x"],
                     fallback = fallbacks
                 )
@@ -60,7 +60,7 @@ object Nip68 {
             entry.thumbhash?.let { imetaParts.add("thumbhash $it") }
             entry.blurhash?.let { imetaParts.add("blurhash $it") }
             entry.dim?.let { imetaParts.add("dim $it") }
-            entry.alt?.let { imetaParts.add("alt $it") }
+            entry.alt?.trim()?.takeIf { it.isNotEmpty() }?.let { imetaParts.add("alt $it") }
             entry.hash?.let { imetaParts.add("x $it") }
             for (fb in entry.fallback) imetaParts.add("fallback $fb")
             tags.add(imetaParts)

@@ -185,15 +185,6 @@ data class NoteActions(
     val onOpenEmojiLibrary: (() -> Unit)? = null,
 )
 
-data class MediaMeta(
-    val url: String,
-    val mime: String? = null,
-    val dimension: String? = null,
-    val thumbhash: String? = null,
-    val blurhash: String? = null,
-    val image: String? = null
-)
-
 internal sealed interface ContentSegment {
     data class TextSegment(val text: String) : ContentSegment
     data class ImageSegment(val meta: MediaMeta) : ContentSegment
@@ -224,38 +215,6 @@ private val audioMimeTypes = setOf("audio/mpeg", "audio/wav", "audio/ogg", "audi
 
 // Matches a bare SHA-256 hex hash as the URL path (no extension)
 private val blossomPathRegex = Regex("""^/[0-9a-f]{64}$""", RegexOption.IGNORE_CASE)
-
-/**
- * Parse NIP-92 imeta tags from a list of tags to build a URL→metadata map.
- * Tag format: ["imeta", "url https://...", "m image/png", "dim 1024x768", "thumbhash ...", "blurhash ...", "image https://...", ...]
- */
-fun parseImetaTags(tags: List<List<String>>): Map<String, MediaMeta> {
-    val map = mutableMapOf<String, MediaMeta>()
-    for (tag in tags) {
-        if (tag.firstOrNull() != "imeta" || tag.size < 2) continue
-        var url: String? = null
-        var mime: String? = null
-        var dim: String? = null
-        var thumb: String? = null
-        var blur: String? = null
-        var image: String? = null
-        for (i in 1 until tag.size) {
-            val entry = tag[i]
-            when {
-                entry.startsWith("url ") -> url = entry.removePrefix("url ")
-                entry.startsWith("m ") -> mime = entry.removePrefix("m ")
-                entry.startsWith("dim ") -> dim = entry.removePrefix("dim ")
-                entry.startsWith("thumbhash ") -> thumb = entry.removePrefix("thumbhash ")
-                entry.startsWith("blurhash ") -> blur = entry.removePrefix("blurhash ")
-                entry.startsWith("image ") -> image = entry.removePrefix("image ")
-            }
-        }
-        if (url != null) {
-            map[url] = MediaMeta(url = url, mime = mime, dimension = dim, thumbhash = thumb, blurhash = blur, image = image)
-        }
-    }
-    return map
-}
 
 private fun classifyByMime(mime: String): String? = when {
     imageMimeTypes.any { mime.startsWith(it) } -> "image"
@@ -722,8 +681,8 @@ fun RichContent(
     val allMediaItems = remember(segments) {
         segments.mapNotNull { seg ->
             when (seg) {
-                is ContentSegment.ImageSegment -> MediaPagerItem.Image(seg.meta.url)
-                is ContentSegment.UnknownMediaSegment -> MediaPagerItem.Image(seg.meta.url)
+                is ContentSegment.ImageSegment -> MediaPagerItem.Image(seg.meta.url, seg.meta.alt)
+                is ContentSegment.UnknownMediaSegment -> MediaPagerItem.Image(seg.meta.url, seg.meta.alt)
                 is ContentSegment.VideoSegment -> MediaPagerItem.Video(seg.meta.url, posterModel = seg.meta.url)
                 else -> null
             }
@@ -1579,7 +1538,7 @@ private fun ArticleCard(
                     val ratio = remember(meta.dimension) { parseAspectRatio(meta.dimension) }
                     LoadingAsyncImage(
                         model = image,
-                        contentDescription = title,
+                        contentDescription = meta.alt ?: title,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
                             .fillMaxWidth()
@@ -2503,7 +2462,7 @@ private fun ImageWithContextMenu(meta: MediaMeta, onFullScreen: () -> Unit) {
     Box {
         LoadingAsyncImage(
             model = url,
-            contentDescription = "Image",
+            contentDescription = meta.alt ?: "Image",
             contentScale = ContentScale.FillWidth,
             blurPainter = blurPainter,
             onClick = onFullScreen,
@@ -2513,6 +2472,16 @@ private fun ImageWithContextMenu(meta: MediaMeta, onFullScreen: () -> Unit) {
                 .let { if (ratio != null) it.aspectRatio(ratio) else it }
                 .clip(RoundedCornerShape(12.dp)),
         )
+        // Sibling of the image tap target (never nested) so assistive tech
+        // gets two clean focus stops: the described image, then the badge.
+        if (!meta.alt.isNullOrBlank()) {
+            AltBadgeWithSheet(
+                alt = meta.alt,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(8.dp)
+            )
+        }
         DropdownMenu(
             expanded = showMenu,
             onDismissRequest = { showMenu = false }

@@ -175,6 +175,29 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         val thumbhash: String? = null
     )
 
+    /** Image description (NIP-92 imeta `alt`) per uploaded image URL.
+     *  Blank/absent means undescribed — no `alt` slot, and no imeta tag,
+     *  is emitted for that image. */
+    private val _altTexts = MutableStateFlow<Map<String, String>>(emptyMap())
+    val altTexts: StateFlow<Map<String, String>> = _altTexts
+
+    /**
+     * Set (or clear, when blank-after-trim) the alt text for [url]. The
+     * trimmed, ALT_TEXT_MAX_CHARS-capped value is what gets stored and
+     * later emitted.
+     */
+    fun setAltText(url: String, rawAlt: String) {
+        val sanitized = com.wisp.app.ui.component.sanitizeAltText(rawAlt)
+        _altTexts.value = if (sanitized == null) _altTexts.value - url else _altTexts.value + (url to sanitized)
+    }
+
+    /**
+     * True when [url] is an uploaded image, so alt text applies — GIFs that
+     * transcode to video are excluded.
+     */
+    fun isImageUpload(url: String): Boolean =
+        _uploadedMediaMeta[url]?.mimeType?.startsWith("image/") == true
+
     companion object {
         val SCHEDULER_RELAYS = listOf("wss://scheduler.nostrarchives.com")
         const val MAX_GALLERY_IMAGES = 21
@@ -364,6 +387,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     fun removeMediaUrl(url: String) {
         _uploadedUrls.value = _uploadedUrls.value - url
         _uploadedMediaMeta.remove(url)
+        _altTexts.value = _altTexts.value - url
         // Reset video flag if all media removed
         if (_uploadedUrls.value.isEmpty()) _galleryHasVideo.value = false
         if (!_galleryMode.value) {
@@ -729,6 +753,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
                 tags.addAll(Nip71.buildVideoTags(title = null, media = videoMeta, hashtags = _hashtags.value))
                 eventKind = if (isVertical) Nip71.KIND_VIDEO_VERTICAL else Nip71.KIND_VIDEO_HORIZONTAL
             } else {
+                val altTexts = _altTexts.value
                 val imetaEntries = urls.map { url ->
                     val meta = _uploadedMediaMeta[url]
                     val dimStr = meta?.dimensions?.let { "${it.first}x${it.second}" }
@@ -736,7 +761,8 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
                         url = url,
                         mimeType = meta?.mimeType,
                         thumbhash = meta?.thumbhash,
-                        dim = dimStr
+                        dim = dimStr,
+                        alt = altTexts[url]
                     )
                 }
                 tags.addAll(Nip68.buildPictureTags(title = null, media = imetaEntries, hashtags = _hashtags.value))
@@ -775,6 +801,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         }
 
         if (!_galleryMode.value) {
+            val altTexts = _altTexts.value
             val imageEntries = _uploadedUrls.value.mapNotNull { url ->
                 val meta = _uploadedMediaMeta[url] ?: return@mapNotNull null
                 if (!meta.mimeType.startsWith("image/")) return@mapNotNull null
@@ -782,7 +809,8 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
                     url = url,
                     mimeType = meta.mimeType,
                     thumbhash = meta.thumbhash,
-                    dim = meta.dimensions?.let { "${it.first}x${it.second}" }
+                    dim = meta.dimensions?.let { "${it.first}x${it.second}" },
+                    alt = altTexts[url]
                 )
             }
             if (imageEntries.isNotEmpty()) {
@@ -826,6 +854,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
             savedStateHandle.remove<Array<String>>("draft_mentions")
             _uploadedUrls.value = emptyList()
             _uploadedMediaMeta.clear()
+            _altTexts.value = emptyMap()
             _error.value = null
             _publishing.value = false
             _scheduleEnabled.value = false
@@ -865,6 +894,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
             savedStateHandle.remove<Array<String>>("draft_mentions")
             _uploadedUrls.value = emptyList()
             _uploadedMediaMeta.clear()
+            _altTexts.value = emptyMap()
             _error.value = null
             _publishing.value = false
             return -1
@@ -911,6 +941,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         savedStateHandle.remove<String>("draft_content")
         _uploadedUrls.value = emptyList()
         _uploadedMediaMeta.clear()
+        _altTexts.value = emptyMap()
         _error.value = null
         _publishing.value = false
         return sentCount
@@ -964,6 +995,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         savedStateHandle.remove<Array<String>>("draft_mentions")
         _uploadedUrls.value = emptyList()
         _uploadedMediaMeta.clear()
+        _altTexts.value = emptyMap()
         _error.value = null
         _publishing.value = false
         _privateReply.value = false
@@ -1109,6 +1141,12 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         val text = draft.content
         _content.value = TextFieldValue(text, TextRange(text.length))
         savedStateHandle["draft_content"] = text
+        // Re-apply descriptions saved with the draft (imeta inner tags keyed
+        // by URL). Entries for URLs the user re-attaches resurface on the
+        // chips; undescribed uploads are unaffected.
+        _altTexts.value = com.wisp.app.ui.component.parseImetaTags(draft.tags)
+            .mapNotNull { (url, meta) -> meta.alt?.let { url to it } }
+            .toMap()
     }
 
     fun saveDraft(
@@ -1129,6 +1167,15 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
                 val innerTags = mutableListOf<List<String>>()
                 if (replyTo != null) {
                     innerTags.addAll(Nip10.buildReplyTags(replyTo))
+                }
+                // Alt text rides in the draft as imeta inner tags keyed by URL
+                // so a restored draft can re-apply the descriptions. Only
+                // described images get a tag.
+                for ((draftAltUrl, draftAlt) in _altTexts.value) {
+                    val trimmedAlt = draftAlt.trim()
+                    if (trimmedAlt.isNotEmpty()) {
+                        innerTags.add(listOf("imeta", "url $draftAltUrl", "alt $trimmedAlt"))
+                    }
                 }
                 val innerJson = Nip37.serializeDraftContent(
                     pubkeyHex = signer.pubkeyHex,
@@ -1188,6 +1235,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         _galleryMode.value = false
         _galleryHasVideo.value = false
         _uploadedMediaMeta.clear()
+        _altTexts.value = emptyMap()
         _pollEnabled.value = false
         _pollOptions.value = listOf("", "")
         _pollType.value = Nip88.PollType.SINGLECHOICE
