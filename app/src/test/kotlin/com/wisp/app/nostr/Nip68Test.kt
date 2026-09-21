@@ -44,6 +44,29 @@ class Nip68Test {
         assertNull(Nip68.parseImetaEntries(event(tags)).single().alt)
     }
 
+    /** Publish path: a multiline description rides as real newlines inside the
+     *  tag string — never flattened to spaces — and survives the round trip. */
+    @Test
+    fun `multiline alt round trips with paragraphs intact`() {
+        val alt = "A screenshot.\n\nBelow it, a quoted post."
+        val tags = Nip68.buildPictureTags(
+            title = null,
+            media = listOf(Nip68.ImetaEntry(url = "https://h/multi.jpg", alt = alt))
+        )
+        assertEquals("alt $alt", tags.single { it.first() == "imeta" }.last())
+        assertEquals(alt, Nip68.parseImetaEntries(event(tags)).single().alt)
+    }
+
+    /** Publish path: runaway break runs cap at one paragraph gap, CRLF normalizes. */
+    @Test
+    fun `emission caps break runs and normalizes CRLF`() {
+        val tags = Nip68.buildPictureTags(
+            title = null,
+            media = listOf(Nip68.ImetaEntry(url = "https://h/capped.jpg", alt = "a\r\n\n\n\n\nb"))
+        )
+        assertEquals("alt a\n\nb", tags.single { it.first() == "imeta" }.last())
+    }
+
     @Test
     fun `round trip preserves alt and other slots`() {
         val entry = Nip68.ImetaEntry(

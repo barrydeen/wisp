@@ -1172,9 +1172,9 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
                 // so a restored draft can re-apply the descriptions. Only
                 // described images get a tag.
                 for ((draftAltUrl, draftAlt) in _altTexts.value) {
-                    val trimmedAlt = draftAlt.trim()
-                    if (trimmedAlt.isNotEmpty()) {
-                        innerTags.add(listOf("imeta", "url $draftAltUrl", "alt $trimmedAlt"))
+                    val normalizedAlt = com.wisp.app.ui.component.normalizeAltBreaks(draftAlt)
+                    if (normalizedAlt.isNotEmpty()) {
+                        innerTags.add(listOf("imeta", "url $draftAltUrl", "alt $normalizedAlt"))
                     }
                 }
                 val innerJson = Nip37.serializeDraftContent(

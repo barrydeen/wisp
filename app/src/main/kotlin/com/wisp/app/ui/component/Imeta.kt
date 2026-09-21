@@ -50,8 +50,11 @@ fun parseImetaTags(tags: List<List<String>>): Map<String, MediaMeta> {
             }
         }
         if (url != null) {
-            // Alt is trimmed on read and a whitespace-only value counts as
-            // absent — an image is either described or it isn't.
+            // The `alt` value is everything after the first space, so interior
+            // line breaks belong to it and survive the parse — the wire
+            // carries real newline characters inside the tag string. Break
+            // runs are capped ([normalizeAltBreaks]) so third-party alt can't
+            // balloon the layout, and a blank slot reads as "no description".
             map[url] = MediaMeta(
                 url = url,
                 mime = mime,
@@ -59,7 +62,7 @@ fun parseImetaTags(tags: List<List<String>>): Map<String, MediaMeta> {
                 thumbhash = thumb,
                 blurhash = blur,
                 image = image,
-                alt = alt?.trim()?.takeIf { it.isNotEmpty() }
+                alt = alt?.let { normalizeAltBreaks(it) }?.takeIf { it.isNotEmpty() }
             )
         }
     }
@@ -69,11 +72,29 @@ fun parseImetaTags(tags: List<List<String>>): Map<String, MediaMeta> {
 /** Authoring cap shared by the composer's alt editor. */
 const val ALT_TEXT_MAX_CHARS = 2000
 
+private val altBreakRunRegex = Regex("\n{3,}")
 
 /**
- * Sanitize alt text for emission/storage: trim, cap at [ALT_TEXT_MAX_CHARS],
- * and collapse to null when empty — an undescribed image carries no `alt`
- * slot at all, and no imeta tag.
+ * Normalize an `alt` value's line breaks per the imeta linebreak contract:
+ * CRLF/CR to LF, each line's surrounding whitespace trimmed, runs of 3+
+ * newlines capped at one blank line, ends trimmed. Single breaks and a single
+ * paragraph gap survive — multi-paragraph descriptions are the point.
+ *
+ * Applied when publishing an `alt` slot and when parsing one, so third-party
+ * alt can't balloon the layout either.
+ */
+fun normalizeAltBreaks(text: String): String {
+    val lf = text.replace("\r\n", "\n").replace('\r', '\n')
+    val trimmedLines = lf.split('\n').joinToString("\n") { it.trim() }
+    return altBreakRunRegex.replace(trimmedLines, "\n\n").trim()
+}
+
+/**
+ * Sanitize alt text for emission/storage: normalize line breaks (the editor
+ * is multiline and the wire carries real newlines inside the tag string, so
+ * authored structure survives — only bloat is removed), cap at
+ * [ALT_TEXT_MAX_CHARS], and collapse to null when empty — an undescribed
+ * image carries no `alt` slot at all, and no imeta tag.
  */
 fun sanitizeAltText(raw: String): String? =
-    raw.trim().take(ALT_TEXT_MAX_CHARS).takeIf { it.isNotEmpty() }
+    normalizeAltBreaks(raw).take(ALT_TEXT_MAX_CHARS).takeIf { it.isNotEmpty() }
