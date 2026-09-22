@@ -264,17 +264,17 @@ class RelayHealthTracker(
 
     // -- Account management --
 
-    fun clear() {
+    fun clear(clearPersisted: Boolean = true) {
         activeSessions.clear()
         sessionHistory.clear()
         lifetimeStats.clear()
         _badRelays.clear()
         _badRelayReasons.clear()
-        prefs.edit().clear().apply()
+        if (clearPersisted) prefs.edit().clear().apply()
     }
 
     fun reload(pubkeyHex: String?) {
-        clear()
+        clear(clearPersisted = false)
         prefs = context.getSharedPreferences(prefsName(pubkeyHex), Context.MODE_PRIVATE)
         loadFromPrefs()
     }

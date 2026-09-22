@@ -113,7 +113,7 @@ class MuteRepository(private val context: Context, pubkeyHex: String? = null) {
 
     fun getMutedWords(): Set<String> = wordSet.toSet()
 
-    fun clear() {
+    fun clear(clearPersisted: Boolean = true) {
         _blockedPubkeys.value = emptySet()
         _mutedWords.value = emptySet()
         _mutedThreads.value = emptySet()
@@ -121,11 +121,11 @@ class MuteRepository(private val context: Context, pubkeyHex: String? = null) {
         wordSet = HashSet()
         threadSet = HashSet()
         lastUpdated = 0
-        prefs.edit().clear().apply()
+        if (clearPersisted) prefs.edit().clear().apply()
     }
 
     fun reload(pubkeyHex: String?) {
-        clear()
+        clear(clearPersisted = false)
         prefs = context.getSharedPreferences(prefsName(pubkeyHex), Context.MODE_PRIVATE)
         loadFromPrefs()
     }

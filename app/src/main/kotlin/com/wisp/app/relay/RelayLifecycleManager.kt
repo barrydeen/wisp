@@ -5,6 +5,9 @@ import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.currentCoroutineContext
 
 /**
  * Manages relay lifecycle in response to app lifecycle events and network changes.
@@ -123,6 +126,7 @@ class RelayLifecycleManager(
      * in finally block to guarantee it's restored even on cancellation.
      */
     private fun reconnect(force: Boolean) {
+        if (!started) return
         val now = System.currentTimeMillis()
         if (now - lastReconnectMs < DEBOUNCE_MS) {
             // Allow force to upgrade a debounced non-force reconnect.
@@ -162,8 +166,10 @@ class RelayLifecycleManager(
                 relayPool.awaitAnyConnected(minCount = minCount, timeoutMs = 5_000)
                 Log.d("RLC", "[Lifecycle] await done — setting appIsActive=true, connectedCount=${relayPool.connectedCount.value}")
             } finally {
-                relayPool.appIsActive = true
+                if (started) relayPool.appIsActive = true
             }
+            currentCoroutineContext().ensureActive()
+            if (!started) return@launch
             Log.d("RLC", "[Lifecycle] → onReconnected(force=$force)")
             onReconnected(force)
             Log.d("RLC", "[Lifecycle] onReconnected complete, connectedCount=${relayPool.connectedCount.value}")
@@ -174,8 +180,20 @@ class RelayLifecycleManager(
      * Stop observing. Call on account switch or cleanup.
      */
     fun stop() {
-        connectivityJob?.cancel()
-        connectivityJob = null
         started = false
+        connectivityJob?.cancel()
+        reconnectJob?.cancel()
+        relayPool.appIsActive = false
+        lastReconnectMs = 0L
+        lastReconnectForce = false
+        resumeReconnectUntilMs = 0L
+    }
+
+    suspend fun stopAndJoin() {
+        val jobs = listOfNotNull(connectivityJob, reconnectJob)
+        stop()
+        jobs.joinAll()
+        connectivityJob = null
+        reconnectJob = null
     }
 }

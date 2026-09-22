@@ -131,19 +131,26 @@ sealed class InitLoadingState {
 }
 
 class FeedViewModel(app: Application) : AndroidViewModel(app) {
+    private val accountScope = AccountSessionScope(viewModelScope)
+    private val _accountSwitching = MutableStateFlow(false)
+    val accountSwitching: StateFlow<Boolean> = _accountSwitching
+    private val _accountGeneration = MutableStateFlow(0L)
+    val accountGeneration: StateFlow<Long> = _accountGeneration
     // -- Infrastructure --
     val keyRepo = KeyRepository(app)
     private val pubkeyHex: String? = keyRepo.getPubkeyHex()
 
     /** True when the account has a local private key (i.e. not a remote/NIP-07 signer).
      *  DIP-03 private zaps require local signing for both ephemeral derivation and
-     *  ECDH decryption, so this gates the UI toggle. */
-    val hasLocalKeypair: Boolean = keyRepo.getKeypair() != null
+     *  ECDH decryption, so this gates the UI toggle. Read live so account switches
+     *  with different signing modes report correctly. */
+    val hasLocalKeypair: Boolean get() = keyRepo.getKeypair() != null
 
     var signer: NostrSigner? = null
         private set
 
     fun setSigner(s: NostrSigner) {
+        if (_accountSwitching.value || s.pubkeyHex != getUserPubkey()) return
         signer = s
         zapSender.signer = s
         registerAuthSigner()
@@ -151,6 +158,8 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
     fun clearSigner() {
         signer = null
+        zapSender.signer = null
+        relayPool.setAuthSigner(null)
     }
 
     private fun registerAuthSigner() {
@@ -269,7 +278,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
     val metadataFetcher = MetadataFetcher(
         relayPool, outboxRouter, subManager, profileRepo, eventRepo,
-        viewModelScope, processingDispatcher
+        accountScope, processingDispatcher
     ).also {
         eventRepo.metadataFetcher = it
         it.quoteRelayProvider = {
@@ -289,13 +298,13 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         }
 
     val zapSender = ZapSender(keyRepo, { activeWalletProvider }, relayPool, relayListRepo, HttpClientFactory.createRelayClient(), interfacePrefs)
-    val powManager = PowManager(powPrefs, relayPool, outboxRouter, eventRepo, viewModelScope)
+    val powManager = PowManager(powPrefs, relayPool, outboxRouter, eventRepo, accountScope)
 
     // -- Manager classes --
     val feedSub: FeedSubscriptionManager = FeedSubscriptionManager(
         relayPool, outboxRouter, subManager, eventRepo, contactRepo, listRepo, notifRepo,
         extendedNetworkRepo, interestRepo, keyRepo, healthTracker, relayScoreBoard, profileRepo,
-        metadataFetcher, viewModelScope, processingDispatcher, pubkeyHex,
+        metadataFetcher, accountScope, processingDispatcher, pubkeyHex,
         getApplication<Application>().getSharedPreferences("wisp_feed", android.content.Context.MODE_PRIVATE)
     )
 
@@ -314,14 +323,14 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     val socialActions: SocialActionManager = SocialActionManager(
         relayPool, outboxRouter, eventRepo, contactRepo, muteRepo, notifRepo, dmRepo,
         pinRepo, deletedEventsRepo, { activeWalletProvider }, customEmojiRepo, zapSender, powPrefs, interfacePrefs,
-        relayListRepo, viewModelScope,
+        relayListRepo, accountScope,
         getSigner = { signer },
         getUserPubkey = { getUserPubkey() }
     )
 
     val listCrud: ListCrudManager = ListCrudManager(
         relayPool, subManager, eventRepo, listRepo, interestRepo, bookmarkSetRepo, customEmojiRepo,
-        metadataFetcher, outboxRouter, viewModelScope, processingDispatcher,
+        metadataFetcher, outboxRouter, accountScope, processingDispatcher,
         getSigner = { signer },
         getUserPubkey = { getUserPubkey() }
     )
@@ -332,7 +341,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         relayListRepo, relayScoreBoard, relayHintStore, healthTracker, keyRepo,
         extendedNetworkRepo, metadataFetcher, profileRepo, relayInfoRepo, nip05Repo,
         nwcRepo, sparkRepo, walletModeRepo, dmRepo, liveStreamRepo, zapPrefs, lifecycleManager, eventRouter, feedSub,
-        viewModelScope, processingDispatcher, pubkeyHex,
+        accountScope, processingDispatcher,
         getUserPubkey = { getUserPubkey() },
         registerAuthSigner = { registerAuthSigner() },
         fetchEmojiSets = { listCrud.fetchEmojiSets() },
@@ -369,9 +378,10 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
     // -- Exposed state --
     val feed: StateFlow<List<NostrEvent>> = combine(
-        feedSub.feedType, eventRepo.feed, eventRepo.relayFeed
-    ) { type, main, relay ->
-        if (type == FeedType.RELAY || type == FeedType.TRENDING) relay else main
+        feedSub.feedType, eventRepo.feed, eventRepo.relayFeed, accountSwitching
+    ) { type, main, relay, switching ->
+        if (switching) emptyList()
+        else if (type == FeedType.RELAY || type == FeedType.TRENDING) relay else main
     }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     val liveNowStreams: StateFlow<List<com.wisp.app.repo.LiveStream>> = liveStreamRepo.liveStreams
@@ -436,9 +446,11 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     fun markLoadingComplete() = feedSub.markLoadingComplete()
 
     // -- Startup delegates --
-    fun initRelays() = startup.initRelays()
-    fun resetForAccountSwitch() {
-        startup.resetForAccountSwitch()
+    fun initRelays() {
+        if (!_accountSwitching.value) startup.initRelays()
+    }
+    private fun resetForAccountSwitch(clearPersisted: Boolean) {
+        startup.resetForAccountSwitch(clearPersisted)
         groupRepo.clear()
         liveStreamRepo.clear()
     }
@@ -446,7 +458,41 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         safetyPrefs.reload(getUserPubkey())
         startup.reloadForNewAccount()
         groupRepo.reload(getUserPubkey())
+        val pk = getUserPubkey()
+        relayPool.rekeyAuthPrefs(
+            getApplication<Application>().getSharedPreferences("relay_auth_prefs_$pk", Context.MODE_PRIVATE)
+        )
+        accountScope.start()
     }
+
+    private var pendingSwitchJob: kotlinx.coroutines.Job? = null
+
+    /** UI callbacks stay on Main; only repository reloads move off-thread. */
+    fun beginAccountSwitch(
+        beforeKeySwap: suspend () -> Unit,
+        swapKey: () -> Unit,
+        clearPersisted: Boolean = false,
+        afterReload: () -> Unit = {}
+    ): Boolean {
+        if (_accountSwitching.value) return false
+        _accountSwitching.value = true
+        _accountGeneration.value++
+        clearSigner()
+        pendingSwitchJob = viewModelScope.launch {
+            // Join every old producer before changing the key or any repository owner.
+            lifecycleManager.stopAndJoin()
+            accountScope.stop()
+            beforeKeySwap()
+            resetForAccountSwitch(clearPersisted)
+            swapKey()
+            kotlinx.coroutines.withContext(Dispatchers.IO) { reloadForNewAccount() }
+            _accountSwitching.value = false
+            afterReload()
+        }
+        return true
+    }
+
+    suspend fun awaitAccountSwitch() { pendingSwitchJob?.join() }
     /** Called after relay reconnect to re-subscribe notified group channels. */
     var onGroupReconnect: (() -> Unit)? = null
     fun onAppPause() = startup.onAppPause()
@@ -463,6 +509,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     fun retryRelayFeed() = feedSub.retryRelayFeed()
     fun loadMore() = feedSub.loadMore()
     fun onVisibleRangeChanged(first: Int, last: Int) = feedSub.onViewportChanged(first, last)
+    fun onViewportChanged(visibleEventIds: List<String>) = feedSub.onViewportChanged(visibleEventIds)
     fun setTrendingMetric(metric: TrendingMetric) = feedSub.setTrendingMetric(metric)
     fun setTrendingTimeframe(timeframe: TrendingTimeframe) = feedSub.setTrendingTimeframe(timeframe)
     fun setTrendingMode(mode: TrendingMode) = feedSub.setTrendingMode(mode)
@@ -534,13 +581,13 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Publish a NIP-38 user status (kind 30315). Empty string clears the status. */
     fun publishUserStatus(status: String) {
-        val pubkey = pubkeyHex ?: return
+        val pubkey = getUserPubkey() ?: return
         // Optimistic local update so UI feels instant (before signer check so the
         // UI always responds, even if the signer is momentarily unavailable after
         // process-death recovery).
         eventRepo.setUserStatus(pubkey, status.ifBlank { null })
         val s = signer ?: return
-        viewModelScope.launch {
+        accountScope.launch {
             val tags = mutableListOf(listOf("d", "general"))
             val event = s.signEvent(kind = 30315, content = status, tags = tags)
             relayPool.sendToWriteRelays(ClientMessage.event(event))
@@ -568,7 +615,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         val subId = "fetch-bookmarks"
         val filter = com.wisp.app.nostr.Filter(ids = missing)
         relayPool.sendToTopRelays(com.wisp.app.nostr.ClientMessage.req(subId, filter))
-        viewModelScope.launch {
+        accountScope.launch {
             subManager.awaitEoseWithTimeout(subId)
             subManager.closeSubscription(subId)
             eventRepo.bumpEventCacheVersion()
@@ -603,7 +650,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             bookmarkRepo.getHashtags(),
             relayHints = hints
         )
-        viewModelScope.launch {
+        accountScope.launch {
             val event = s.signEvent(
                 kind = com.wisp.app.nostr.Nip51.KIND_BOOKMARK_LIST,
                 content = "",
@@ -713,7 +760,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun publishFavoriteRelays(urls: List<String>) {
         val s = signer ?: return
-        viewModelScope.launch {
+        accountScope.launch {
             val tags = Nip51.buildRelaySetTags(urls)
             val event = s.signEvent(
                 kind = Nip51.KIND_FAVORITE_RELAYS,
@@ -726,7 +773,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun publishRelaySet(relaySet: RelaySet) {
         val s = signer ?: return
-        viewModelScope.launch {
+        accountScope.launch {
             val tags = Nip51.buildRelaySetNamedTags(relaySet.dTag, relaySet.relays, relaySet.name)
             val event = s.signEvent(
                 kind = Nip51.KIND_RELAY_SET,

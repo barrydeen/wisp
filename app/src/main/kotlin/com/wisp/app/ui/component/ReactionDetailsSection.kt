@@ -29,6 +29,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.res.stringResource
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -66,7 +67,8 @@ fun StackedAvatarRow(
     highlightFirst: Boolean = false,
     maxAvatars: Int = 5,
     onProfileLongPress: ((String) -> Unit)? = null,
-    showAll: Boolean = false
+    showAll: Boolean = false,
+    eventRepo: EventRepository? = null
 ) {
     if (showAll) {
         FlowRow(
@@ -75,7 +77,7 @@ fun StackedAvatarRow(
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             pubkeys.forEachIndexed { index, pubkey ->
-                val profile = resolveProfile(pubkey)
+                val profile = if (eventRepo != null) rememberProfile(eventRepo, pubkey) else resolveProfile(pubkey)
                 ProfilePicture(
                     url = profile?.picture,
                     size = 36,
@@ -97,7 +99,7 @@ fun StackedAvatarRow(
         ) {
             Box {
                 displayed.forEachIndexed { index, pubkey ->
-                    val profile = resolveProfile(pubkey)
+                    val profile = if (eventRepo != null) rememberProfile(eventRepo, pubkey) else resolveProfile(pubkey)
                     ProfilePicture(
                         url = profile?.picture,
                         size = 36,
@@ -255,7 +257,7 @@ fun ReactionDetailsSection(
         val anyPrivate: Boolean,
     )
 
-    val zapGroups: List<ZapGroup> = run {
+    val zapGroups: List<ZapGroup> = remember(zapDetails) {
         val order = mutableListOf<String>()
         val totals = mutableMapOf<String, Long>()
         val counts = mutableMapOf<String, Int>()
@@ -300,6 +302,7 @@ fun ReactionDetailsSection(
     ) {
         if (hasZaps) {
             zapGroups.forEach { group ->
+                val profile = if (eventRepo != null) rememberProfile(eventRepo, group.pubkey) else resolveProfile(group.pubkey)
                 ZapRow(
                     pubkey = group.pubkey,
                     sats = group.totalSats,
@@ -313,12 +316,12 @@ fun ReactionDetailsSection(
                         val base = if (group.primaryMessage.isNotEmpty()) {
                             group.primaryMessage
                         } else {
-                            resolveProfile(group.pubkey)?.displayString
+                            profile?.displayString
                                 ?: group.pubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
                         }
                         if (group.count > 1) "$base (×${group.count})" else base
                     },
-                    profile = resolveProfile(group.pubkey),
+                    profile = profile,
                     onProfileClick = onProfileClick,
                     isPrivate = group.anyPrivate,
                     onLongPress = if (group.firstReceiptEventId != null) {
@@ -362,7 +365,8 @@ fun ReactionDetailsSection(
                 StackedAvatarRow(
                     pubkeys = repostDetails,
                     resolveProfile = resolveProfile,
-                    onProfileClick = onProfileClick
+                    onProfileClick = onProfileClick,
+                    eventRepo = eventRepo
                 )
             }
         }
@@ -399,7 +403,8 @@ fun ReactionDetailsSection(
                     StackedAvatarRow(
                         pubkeys = pubkeys,
                         resolveProfile = resolveProfile,
-                        onProfileClick = onProfileClick
+                        onProfileClick = onProfileClick,
+                        eventRepo = eventRepo
                     )
                 }
             }
@@ -421,8 +426,14 @@ fun ZapInspectorDialog(
     eventRepo: EventRepository,
     onDismiss: () -> Unit
 ) {
-    val receiptEvent = zapDetail.receiptEventId?.let { eventRepo.getEvent(it) }
-    val relayUrls = zapDetail.receiptEventId?.let { eventRepo.getEventRelays(it) } ?: emptySet()
+    val receiptId = zapDetail.receiptEventId
+    val receiptEvent = rememberObservedEvent(eventRepo, receiptId)
+    val relayUrls = if (receiptId != null) {
+        val version by remember(eventRepo, receiptId) {
+            eventRepo.engagementVersion(receiptId)
+        }.collectAsState(initial = 0)
+        remember(eventRepo, receiptId, version) { eventRepo.getEventRelays(receiptId) }
+    } else emptySet()
 
     // Parse the embedded 9734 zap request from the receipt's description tag
     val zapRequest: NostrEvent? = remember(receiptEvent) {
@@ -650,4 +661,3 @@ fun ClientTagSection(
         }
     }
 }
-
