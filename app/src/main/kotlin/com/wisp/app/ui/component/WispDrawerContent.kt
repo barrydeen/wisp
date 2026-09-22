@@ -1,6 +1,13 @@
 package com.wisp.app.ui.component
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.draw.clip
@@ -45,6 +52,7 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.People
 import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -54,6 +62,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.width
@@ -68,13 +77,18 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.wisp.app.nostr.Nip05
 import com.wisp.app.nostr.ProfileData
 import com.wisp.app.nostr.toNpub
 import com.wisp.app.repo.AccountInfo
+import com.wisp.app.repo.FiatPreferences
+import com.wisp.app.repo.WalletBalanceDisplayMode
+import com.wisp.app.ui.util.AmountFormatter
 import com.wisp.app.ui.util.LocalCanSign
 
 
@@ -110,6 +124,12 @@ fun WispDrawerContent(
     userStatus: String? = null,
     onUpdateStatus: ((String) -> Unit)? = null,
     onScanResult: (String) -> Unit = {},
+    // Mini-wallet widget (wisp-ios #474 port). `walletConfigured` is the
+    // active wallet's mode != NONE; `walletBalanceMsats` is null whenever
+    // the balance is unknown (never fetched / connecting / errored).
+    walletConfigured: Boolean = false,
+    walletBalanceMsats: Long? = null,
+    isWatchOnly: Boolean = false,
 ) {
     ModalDrawerSheet(
         drawerContainerColor = MaterialTheme.colorScheme.surface,
@@ -328,6 +348,19 @@ fun WispDrawerContent(
 
         Spacer(modifier = Modifier.height(8.dp))
 
+        // Mini-wallet stripe — replaces the plain Wallet menu row with a
+        // live-balance card (hide/show toggle sharing the dashboard's
+        // per-pubkey hidden state, or a "Set up wallet" CTA). Skipped for
+        // watch-only accounts, mirroring wisp-ios #474.
+        if (!isWatchOnly) {
+            DrawerMiniWalletRow(
+                pubkey = pubkey,
+                walletConfigured = walletConfigured,
+                balanceMsats = walletBalanceMsats,
+                onOpenWallet = onWallet
+            )
+        }
+
         NavigationDrawerItem(
             icon = { Icon(Icons.Outlined.Person, contentDescription = null) },
             label = { Text(stringResource(R.string.drawer_my_profile)) },
@@ -357,20 +390,9 @@ fun WispDrawerContent(
                 onClick = onMessages,
                 modifier = Modifier.height(48.dp).padding(horizontal = 12.dp)
             )
-            NavigationDrawerItem(
-                icon = {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_wallet_outlined),
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp)
-                    )
-                },
-                label = { Text(stringResource(R.string.nav_wallet)) },
-                selected = false,
-                onClick = onWallet,
-                modifier = Modifier.height(48.dp).padding(horizontal = 12.dp)
-            )
         }
+        // Wallet lives in the mini-wallet widget near the top of the
+        // drawer now.
         NavigationDrawerItem(
             icon = { Icon(Icons.Outlined.FormatListBulleted, contentDescription = null) },
             label = { Text(stringResource(R.string.drawer_lists)) },
@@ -589,6 +611,155 @@ fun WispDrawerContent(
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
             )
         }
+        }
+    }
+}
+
+// ── Mini wallet widget ─────────────────────────────────────────────────────
+
+/**
+ * Compact live-balance stripe replacing the Wallet row in the drawer menu.
+ * Shows the active wallet's balance (compacted to "1.2M"-style once the
+ * grouped number gets long), a hide/show toggle that shares the wallet
+ * dashboard's per-pubkey hidden state, and a "Set up wallet" call-to-action
+ * when no wallet is configured. Tapping the stripe opens the wallet tab.
+ * Port of wisp-ios #474 (SidebarMiniWalletView).
+ */
+@Composable
+private fun DrawerMiniWalletRow(
+    pubkey: String?,
+    walletConfigured: Boolean,
+    balanceMsats: Long?,
+    onOpenWallet: () -> Unit
+) {
+    val context = LocalContext.current
+    val prefs = remember(pubkey) {
+        context.getSharedPreferences("wisp_settings", android.content.Context.MODE_PRIVATE)
+    }
+    // Same key the wallet dashboard's balance display uses, so hiding here
+    // hides there and vice versa.
+    var displayMode by remember(pubkey) {
+        mutableStateOf(WalletBalanceDisplayMode.read(prefs, pubkey))
+    }
+    val fiatPrefs = remember { FiatPreferences.get(context) }
+    val fiatMode by fiatPrefs.fiatMode.collectAsState()
+    val fiatCurrency by fiatPrefs.currency.collectAsState()
+
+    // Hiding captures the current mode under the restore key; unhiding puts
+    // it back (SATS when nothing was captured), so a FIAT dashboard isn't
+    // reset by the drawer toggle.
+    fun toggleHidden() {
+        if (displayMode == WalletBalanceDisplayMode.HIDDEN) {
+            val saved = pubkey?.let { prefs.getString(WalletBalanceDisplayMode.restoreStorageKey(it), null) }
+            val next = WalletBalanceDisplayMode.values()
+                .firstOrNull { it.name.equals(saved, ignoreCase = true) }
+                ?.takeIf { it != WalletBalanceDisplayMode.HIDDEN }
+                ?: WalletBalanceDisplayMode.SATS
+            displayMode = next
+            WalletBalanceDisplayMode.write(prefs, pubkey, next)
+        } else {
+            pubkey?.let {
+                prefs.edit()
+                    .putString(WalletBalanceDisplayMode.restoreStorageKey(it), displayMode.name.lowercase())
+                    .apply()
+            }
+            displayMode = WalletBalanceDisplayMode.HIDDEN
+            WalletBalanceDisplayMode.write(prefs, pubkey, WalletBalanceDisplayMode.HIDDEN)
+        }
+    }
+
+    val balanceText = when {
+        !walletConfigured -> stringResource(R.string.drawer_set_up_wallet)
+        displayMode == WalletBalanceDisplayMode.HIDDEN -> "* * * * *"
+        balanceMsats == null ->
+            // Never render an unknown balance as "0" — see the matching
+            // comment in WalletScreen's balance card.
+            "\u2026"
+        else -> {
+            val sats = balanceMsats / 1000
+            // Fiat renders when the wallet dashboard's display mode is FIAT
+            // or the app-wide fiat mode is on (same precedence as the
+            // dashboard's balance card), falling back to the sats display
+            // when no exchange rate is cached.
+            val fiat = if (fiatMode || displayMode == WalletBalanceDisplayMode.FIAT) {
+                AmountFormatter.formatFiat(sats, fiatCurrency)
+            } else null
+            if (fiat != null) {
+                fiat
+            } else {
+                val number = if (sats >= 1_000_000) AmountFormatter.formatSatsShort(sats)
+                else AmountFormatter.formatSatsOnly(sats)
+                stringResource(R.string.amount_sats_format, number)
+            }
+        }
+    }
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+            .clickable(onClick = onOpenWallet)
+            // Same leading inset NavigationDrawerItem content gets (12dp row
+            // padding + 16dp internal start padding) so the icon and label
+            // line up with the rest of the menu; the edge-to-edge background
+            // stripe is what sets the widget apart.
+            .padding(start = 28.dp, end = 16.dp, top = 12.dp, bottom = 12.dp)
+    ) {
+        Icon(
+            painter = painterResource(R.drawable.ic_wallet_outlined),
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(24.dp)
+        )
+        Spacer(Modifier.width(12.dp))
+        // One Text so TalkBack reads the figure as a unit.
+        AnimatedContent(
+            targetState = balanceText,
+            transitionSpec = {
+                (slideInVertically(tween(250)) { it / 4 } + fadeIn(tween(250))) togetherWith
+                    (slideOutVertically(tween(250)) { -it / 4 } + fadeOut(tween(250)))
+            },
+            label = "miniWalletBalance"
+        ) { text ->
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Spacer(Modifier.weight(1f))
+        if (walletConfigured) {
+            // The eye's own clickable consumes the tap so it doesn't fall
+            // through to the stripe's open-wallet action.
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .clickable { toggleHidden() }
+            ) {
+                Icon(
+                    imageVector = if (displayMode == WalletBalanceDisplayMode.HIDDEN) Icons.Outlined.Visibility
+                    else Icons.Outlined.VisibilityOff,
+                    contentDescription = stringResource(
+                        if (displayMode == WalletBalanceDisplayMode.HIDDEN) R.string.cd_show_balance
+                        else R.string.cd_hide_balance
+                    ),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        } else {
+            Icon(
+                Icons.Outlined.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp)
+            )
         }
     }
 }

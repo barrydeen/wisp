@@ -879,6 +879,12 @@ fun WispNavHost(
                 onAddAccount = onAddAccount,
                 onMoveAccount = { pubkeyHex, offset -> authViewModel.moveAccount(pubkeyHex, offset) },
                 hasEmbeddedWallet = walletViewModel.walletMode.collectAsState().value == com.wisp.app.repo.WalletMode.SPARK,
+                // Mini-wallet widget state (wisp-ios #474). The balance is
+                // null whenever it's unknown so the stripe shows "…" rather
+                // than a bogus "0".
+                walletConfigured = walletViewModel.walletMode.collectAsState().value != com.wisp.app.repo.WalletMode.NONE,
+                walletBalanceMsats = (walletViewModel.walletState.collectAsState().value as? com.wisp.app.viewmodel.WalletState.Connected)?.balanceMsats,
+                onWalletRefresh = { walletViewModel.refreshState() },
                 onLogout = {
                     feedViewModel.clearSigner()
                     feedViewModel.resetForAccountSwitch()
