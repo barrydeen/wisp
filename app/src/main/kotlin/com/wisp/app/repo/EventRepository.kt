@@ -29,6 +29,8 @@ import kotlinx.coroutines.launch
 import com.wisp.app.db.EventPersistence
 import java.util.concurrent.ConcurrentHashMap
 
+private const val ADDRESS_INDEX_CAPACITY = 512
+
 data class ZapDetail(
     val pubkey: String,
     val sats: Long,
@@ -48,13 +50,18 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     /** Late-bound for DIP-03 private zap decryption (recipient + self-attribution). */
     var keyRepo: KeyRepository? = null
     private val eventCache = ConcurrentHashMap<String, NostrEvent>()
-    private val addressIndex = mutableMapOf<String, NostrEvent>()
+    private val addressIdIndex = HashMap<String, String>()
+    private val addressIndex = object : LinkedHashMap<String, NostrEvent>(ADDRESS_INDEX_CAPACITY, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, NostrEvent>): Boolean {
+            if (size <= ADDRESS_INDEX_CAPACITY) return false
+            addressIdIndex.remove(eldest.value.id)
+            return true
+        }
+    }
     private val pendingAvailabilityIds = mutableSetOf<String>()
     private val pendingAvailabilityAddresses = mutableSetOf<String>()
     private val eventObservations = KeyedObservation<String, NostrEvent?>(this, ::peekEvent)
-    private val addressObservations = KeyedObservation<String, NostrEvent?>(this) { key ->
-        addressIndex[key]?.takeIf(::isVisible)
-    }
+    private val addressObservations = KeyedObservation<String, NostrEvent?>(this, ::addressSnapshot)
     @Volatile private var closed = false
     private val seenEventIds = ConcurrentHashMap.newKeySet<String>()  // thread-safe dedup that doesn't evict
 
@@ -238,6 +245,13 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
 
     private fun addressKey(kind: Int, author: String, dTag: String) = "$kind:$author:$dTag"
 
+    /** Address key for replaceable and parameterized-replaceable events, otherwise null. */
+    private fun addressableKey(event: NostrEvent): String? {
+        if (event.kind !in 10000..19999 && event.kind !in 30000..39999) return null
+        val dTag = event.tags.firstOrNull { it.size >= 2 && it[0] == "d" }?.get(1) ?: ""
+        return addressKey(event.kind, event.pubkey, dTag)
+    }
+
     /** Visibility filter shared by all observation snapshots (no disk I/O). */
     private fun isVisible(event: NostrEvent): Boolean {
         if (muteRepo?.isBlocked(event.pubkey) == true) return false
@@ -259,12 +273,26 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     fun observeAddressableEvent(kind: Int, author: String, dTag: String): Flow<NostrEvent?> =
         addressObservations.observe(addressKey(kind, author, dTag))
 
-    /**
-     * Index addressable events and wake availability observers for freshly cached events.
-     * Cheap no-op unless someone actually observes the id/address, so it's safe to call
-     * from every cache-insertion path. Assumes [synchronized] on `this` only where the
-     * caller holds it — takes the lock itself otherwise.
-     */
+    /** Newest visible event for [key], from the capped index or still in [eventCache]. */
+    private fun addressSnapshot(key: String): NostrEvent? {
+        addressIndex[key]?.takeIf(::isVisible)?.let { return it }
+        val parts = key.split(":", limit = 3)
+        if (parts.size < 3) return null
+        val kind = parts[0].toIntOrNull() ?: return null
+        val author = parts[1]
+        if (muteRepo?.isBlocked(author) == true) return null
+        val dTag = parts[2]
+        var best: NostrEvent? = null
+        for (event in eventCache.values) {
+            if (event.kind != kind || event.pubkey != author || !isVisible(event)) continue
+            val eventDTag = event.tags.firstOrNull { it.size >= 2 && it[0] == "d" }?.get(1) ?: ""
+            if (eventDTag != dTag) continue
+            if (best == null || best.created_at <= event.created_at) best = event
+        }
+        return best
+    }
+
+    /** Index the newest event per address (capped) and wake collectors. Takes the repository lock. */
     private fun trackIncoming(event: NostrEvent) {
         var dirty = false
         synchronized(this) {
@@ -272,13 +300,14 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                 pendingAvailabilityIds.add(event.id)
                 dirty = true
             }
-            if (event.kind in 10000..19999 || event.kind in 30000..39999) {
-                val dTag = event.tags.firstOrNull { it.size >= 2 && it[0] == "d" }?.get(1) ?: ""
-                val key = addressKey(event.kind, event.pubkey, dTag)
+            val key = addressableKey(event)
+            if (key != null) {
                 val existing = addressIndex[key]
                 if (existing == null || existing.created_at <= event.created_at) {
+                    if (existing != null && existing.id != event.id) addressIdIndex.remove(existing.id)
                     addressIndex[key] = event
-                    if (addressObservations.hasCollectors(key)) {
+                    addressIdIndex[event.id] = key
+                    if (existing?.id != event.id && addressObservations.hasCollectors(key)) {
                         pendingAvailabilityAddresses.add(key)
                         dirty = true
                     }
@@ -928,7 +957,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     }
 
     fun removeEvent(eventId: String) {
-        eventCache.remove(eventId)
+        val removed = eventCache.remove(eventId)
         synchronized(feedList) {
             if (feedIds.remove(eventId)) {
                 feedList.removeAll { it.id == eventId }
@@ -951,15 +980,19 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                 pendingAvailabilityIds.add(eventId)
                 dirty = true
             }
-            val addrIter = addressIndex.entries.iterator()
-            while (addrIter.hasNext()) {
-                val entry = addrIter.next()
-                if (entry.value.id == eventId) {
-                    addrIter.remove()
-                    if (addressObservations.hasCollectors(entry.key)) {
-                        pendingAvailabilityAddresses.add(entry.key)
-                        dirty = true
-                    }
+            val key = addressIdIndex.remove(eventId)
+            if (key != null && addressIndex[key]?.id == eventId) {
+                addressIndex.remove(key)
+                if (addressObservations.hasCollectors(key)) {
+                    pendingAvailabilityAddresses.add(key)
+                    dirty = true
+                }
+            } else {
+                val address = removed?.let(::addressableKey)
+                val indexed = address?.let { addressIndex[it] }
+                if (address != null && (indexed == null || !isVisible(indexed)) && addressObservations.hasCollectors(address)) {
+                    pendingAvailabilityAddresses.add(address)
+                    dirty = true
                 }
             }
         }
@@ -1417,7 +1450,13 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                 seenEventIds.remove(id)  // allow re-entry if later unblocked
             }
         }
-        synchronized(this) { addressIndex.values.removeIf { it.pubkey == pubkey } }
+        synchronized(this) {
+            addressIndex.entries.removeIf { entry ->
+                if (entry.value.pubkey != pubkey) return@removeIf false
+                addressIdIndex.remove(entry.value.id)
+                true
+            }
+        }
         republishAvailability()
         feedDirty.trySend(Unit)
     }
@@ -1686,6 +1725,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         privateEventIds.clear()
         synchronized(this) {
             addressIndex.clear()
+            addressIdIndex.clear()
             pendingAvailabilityIds.clear()
             pendingAvailabilityAddresses.clear()
         }

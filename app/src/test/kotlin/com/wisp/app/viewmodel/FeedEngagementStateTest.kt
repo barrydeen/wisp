@@ -5,20 +5,16 @@ import org.junit.Test
 
 class FeedEngagementStateTest {
     @Test
-    fun closedFetchedEventsCanBeSubscribedAgain() {
+    fun closedSubscriptionCanBeRegisteredAgain() {
         val state = FeedEngagementState()
         state.register("one", setOf("a", "b"))
-        state.markFetched("one")
         assertTrue(state.isSubscribed("a"))
-        assertTrue(state.wasFetched("a"))
         assertEquals(listOf("one"), state.distantSubscriptions(setOf("c")))
         state.remove("one")
         assertFalse(state.isSubscribed("a"))
-        assertTrue(state.wasFetched("a"))
         state.register("two", setOf("a"))
         assertTrue(state.isSubscribed("a"))
-        state.clear(clearHistory = true)
-        assertFalse(state.wasFetched("a"))
+        state.clear()
         assertFalse(state.isSubscribed("a"))
     }
 

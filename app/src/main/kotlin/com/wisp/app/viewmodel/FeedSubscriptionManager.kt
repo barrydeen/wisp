@@ -1015,7 +1015,7 @@ class FeedSubscriptionManager(
     }
 
     /**
-     * Subscribe engagement for events without a current subscription, even if fetched before.
+     * Subscribe engagement for events without a current subscription.
      * Each batch gets a unique sub ID to avoid cancelling in-progress fetches.
      */
     private fun subscribeEngagementForEvents(events: List<NostrEvent>) {
@@ -1038,8 +1038,7 @@ class FeedSubscriptionManager(
             engagementEoseJobs[batchSubId] = scope.launch {
                 val eoseTarget = maxOf(3, (relayCount * 0.3).toInt()).coerceIn(1, relayCount)
                 Log.d("RLC", "[FeedSub] awaiting $eoseTarget/$relayCount EOSEs for $batchSubId")
-                val received = subManager.awaitEoseCount(batchSubId, eoseTarget, timeoutMs = 8_000)
-                if (received > 0) engagementState.markFetched(batchSubId)
+                subManager.awaitEoseCount(batchSubId, eoseTarget, timeoutMs = 8_000)
                 engagementEoseJobs.remove(batchSubId)
                 Log.d("RLC", "[FeedSub] engagement EOSE received for $batchSubId")
             }
@@ -1248,10 +1247,11 @@ class FeedSubscriptionManager(
         unsubscribeRelayFeed()
         relayFeedEoseJob = null
         relayStatusMonitorJob = null
+        viewportGeneration++
+        pauseEngagement()
         viewportEngagementJob = null
         relayPool.closeOnAllRelays(feedSubId)
         subManager.closeSubscription("list-prefetch")
-        engagementState.clear(clearHistory = true)
         _feedType.value = FeedType.FOR_YOU
         _feedContentFilter.value = FeedContentFilter.ALL
         eventRepo.setKindFilter(null)
