@@ -47,8 +47,7 @@ internal class BatchWriter<T>(
                         delay(settleMillis)
                     }
                     is Command.Flush -> {
-                        failure?.let { command.result.completeExceptionally(it) }
-                            ?: command.result.complete(Unit)
+                        deliver(command.result)
                         continue
                     }
                 }
@@ -57,8 +56,7 @@ internal class BatchWriter<T>(
                         is Command.Value -> batch.add(next.value)
                         is Command.Flush -> {
                             drain()
-                            failure?.let { next.result.completeExceptionally(it) }
-                                ?: next.result.complete(Unit)
+                            deliver(next.result)
                         }
                     }
                 }
@@ -73,10 +71,17 @@ internal class BatchWriter<T>(
         check(queue.trySend(Command.Value(value)).isSuccess) { "Persistence writer is closed" }
     }
 
-    /** Waits for writes accepted before this call; failures are not silently acknowledged. */
+    /** Waits for writes accepted before this call. A write failure fails this flush, then the writer accepts later flushes. */
     suspend fun flush() {
         val result = CompletableDeferred<Unit>()
         if (queue.trySend(Command.Flush(result)).isSuccess) result.await() else shutdown()
+    }
+
+    /** Reports [failure] to one waiter and clears it so a later successful batch can be acknowledged. */
+    private fun deliver(result: CompletableDeferred<Unit>) {
+        val error = failure
+        failure = null
+        if (error != null) result.completeExceptionally(error) else result.complete(Unit)
     }
 
     override fun close() {
