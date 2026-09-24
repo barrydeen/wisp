@@ -104,6 +104,16 @@ class EventRouter(
         selfDataTimestamps.clear()
     }
 
+    /**
+     * Kind 1 notes replying to a 1111 comment are main-feed notes, not comment
+     * replies — they must not bump the comment's reply count (thread views hide
+     * them). Private rumor replies are exempt: private comment publishing is not
+     * implemented yet, so those rumors are still kind 1.
+     */
+    private fun isStrayKind1OnComment(event: NostrEvent): Boolean =
+        event.kind == 1 && !eventRepo.isPrivate(event.id) &&
+            Nip22.isStrayKind1OnComment(event) { id -> eventRepo.getEvent(id)?.kind }
+
     suspend fun processRelayEvent(event: NostrEvent, relayUrl: String, subscriptionId: String) {
         if (event.kind == Nip88.KIND_POLL_RESPONSE) {
             Log.d("POLL", "[EventRouter] received kind 1018 id=${event.id.take(12)} sub=$subscriptionId relay=$relayUrl")
@@ -143,7 +153,7 @@ class EventRouter(
                     }
                     1, Nip22.KIND_COMMENT -> {
                         eventRepo.cacheEvent(event)
-                        if (!Nip10.isStandaloneQuote(event)) {
+                        if (!Nip10.isStandaloneQuote(event) && !isStrayKind1OnComment(event)) {
                             val parentId = Nip10.getReplyTarget(event)
                             if (parentId != null && !eventRepo.isWotFiltered(event.pubkey, event.kind)) {
                                 eventRepo.addReplyCount(parentId, event.id)
@@ -168,7 +178,7 @@ class EventRouter(
             val myPubkey = getUserPubkey()
             if (myPubkey != null && (event.kind == 1 || event.kind == Nip22.KIND_COMMENT)) {
                 eventRepo.cacheEvent(event)
-                val parentId = if (!Nip10.isStandaloneQuote(event)) {
+                val parentId = if (!Nip10.isStandaloneQuote(event) && !isStrayKind1OnComment(event)) {
                     Nip10.getReplyTarget(event)
                 } else null
                 if (parentId != null && !eventRepo.isWotFiltered(event.pubkey, event.kind)) {
@@ -197,7 +207,7 @@ class EventRouter(
         } else if (subscriptionId == "self-notes") {
             eventRepo.cacheEvent(event)
             if (event.kind == 1 || event.kind == Nip22.KIND_COMMENT) {
-                val parentId = Nip10.getReplyTarget(event)
+                val parentId = if (isStrayKind1OnComment(event)) null else Nip10.getReplyTarget(event)
                 if (parentId != null) eventRepo.addReplyCount(parentId, event.id)
             }
         } else if (subscriptionId.startsWith("qpoll-")) {
@@ -218,9 +228,11 @@ class EventRouter(
         } else if (subscriptionId.startsWith("reply-count-")) {
             if (event.kind == 1 || event.kind == Nip22.KIND_COMMENT) {
                 eventRepo.cacheEvent(event)
-                val parentId = Nip10.getReplyTarget(event)
-                if (parentId != null && !eventRepo.isWotFiltered(event.pubkey, event.kind)) {
-                    eventRepo.addReplyCount(parentId, event.id)
+                if (!isStrayKind1OnComment(event)) {
+                    val parentId = Nip10.getReplyTarget(event)
+                    if (parentId != null && !eventRepo.isWotFiltered(event.pubkey, event.kind)) {
+                        eventRepo.addReplyCount(parentId, event.id)
+                    }
                 }
             }
         } else if (subscriptionId.startsWith("zap-count-") || subscriptionId.startsWith("zap-rcpt-")) {
@@ -267,9 +279,11 @@ class EventRouter(
                 }
                 1, Nip22.KIND_COMMENT -> {
                     eventRepo.cacheEvent(event)
-                    val parentId = Nip10.getReplyTarget(event)
-                    if (parentId != null && !eventRepo.isWotFiltered(event.pubkey, event.kind)) {
-                        eventRepo.addReplyCount(parentId, event.id)
+                    if (!isStrayKind1OnComment(event)) {
+                        val parentId = Nip10.getReplyTarget(event)
+                        if (parentId != null && !eventRepo.isWotFiltered(event.pubkey, event.kind)) {
+                            eventRepo.addReplyCount(parentId, event.id)
+                        }
                     }
                 }
             }

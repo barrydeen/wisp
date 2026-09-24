@@ -117,6 +117,20 @@ class ThreadViewModel : ViewModel() {
         if (expandedIds.add(anchorId)) rebuildTree()
     }
 
+    /**
+     * Kind 1 notes replying to a 1111 comment sit outside the comment namespace —
+     * they are main-feed notes, not comment-thread replies, so they are hidden
+     * from the thread tree. Private gift-wrapped replies are exempt: private
+     * comment publishing is not implemented yet, so a reply-to-a-comment rumor
+     * is still kind 1.
+     */
+    private fun isIgnoredStrayKind1(event: NostrEvent): Boolean =
+        event.kind == 1 &&
+            eventRepoRef?.isPrivate(event.id) != true &&
+            Nip22.isStrayKind1OnComment(event) { id ->
+                (threadEvents[id] ?: eventRepoRef?.getEvent(id))?.kind
+            }
+
     fun collapseBranch(anchorId: String) {
         if (expandedIds.remove(anchorId)) rebuildTree()
     }
@@ -358,6 +372,7 @@ class ThreadViewModel : ViewModel() {
 
         for (event in threadEvents.values) {
             if (event.id == rootId) continue
+            if (isIgnoredStrayKind1(event)) continue
             val parentId = Nip10.getReplyTarget(event) ?: rootId
             eventRepo.addReplyCount(parentId, event.id)
         }
@@ -460,6 +475,7 @@ class ThreadViewModel : ViewModel() {
             if (muteRepo?.isBlocked(event.pubkey) == true) continue
             if (Nip10.isStandaloneQuote(event)) continue
             if (eventRepoRef?.isWotFiltered(event.pubkey, event.kind) == true) continue
+            if (isIgnoredStrayKind1(event)) continue
 
             if (spamEnabled && spamClassifier != null &&
                 event.pubkey != currentUserPubkey &&
