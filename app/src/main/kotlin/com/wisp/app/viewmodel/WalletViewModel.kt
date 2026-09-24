@@ -137,6 +137,8 @@ class WalletViewModel(
     val relayPool: RelayPool,
     val keyRepo: KeyRepository,
 ) : ViewModel() {
+    private val accountScope = AccountSessionScope(viewModelScope)
+    private var accountSuspended = false
 
     private val _walletMode = MutableStateFlow(walletModeRepo.getMode())
     val walletMode: StateFlow<WalletMode> = _walletMode
@@ -369,7 +371,7 @@ class WalletViewModel(
         // Auto-navigate to success screen when an incoming payment is received
         viewModelScope.launch {
             sparkRepo.paymentReceived.collect { amountMsats ->
-                if (_currentPage.value is WalletPage.ReceiveInvoice) {
+                if (!accountSuspended && _walletMode.value == WalletMode.SPARK && _currentPage.value is WalletPage.ReceiveInvoice) {
                     stopSyncPolling()
                     val amountSats = amountMsats / 1000
                     pageStack.removeAt(pageStack.lastIndex)
@@ -382,7 +384,7 @@ class WalletViewModel(
         }
         viewModelScope.launch {
             nwcRepo.paymentReceived.collect { amountMsats ->
-                if (_currentPage.value is WalletPage.ReceiveInvoice) {
+                if (!accountSuspended && _walletMode.value == WalletMode.NWC && _currentPage.value is WalletPage.ReceiveInvoice) {
                     val amountSats = amountMsats / 1000
                     pageStack.removeAt(pageStack.lastIndex)
                     val successPage = WalletPage.ReceiveSuccess(amountSats)
@@ -395,7 +397,7 @@ class WalletViewModel(
 
         // Auto-fetch lightning address when Spark connected
         if (mode == WalletMode.SPARK && sparkRepo.hasMnemonic()) {
-            viewModelScope.launch {
+            accountScope.launch {
                 sparkRepo.isConnected.first { it }
                 fetchLightningAddress()
             }
@@ -491,7 +493,7 @@ class WalletViewModel(
     private fun autoCheckRelayBackup() {
         val signer = buildSigner() ?: return
         _autoCheckState.value = AutoCheckState.Checking
-        viewModelScope.launch {
+        accountScope.launch {
             try {
                 val t0 = System.currentTimeMillis()
                 relayPool.ensureWriteRelaysConnected()
@@ -641,7 +643,7 @@ class WalletViewModel(
         if (_nwcRestoreState.value is NwcRestoreState.Searching) return
         nwcRestoreJob?.cancel()
         _nwcRestoreState.value = NwcRestoreState.Searching
-        nwcRestoreJob = viewModelScope.launch {
+        nwcRestoreJob = accountScope.launch {
             try {
                 relayPool.ensureWriteRelaysConnected()
                 val pubkey = signer.pubkeyHex
@@ -823,7 +825,7 @@ class WalletViewModel(
         startConnectionMonitor(sparkRepo)
 
         // Fetch lightning address and check relay backup once connected
-        viewModelScope.launch {
+        accountScope.launch {
             sparkRepo.isConnected.first { it }
             fetchLightningAddress()
             if (keyRepo.isLoggedIn() && !computeIsDefaultWallet()) {
@@ -852,7 +854,7 @@ class WalletViewModel(
 
     private fun startStatusCollection(provider: WalletProvider) {
         statusCollectJob?.cancel()
-        statusCollectJob = viewModelScope.launch {
+        statusCollectJob = accountScope.launch {
             provider.statusLog.collect { line ->
                 _statusLines.value = _statusLines.value + line
             }
@@ -862,7 +864,7 @@ class WalletViewModel(
     private fun startConnectionMonitor(provider: WalletProvider) {
         connectJob?.cancel()
         val timeoutMs = if (_walletMode.value == WalletMode.SPARK) 60_000L else 20_000L
-        connectJob = viewModelScope.launch {
+        connectJob = accountScope.launch {
             val connected = kotlinx.coroutines.withTimeoutOrNull(timeoutMs) {
                 provider.isConnected.first { it }
             }
@@ -873,7 +875,7 @@ class WalletViewModel(
         }
 
         connectionMonitorJob?.cancel()
-        connectionMonitorJob = viewModelScope.launch {
+        connectionMonitorJob = accountScope.launch {
             provider.isConnected.collect { connected ->
                 if (connected) {
                     val result = provider.fetchBalance()
@@ -917,7 +919,7 @@ class WalletViewModel(
     }
 
     fun refreshBalance() {
-        viewModelScope.launch {
+        accountScope.launch {
             val result = activeProvider.fetchBalance()
             result.fold(
                 onSuccess = { balanceMsats ->
@@ -1016,22 +1018,34 @@ class WalletViewModel(
      * stored credentials. The new account's wallet will be loaded by refreshState()
      * after the repo reload completes.
      */
-    fun suspendForAccountSwitch() {
-        connectJob?.cancel()
-        statusCollectJob?.cancel()
-        connectionMonitorJob?.cancel()
-
-        when (_walletMode.value) {
-            WalletMode.NWC -> nwcRepo.disconnect()
-            WalletMode.SPARK -> sparkRepo.disconnect()
-            WalletMode.NONE -> {}
-        }
+    suspend fun suspendForAccountSwitch() {
+        accountSuspended = true
+        navigateHome()
+        accountScope.stop()
+        nwcRepo.disconnectAndJoin()
+        sparkRepo.disconnectAndJoin()
 
         _walletMode.value = WalletMode.NONE
         _walletState.value = WalletState.NotConnected
         _connectionString.value = ""
         _statusLines.value = emptyList()
         clearWalletDisplayState()
+        navigateHome()
+        clearFeeState()
+        _isLoading.value = false
+        _isLoadingMore.value = false
+        _addressCheckLoading.value = false
+        _showBioPrompt.value = false
+        _registeredAddress.value = null
+        _backupStatus.value = BackupStatus.None
+        _restoreFromRelayStatus.value = RestoreFromRelayStatus.Idle
+        _autoCheckState.value = AutoCheckState.Idle
+        _nwcRestoreState.value = NwcRestoreState.Idle
+        _relayBackupStatuses.value = emptyList()
+        _relayBackupCheckLoading.value = false
+        _deleteBackupStatus.value = DeleteBackupStatus.Idle
+        _backupMissing.value = false
+        _isDefaultWallet.value = false
     }
 
     fun updateDeleteConfirmText(value: String) {
@@ -1039,6 +1053,9 @@ class WalletViewModel(
     }
 
     fun refreshState() {
+        accountScope.start()
+        accountSuspended = false
+        _balanceUnit.value = walletModeRepo.getBalanceUnit()
         _walletMode.value = walletModeRepo.getMode()
         _isDefaultWallet.value = computeIsDefaultWallet()
         _seedBackupAcked.value = sparkRepo.isSeedBackupAcknowledged()
@@ -1074,7 +1091,7 @@ class WalletViewModel(
 
     fun fetchLightningAddress() {
         if (_walletMode.value != WalletMode.SPARK) return
-        viewModelScope.launch {
+        accountScope.launch {
             _lightningAddressLoading.value = true
             val result = sparkRepo.getLightningAddress()
             result.fold(
@@ -1091,7 +1108,7 @@ class WalletViewModel(
         _addressCheckLoading.value = true
         _addressAvailable.value = null
         _lightningAddressError.value = null
-        viewModelScope.launch {
+        accountScope.launch {
             val result = sparkRepo.checkLightningAddressAvailable(username)
             result.fold(
                 onSuccess = { available ->
@@ -1111,7 +1128,7 @@ class WalletViewModel(
     fun registerLightningAddress(username: String) {
         _lightningAddressLoading.value = true
         _lightningAddressError.value = null
-        viewModelScope.launch {
+        accountScope.launch {
             val result = sparkRepo.registerLightningAddress(username)
             result.fold(
                 onSuccess = { fullAddress ->
@@ -1140,7 +1157,7 @@ class WalletViewModel(
         val pubkeyHex = keyRepo.getPubkeyHex() ?: return
         _showBioPrompt.value = false
 
-        viewModelScope.launch {
+        accountScope.launch {
             try {
                 val profile = eventRepo.getProfileData(pubkeyHex)
 
@@ -1176,7 +1193,7 @@ class WalletViewModel(
     fun deleteLightningAddress() {
         _lightningAddressLoading.value = true
         _lightningAddressError.value = null
-        viewModelScope.launch {
+        accountScope.launch {
             val result = sparkRepo.deleteLightningAddress()
             result.fold(
                 onSuccess = {
@@ -1257,7 +1274,7 @@ class WalletViewModel(
 
     fun resolveLightningAddress(address: String, amountSats: Long) {
         _isLoading.value = true
-        viewModelScope.launch {
+        accountScope.launch {
             try {
                 val payInfo = Nip57.resolveLud16(address, httpClient)
                 if (payInfo == null) {
@@ -1301,7 +1318,7 @@ class WalletViewModel(
             return
         }
         _feeState.value = FeeState.Loading
-        viewModelScope.launch {
+        accountScope.launch {
             sparkRepo.prepareSendPayment(invoice).fold(
                 onSuccess = { (feeSats, prepareData) ->
                     _preparedPaymentData = prepareData
@@ -1321,7 +1338,7 @@ class WalletViewModel(
 
     fun payInvoice(invoice: String) {
         navigateTo(WalletPage.Sending(invoice))
-        viewModelScope.launch {
+        accountScope.launch {
             val preparedData = _preparedPaymentData
             clearFeeState()
 
@@ -1357,7 +1374,7 @@ class WalletViewModel(
      * refreshState runs.
      */
     fun withdrawOnchain(quote: WithdrawOnchainQuote): Deferred<Result<String>> =
-        viewModelScope.async {
+        accountScope.async {
             val result = sparkRepo.executeWithdrawOnchain(quote)
             if (result.isSuccess) refreshState()
             result
@@ -1389,7 +1406,7 @@ class WalletViewModel(
 
     fun generateInvoice(amountSats: Long, description: String = "", expirySecs: Int = 3600) {
         _isLoading.value = true
-        viewModelScope.launch {
+        accountScope.launch {
             val result = activeProvider.makeInvoice(amountSats * 1000, description, expirySecs)
             result.fold(
                 onSuccess = { invoice ->
@@ -1410,7 +1427,7 @@ class WalletViewModel(
         _isLoading.value = true
         _transactionsError.value = null
         _hasMoreTransactions.value = true
-        viewModelScope.launch {
+        accountScope.launch {
             // Kick off sync + zap receipt fetch in background (don't block)
             if (_walletMode.value == WalletMode.SPARK) {
                 launch { sparkRepo.syncWallet() }
@@ -1487,7 +1504,7 @@ class WalletViewModel(
             .filter { eventRepo.getProfileData(it) == null }
         missing.forEach { eventRepo.requestProfileIfMissing(it) }
         if (missing.isNotEmpty()) {
-            viewModelScope.launch {
+            accountScope.launch {
                 delay(3_000)
                 _profileRefreshKey.value++
             }
@@ -1497,7 +1514,7 @@ class WalletViewModel(
     fun loadMoreTransactions() {
         if (_isLoadingMore.value) return
         _isLoadingMore.value = true
-        viewModelScope.launch {
+        accountScope.launch {
             val currentSize = _transactions.value.size
             val mapped = withContext(Dispatchers.IO) {
                 val zapMaps = eventRepo.getZapReceiptCounterparties()
@@ -1524,7 +1541,7 @@ class WalletViewModel(
                         .filter { eventRepo.getProfileData(it) == null }
                     missing.forEach { eventRepo.requestProfileIfMissing(it) }
                     if (missing.isNotEmpty()) {
-                        viewModelScope.launch {
+                        accountScope.launch {
                             delay(3_000)
                             _profileRefreshKey.value++
                         }
@@ -1616,7 +1633,7 @@ class WalletViewModel(
     private fun startSyncPolling() {
         syncPollJob?.cancel()
         if (_walletMode.value != WalletMode.SPARK) return
-        syncPollJob = viewModelScope.launch {
+        syncPollJob = accountScope.launch {
             while (_currentPage.value is WalletPage.ReceiveInvoice) {
                 sparkRepo.syncWallet()
                 delay(3_000)
@@ -1649,7 +1666,7 @@ class WalletViewModel(
         }
 
         _backupStatus.value = BackupStatus.InProgress
-        viewModelScope.launch {
+        accountScope.launch {
             try {
                 val t0 = System.currentTimeMillis()
                 relayPool.ensureWriteRelaysConnected()
@@ -1689,7 +1706,7 @@ class WalletViewModel(
         }
 
         _restoreFromRelayStatus.value = RestoreFromRelayStatus.Searching
-        viewModelScope.launch {
+        accountScope.launch {
             try {
                 val t0 = System.currentTimeMillis()
                 relayPool.ensureWriteRelaysConnected()
@@ -1837,7 +1854,7 @@ class WalletViewModel(
         val pubkey = keyRepo.getPubkeyHex() ?: return
 
         _relayBackupCheckLoading.value = true
-        viewModelScope.launch {
+        accountScope.launch {
             try {
                 val t0 = System.currentTimeMillis()
                 relayPool.ensureWriteRelaysConnected()
@@ -1910,7 +1927,7 @@ class WalletViewModel(
         }
 
         _deleteBackupStatus.value = DeleteBackupStatus.InProgress
-        viewModelScope.launch {
+        accountScope.launch {
             try {
                 val t0 = System.currentTimeMillis()
                 // Query relays for ALL backup events from this author

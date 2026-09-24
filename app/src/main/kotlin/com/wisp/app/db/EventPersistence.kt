@@ -5,50 +5,27 @@ import com.wisp.app.nostr.Nip22
 import com.wisp.app.nostr.NostrEvent
 import io.objectbox.Box
 import io.objectbox.query.QueryBuilder.StringOrder
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
 
 class EventPersistence(
     var currentUserPubkey: String?
-) {
+) : AutoCloseable {
     private val box: Box<EventEntity> = WispObjectBox.store.boxFor(EventEntity::class.java)
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val writeChannel = Channel<NostrEvent>(Channel.BUFFERED)
     private val json = Json { ignoreUnknownKeys = true }
-
-    init {
-        // Batched write-behind loop: collects events over a 200ms window then bulk-writes
-        scope.launch {
-            val batch = mutableListOf<NostrEvent>()
-            for (event in writeChannel) {
-                batch.add(event)
-                // Drain any queued events without waiting
-                while (true) {
-                    val next = writeChannel.tryReceive().getOrNull() ?: break
-                    batch.add(next)
-                }
-                // Short settle window to collect more concurrent inserts
-                if (batch.size < 50) {
-                    delay(200)
-                    while (true) {
-                        val next = writeChannel.tryReceive().getOrNull() ?: break
-                        batch.add(next)
-                    }
-                }
-                try {
-                    val entities = batch.map { it.toEntity() }
-                    box.put(entities)
-                } catch (e: Exception) {
-                    Log.w("EventPersistence", "Batch write failed: ${e.message}")
-                }
-                batch.clear()
+    private val writer = BatchWriter<NostrEvent>(
+        onFailure = { Log.w("EventPersistence", "Batch write failed", it) }
+    ) { batch ->
+        val unique = batch.distinctBy { it.id }
+        // Checking and inserting must share the write transaction, including across writer instances.
+        WispObjectBox.store.runInTx {
+            val existing = box.query(
+                EventEntity_.eventId.oneOf(unique.map { it.id }.toTypedArray(), StringOrder.CASE_SENSITIVE)
+            ).build().use { query ->
+                query.property(EventEntity_.eventId).findStrings().toHashSet()
             }
+            val novel = unique.filterNot { it.id in existing }.map { it.toEntity() }
+            if (novel.isNotEmpty()) box.put(novel)
         }
     }
 
@@ -61,16 +38,42 @@ class EventPersistence(
 
     fun persistEvent(event: NostrEvent) {
         if (!shouldPersist(event)) return
-        writeChannel.trySend(event)
+        writer.enqueue(event)
     }
 
-    fun seedCache(limit: Int = 2000): List<NostrEvent> {
+    suspend fun flush() = writer.flush()
+
+    /** Stops accepting events and drains the queue asynchronously; does not close the shared DB. */
+    override fun close() = writer.close()
+
+    suspend fun shutdown() = writer.shutdown()
+
+    /**
+     * Newest events for feed seeding on startup / account switch. When [authors] is
+     * provided, posts are restricted to those authors. Profiles have a separate bounded
+     * budget and are restricted to seed authors, so metadata cannot crowd out display events.
+     * The result may contain up to [limit] display events plus 2000 profiles.
+     */
+    fun seedCache(limit: Int = 2000, authors: Set<String>? = null): List<NostrEvent> {
+        if (limit <= 0 || authors?.isEmpty() == true) return emptyList()
         return try {
-            val entities = box.query()
+            val displayKinds = EventEntity_.kind.oneOf(DISPLAY_KINDS)
+            val cond = if (authors == null) displayKinds else displayKinds.and(
+                EventEntity_.pubkey.oneOf(authors.toTypedArray(), StringOrder.CASE_SENSITIVE)
+            )
+            val entities = box.query(cond)
                 .order(EventEntity_.createdAt, io.objectbox.query.QueryBuilder.DESCENDING)
                 .build()
                 .use { it.find(0, limit.toLong()) }
-            entities.mapNotNull { it.toNostrEvent() }
+            val profileAuthors = entities.mapTo(linkedSetOf()) { it.pubkey }
+            authors?.let { profileAuthors.addAll(it) }
+            val profiles = if (profileAuthors.isEmpty()) emptyList() else box.query(
+                EventEntity_.kind.equal(0).and(
+                    EventEntity_.pubkey.oneOf(profileAuthors.toTypedArray(), StringOrder.CASE_SENSITIVE)
+                )
+            ).order(EventEntity_.createdAt, io.objectbox.query.QueryBuilder.DESCENDING)
+                .build().use { it.find(0, 2000) }
+            (entities + profiles).mapNotNull { it.toNostrEvent() }
         } catch (e: Exception) {
             Log.w("EventPersistence", "seedCache failed: ${e.message}")
             emptyList()
@@ -235,6 +238,7 @@ class EventPersistence(
     }
 
     companion object {
+        private val DISPLAY_KINDS = intArrayOf(1, 6, 20, 21, 22, 1068, 6969, Nip22.KIND_COMMENT, 30023, 36787)
         // 1111 = NIP-22 comments — persisted so thread replies and notifications survive restarts
         private val PERSISTED_KINDS = setOf(0, 1, 6, 7, 9735, 20, 21, 22, 1068, 6969, Nip22.KIND_COMMENT, 30023, 36787)
     }

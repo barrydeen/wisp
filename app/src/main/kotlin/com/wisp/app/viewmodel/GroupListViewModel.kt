@@ -33,6 +33,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
 class GroupListViewModel(app: Application) : AndroidViewModel(app) {
+    private val accountScope = AccountSessionScope(viewModelScope)
+    @Volatile private var accountGeneration = 0L
 
     private var groupRepo: GroupRepository? = null
     private var relayPool: RelayPool? = null
@@ -76,7 +78,12 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
         get() = groupRepo?.joinedGroups ?: MutableStateFlow(emptyList())
 
     /** Clears all refs so init() can run again after an account switch. */
-    fun reset() {
+    suspend fun reset() {
+        accountGeneration++
+        accountScope.stop()
+        discoverGen++
+        _discoveredGroups.value = emptyList()
+        _discoveryLoading.value = false
         subscribedGroups.clear()
         previewCache.clear()
         groupRepo = null
@@ -95,6 +102,7 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
     fun init(repository: GroupRepository, pool: RelayPool, evRepo: EventRepository? = null,
              nRepo: NotificationRepository? = null, pubkey: String? = null) {
         if (groupRepo != null) return
+        accountScope.start()
         groupRepo = repository
         relayPool = pool
         eventRepo = evRepo
@@ -113,7 +121,7 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
      *  deliver events until we re-send the REQs post-auth. */
     private fun collectAuthCompleted() {
         val pool = relayPool ?: return
-        viewModelScope.launch(Dispatchers.Default) {
+        accountScope.launch(Dispatchers.Default) {
             pool.authCompleted.collect { relayUrl ->
                 val repo = groupRepo ?: return@collect
                 val groupsOnRelay = repo.getJoinedGroupKeys().filter { it.first == relayUrl }
@@ -227,7 +235,7 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun collectRelayEvents() {
         val pool = relayPool ?: return
-        viewModelScope.launch(Dispatchers.Default) {
+        accountScope.launch(Dispatchers.Default) {
             pool.relayEvents.collect { relayEvent ->
                 val subId = relayEvent.subscriptionId
                 // Pass zap receipts from group relays through to EventRepository
@@ -344,7 +352,7 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
         // Bring up the relay connection up front so the OK response lands on a live socket.
         pool.ensureGroupRelay(normalizedUrl)
 
-        viewModelScope.launch(Dispatchers.Default) {
+        accountScope.launch(Dispatchers.Default) {
             attemptJoin(repo, pool, normalizedUrl, groupId, s, inviteCode, attempt = 1)
         }
     }
@@ -377,12 +385,12 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
         // challenge before we'd have a chance to attach a collector.
         val resultDeferred = CompletableDeferred<PublishResult>()
         val authDeferred = CompletableDeferred<Unit>()
-        val collectResultJob = viewModelScope.launch(Dispatchers.Default) {
+        val collectResultJob = accountScope.launch(Dispatchers.Default) {
             pool.publishResults
                 .filter { it.eventId == event.id && it.relayUrl == normalizedUrl }
                 .collect { resultDeferred.complete(it); return@collect }
         }
-        val collectAuthJob = viewModelScope.launch(Dispatchers.Default) {
+        val collectAuthJob = accountScope.launch(Dispatchers.Default) {
             pool.authCompleted
                 .filter { it == normalizedUrl }
                 .collect { authDeferred.complete(Unit); return@collect }
@@ -448,7 +456,7 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
     private suspend fun waitForRelayAuth(pool: RelayPool, relayUrl: String) {
         if (pool.isAuthenticated(relayUrl)) return
         val authDeferred = CompletableDeferred<Unit>()
-        val authJob = viewModelScope.launch(Dispatchers.Default) {
+        val authJob = accountScope.launch(Dispatchers.Default) {
             pool.authCompleted
                 .filter { it == relayUrl }
                 .collect { authDeferred.complete(Unit); return@collect }
@@ -485,7 +493,7 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         val resultDeferred = CompletableDeferred<PublishResult>()
-        val collectJob = viewModelScope.launch(Dispatchers.Default) {
+        val collectJob = accountScope.launch(Dispatchers.Default) {
             pool.publishResults
                 .filter { it.eventId == event.id && it.relayUrl == relayUrl }
                 .collect { resultDeferred.complete(it); return@collect }
@@ -510,7 +518,7 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
         publishGroupList(signer)
         // Re-request all subscriptions after a short delay — private relays close the initial
         // REQs with "restricted: not a member" and only respond after the join is processed.
-        viewModelScope.launch(Dispatchers.Default) {
+        accountScope.launch(Dispatchers.Default) {
             kotlinx.coroutines.delay(2_000)
             sendGroupReqs(relayUrl, groupId)
         }
@@ -548,7 +556,7 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
         publishGroupList(signer)
         val anyFlagSet = isPrivate || isClosed || isRestricted || isHidden
         signer?.let { s ->
-            viewModelScope.launch(Dispatchers.Default) {
+            accountScope.launch(Dispatchers.Default) {
                 val createResult = publishAdminEvent(
                     pool = pool,
                     signer = s,
@@ -607,7 +615,7 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
         val pool = relayPool ?: return
         val repo = groupRepo ?: return
         val s = signer ?: return
-        viewModelScope.launch(Dispatchers.Default) {
+        accountScope.launch(Dispatchers.Default) {
             val existing = repo.getRoom(relayUrl, groupId)
             val existingMeta = existing?.metadata
             val tags = mutableListOf(listOf("h", groupId))
@@ -653,7 +661,7 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
         val pool = relayPool ?: return null
         val s = signer ?: return null
         val code = Nip29.generateInviteCode()
-        viewModelScope.launch(Dispatchers.Default) {
+        accountScope.launch(Dispatchers.Default) {
             publishAdminEvent(
                 pool = pool,
                 signer = s,
@@ -688,7 +696,7 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
         }
-        viewModelScope.launch(Dispatchers.Default) {
+        accountScope.launch(Dispatchers.Default) {
             val pTag = mutableListOf("p", targetPubkey).apply { addAll(cleanedRoles) }
             publishAdminEvent(
                 pool = pool,
@@ -706,7 +714,7 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
     fun leaveGroup(relayUrl: String, groupId: String, signer: NostrSigner?) {
         val pool = relayPool ?: return
         signer?.let { s ->
-            viewModelScope.launch(Dispatchers.Default) {
+            accountScope.launch(Dispatchers.Default) {
                 publishAdminEvent(
                     pool = pool,
                     signer = s,
@@ -727,7 +735,7 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
     fun deleteGroup(relayUrl: String, groupId: String, signer: NostrSigner?) {
         val pool = relayPool ?: return
         signer?.let { s ->
-            viewModelScope.launch(Dispatchers.Default) {
+            accountScope.launch(Dispatchers.Default) {
                 publishAdminEvent(
                     pool = pool,
                     signer = s,
@@ -758,7 +766,7 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
         repo.getRoom(relayUrl, groupId)?.let { room ->
             repo.updateMembers(relayUrl, groupId, room.members.filter { it != targetPubkey })
         }
-        viewModelScope.launch(Dispatchers.Default) {
+        accountScope.launch(Dispatchers.Default) {
             publishAdminEvent(
                 pool = pool,
                 signer = s,
@@ -773,6 +781,7 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
 
     /** One-shot preview fetch (metadata + members) for rooms not yet joined. Returns cached data immediately if available. */
     suspend fun fetchGroupPreview(relayUrl: String, groupId: String): GroupPreview {
+        val generation = accountGeneration
         groupRepo?.getRoom(relayUrl, groupId)?.let { room ->
             if (room.metadata != null || room.members.isNotEmpty()) {
                 Log.d("GroupListVM", "[preview] cache hit (joined) relay=$relayUrl group=$groupId name=${room.metadata?.name}")
@@ -843,6 +852,7 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
 
             collectJob.cancel()
             val preview = GroupPreview(metadata, members)
+            if (generation != accountGeneration) return@coroutineScope GroupPreview(null, emptyList())
             if (metadata != null || members.isNotEmpty()) previewCache[cacheKey] = preview
             preview
         }
@@ -868,7 +878,7 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
             (groupRepo?.getJoinedGroupKeys()?.map { it.first }?.distinct() ?: emptyList())
         val relayUrls = groupRelays.distinct()
 
-        viewModelScope.launch(Dispatchers.Default) {
+        accountScope.launch(Dispatchers.Default) {
             val metadataMap = java.util.concurrent.ConcurrentHashMap<String, Pair<String, Nip29.GroupMetadata>>() // key -> (relayUrl, metadata)
             val membersMap = java.util.concurrent.ConcurrentHashMap<String, List<String>>() // groupId -> members
 
@@ -951,7 +961,7 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
             SimpleGroupEntry(groupId, relayUrl, room?.metadata?.name)
         }
         val tags = Nip51.buildSimpleGroupsTags(entries)
-        viewModelScope.launch(Dispatchers.Default) {
+        accountScope.launch(Dispatchers.Default) {
             try {
                 val event = s.signEvent(
                     kind = Nip51.KIND_SIMPLE_GROUPS,

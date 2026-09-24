@@ -249,18 +249,18 @@ class RelayScoreBoard(
 
     @Synchronized fun hasScoredRelays(): Boolean = scoredRelays.isNotEmpty()
 
-    @Synchronized fun clear() {
+    @Synchronized fun clear(clearPersisted: Boolean = true) {
         scoredRelays = emptyList()
         scoredRelayUrls = emptySet()
         relayAuthorsMap = mutableMapOf()
         authorToRelays = mutableMapOf()
         hintAuthorRelays = mutableMapOf()
         cachedFollowSet = emptySet()
-        prefs.edit().clear().apply()
+        if (clearPersisted) prefs.edit().clear().apply()
     }
 
     @Synchronized fun reload(pubkeyHex: String?) {
-        clear()
+        clear(clearPersisted = false)
         prefs = context.getSharedPreferences(prefsName(pubkeyHex), Context.MODE_PRIVATE)
         loadFromPrefs()
     }

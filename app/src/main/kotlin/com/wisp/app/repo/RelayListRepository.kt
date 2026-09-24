@@ -2,7 +2,7 @@ package com.wisp.app.repo
 
 import android.content.Context
 import android.content.SharedPreferences
-import android.util.LruCache
+import android.util.Log
 import com.wisp.app.nostr.Nip51
 import com.wisp.app.nostr.Nip65
 import com.wisp.app.nostr.NostrEvent
@@ -11,42 +11,39 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
-class RelayListRepository(context: Context) {
+class RelayListRepository internal constructor(private val prefs: SharedPreferences) : AutoCloseable {
+    constructor(context: Context) : this(context.getSharedPreferences("wisp_relay_lists", Context.MODE_PRIVATE))
+
     companion object {
         /** Re-fetch all relay lists from the network after this much time has passed. */
         const val FRESHNESS_MS = 6L * 60 * 60 * 1000  // 6 hours
         private const val SYNC_TIME_KEY = "sync_time"
     }
 
-    private val prefs: SharedPreferences =
-        context.getSharedPreferences("wisp_relay_lists", Context.MODE_PRIVATE)
     private val json = Json { ignoreUnknownKeys = true }
 
     // pubkey -> parsed relay list
-    private val cache = LruCache<String, List<RelayConfig>>(5000)
-    // pubkey -> event timestamp
-    private val timestamps = LruCache<String, Long>(5000)
+    private val cache = PersistedMetadataCache<List<RelayConfig>>(
+        prefs, "rl_",
+        encode = { relays -> json.encodeToString(relays.map { SerializableRelay(it.url, it.read, it.write) }) },
+        decode = { encoded -> json.decodeFromString<List<SerializableRelay>>(encoded).map { RelayConfig(it.url, it.read, it.write) } },
+        onFailure = { Log.w("RelayListRepository", "Relay metadata write failed", it) }
+    )
 
     // DM relay cache (kind 10050): pubkey -> list of relay URLs
-    private val dmRelayCache = LruCache<String, List<String>>(5000)
-    private val dmTimestamps = LruCache<String, Long>(5000)
-
-    init {
-        loadFromPrefs()
-        loadDmRelaysFromPrefs()
-    }
+    private val dmRelayCache = PersistedMetadataCache<List<String>>(
+        prefs, "dm_",
+        encode = { json.encodeToString(it) },
+        decode = { json.decodeFromString<List<String>>(it) },
+        onFailure = { Log.w("RelayListRepository", "DM relay metadata write failed", it) }
+    )
 
     fun updateFromEvent(event: NostrEvent) {
         if (event.kind != 10002) return
-        val existing = timestamps.get(event.pubkey)
-        if (existing != null && event.created_at <= existing) return
-
         val relays = Nip65.parseRelayList(event)
         if (relays.isEmpty()) return
 
-        cache.put(event.pubkey, relays)
-        timestamps.put(event.pubkey, event.created_at)
-        saveToPrefs(event.pubkey, relays, event.created_at)
+        cache.update(event.pubkey, relays, event.created_at)
     }
 
     fun getWriteRelays(pubkey: String): List<String>? {
@@ -63,15 +60,10 @@ class RelayListRepository(context: Context) {
 
     fun updateDmRelaysFromEvent(event: NostrEvent) {
         if (event.kind != Nip51.KIND_DM_RELAYS) return
-        val existing = dmTimestamps.get(event.pubkey)
-        if (existing != null && event.created_at <= existing) return
-
         val relays = Nip51.parseRelaySet(event)
         if (relays.isEmpty()) return
 
-        dmRelayCache.put(event.pubkey, relays)
-        dmTimestamps.put(event.pubkey, event.created_at)
-        saveDmRelaysToPrefs(event.pubkey, relays, event.created_at)
+        dmRelayCache.update(event.pubkey, relays, event.created_at)
     }
 
     fun getDmRelays(pubkey: String): List<String>? =
@@ -93,61 +85,32 @@ class RelayListRepository(context: Context) {
         prefs.edit().putLong(SYNC_TIME_KEY, System.currentTimeMillis()).apply()
     }
 
-    fun clear() {
-        cache.evictAll()
-        timestamps.evictAll()
-        dmRelayCache.evictAll()
-        dmTimestamps.evictAll()
-        prefs.edit().clear().apply()
+    /** Account switches evict decoded values, not the shared public relay directory. */
+    fun clear() = clearMemory()
+
+    fun clearMemory() {
+        cache.clearMemory()
+        dmRelayCache.clearMemory()
+        // Sync freshness describes the previous account's follow set, unlike relay metadata.
+        prefs.edit().remove(SYNC_TIME_KEY).apply()
     }
 
-    private fun saveToPrefs(pubkey: String, relays: List<RelayConfig>, timestamp: Long) {
-        val serializable = relays.map { SerializableRelay(it.url, it.read, it.write) }
-        prefs.edit()
-            .putString("rl_$pubkey", json.encodeToString(serializable))
-            .putLong("rl_ts_$pubkey", timestamp)
-            .apply()
+    suspend fun flush() {
+        cache.flush()
+        dmRelayCache.flush()
     }
 
-    private fun loadFromPrefs() {
-        val allKeys = prefs.all.keys
-        val pubkeys = allKeys
-            .filter { it.startsWith("rl_") && !it.startsWith("rl_ts_") }
-            .map { it.removePrefix("rl_") }
-
-        for (pubkey in pubkeys) {
-            try {
-                val str = prefs.getString("rl_$pubkey", null) ?: continue
-                val ts = prefs.getLong("rl_ts_$pubkey", 0)
-                val serializable = json.decodeFromString<List<SerializableRelay>>(str)
-                val relays = serializable.map { RelayConfig(it.url, it.read, it.write) }
-                cache.put(pubkey, relays)
-                timestamps.put(pubkey, ts)
-            } catch (_: Exception) {}
-        }
+    override fun close() {
+        cache.close()
+        dmRelayCache.close()
     }
 
-    private fun saveDmRelaysToPrefs(pubkey: String, relays: List<String>, timestamp: Long) {
-        prefs.edit()
-            .putString("dm_$pubkey", json.encodeToString(relays))
-            .putLong("dm_ts_$pubkey", timestamp)
-            .apply()
-    }
-
-    private fun loadDmRelaysFromPrefs() {
-        val allKeys = prefs.all.keys
-        val pubkeys = allKeys
-            .filter { it.startsWith("dm_") && !it.startsWith("dm_ts_") }
-            .map { it.removePrefix("dm_") }
-
-        for (pubkey in pubkeys) {
-            try {
-                val str = prefs.getString("dm_$pubkey", null) ?: continue
-                val ts = prefs.getLong("dm_ts_$pubkey", 0)
-                val relays = json.decodeFromString<List<String>>(str)
-                dmRelayCache.put(pubkey, relays)
-                dmTimestamps.put(pubkey, ts)
-            } catch (_: Exception) {}
+    suspend fun shutdown() {
+        close()
+        try {
+            cache.shutdown()
+        } finally {
+            dmRelayCache.shutdown()
         }
     }
 
