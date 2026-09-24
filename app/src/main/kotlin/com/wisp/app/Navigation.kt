@@ -3263,9 +3263,16 @@ fun WispNavHost(
                     val signer = activeSigner ?: return@NotificationsScreen
                     notifReplyScope.launch {
                         val hint = feedViewModel.outboxRouter?.getRelayHint(replyToEvent.pubkey) ?: ""
-                        val tags = com.wisp.app.nostr.Nip10.buildReplyTags(replyToEvent, hint) +
+                        val replyingToComment = replyToEvent.kind == com.wisp.app.nostr.Nip22.KIND_COMMENT
+                        val replyTags = if (replyingToComment) {
+                            com.wisp.app.nostr.Nip22.buildCommentTags(replyToEvent, hint)
+                        } else {
+                            com.wisp.app.nostr.Nip10.buildReplyTags(replyToEvent, hint)
+                        }
+                        val tags = replyTags +
                             com.wisp.app.nostr.Nip30.buildEmojiTagsForContent(content, notifResolvedEmojis) +
                             if (notifInterfacePrefs.isClientTagEnabled()) listOf(listOf("client", "Wisp")) else emptyList()
+                        val replyKind = if (replyingToComment) com.wisp.app.nostr.Nip22.KIND_COMMENT else 1
 
                         // If the parent is a private reply we received, keep the thread encrypted
                         // by gift-wrapping this reply too. Otherwise fall through to the public path.
@@ -3290,7 +3297,7 @@ fun WispNavHost(
                                 signer = signer,
                                 content = content,
                                 tags = tags,
-                                kind = 1,
+                                kind = replyKind,
                                 replyToPubkey = replyToEvent.pubkey,
                                 onPublished = {
                                     feedViewModel.eventRepo.addReplyCount(replyToEvent.id, "pow-pending")
@@ -3301,7 +3308,7 @@ fun WispNavHost(
                                 }
                             )
                         } else {
-                            val event = signer.signEvent(kind = 1, content = content, tags = tags)
+                            val event = signer.signEvent(kind = replyKind, content = content, tags = tags)
                             val msg = com.wisp.app.nostr.ClientMessage.event(event)
                             if (feedViewModel.outboxRouter != null) {
                                 feedViewModel.outboxRouter!!.publishToInbox(msg, replyToEvent.pubkey)

@@ -95,4 +95,73 @@ class Nip22Test {
         assertEquals(null, Nip22.getRootScopeId(note))
         assertTrue(Nip22.referencesRoot(note, rootId))
     }
+
+    @Test
+    fun buildCommentTagsTargetsParentWithLowercaseEAndRootWithUppercaseE() {
+        val parent = nestedReply.copy(id = topCommentId, pubkey = topCommentAuthor)
+        val tags = Nip22.buildCommentTags(parent, "wss://relay.damus.io")
+        assertEquals(listOf("E", rootId), tags.first { it[0] == "E" })
+        assertEquals(listOf("e", topCommentId, "wss://relay.damus.io", "reply"), tags.first { it[0] == "e" })
+        assertEquals(listOf("p", topCommentAuthor), tags.first { it[0] == "p" })
+        assertEquals(listOf("k", "1111"), tags.first { it[0] == "k" })
+    }
+
+    @Test
+    fun buildCommentTagsFallsBackToFirstETagForRoot() {
+        // Comment with no uppercase E — root resolved from the first lowercase e.
+        val legacyComment = event(
+            kind = Nip22.KIND_COMMENT,
+            tags = listOf(
+                listOf("e", rootId, "", "root"),
+                listOf("p", rootAuthor)
+            )
+        )
+        val tags = Nip22.buildCommentTags(legacyComment)
+        assertEquals(listOf("E", rootId), tags.first { it[0] == "E" })
+    }
+
+    @Test
+    fun buildCommentTagsPropagatesAddressableScope() {
+        val articleComment = event(
+            kind = Nip22.KIND_COMMENT,
+            tags = listOf(
+                listOf("e", topCommentId, "", topCommentAuthor),
+                listOf("a", "30023:$rootAuthor:my-post")
+            )
+        )
+        val tags = Nip22.buildCommentTags(articleComment)
+        assertEquals(listOf("a", "30023:$rootAuthor:my-post"), tags.first { it[0] == "a" })
+        // No root marker / E tag anywhere — E falls back to the parent comment id.
+        assertEquals(listOf("E", topCommentId), tags.first { it[0] == "E" })
+    }
+
+    @Test
+    fun strayKind1ReplyToCommentDetectedByCachedParent() {
+        val stray = event(
+            kind = 1,
+            tags = listOf(listOf("e", topCommentId, "", "reply"))
+        )
+        val kindOf = fun(id: String): Int? = when (id) {
+            topCommentId -> Nip22.KIND_COMMENT
+            rootId -> 1
+            else -> null
+        }
+        assertTrue(Nip22.isStrayKind1OnComment(stray, kindOf))
+        assertFalse(Nip22.isStrayKind1OnComment(nestedReply, kindOf))
+        assertFalse(Nip22.isStrayKind1OnComment(
+            event(kind = 1, tags = listOf(listOf("e", rootId, "", "root"))), kindOf
+        ))
+    }
+
+    @Test
+    fun strayKind1DetectedByKTagWithoutParentCache() {
+        val stray = event(
+            kind = 1,
+            tags = listOf(
+                listOf("e", topCommentId, "", "reply"),
+                listOf("k", "1111")
+            )
+        )
+        assertTrue(Nip22.isStrayKind1OnComment(stray) { null })
+    }
 }

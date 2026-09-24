@@ -210,6 +210,7 @@ class ArticleViewModel : ViewModel() {
     ) {
         // Seed reply counts from already-loaded comments (before engagement subscriptions)
         for (event in commentEvents.values) {
+            if (isIgnoredStrayKind1(event)) continue
             val parentId = Nip10.getReplyTarget(event) ?: articleEventId ?: continue
             eventRepo.addReplyCount(parentId, event.id)
         }
@@ -307,12 +308,25 @@ class ArticleViewModel : ViewModel() {
         }
     }
 
+    /**
+     * Kind 1 notes replying to a 1111 comment are main-feed notes, not comment
+     * replies — hidden from the comment tree (private rumor replies exempt, see
+     * ThreadViewModel.isIgnoredStrayKind1).
+     */
+    private fun isIgnoredStrayKind1(event: NostrEvent): Boolean =
+        event.kind == 1 &&
+            eventRepoRef?.isPrivate(event.id) != true &&
+            Nip22.isStrayKind1OnComment(event) { id ->
+                (commentEvents[id] ?: eventRepoRef?.getEvent(id))?.kind
+            }
+
     private fun rebuildTree(articleEventId: String?) {
         val parentToChildren = mutableMapOf<String, MutableList<NostrEvent>>()
 
         for (event in commentEvents.values) {
             if (eventRepoRef?.muteRepo?.isBlocked(event.pubkey) == true) continue
             if (eventRepoRef?.isWotFiltered(event.pubkey, event.kind) == true) continue
+            if (isIgnoredStrayKind1(event)) continue
             val replyTarget = Nip10.getReplyTarget(event)
             val parentId = when {
                 replyTarget != null && replyTarget in commentEvents -> replyTarget

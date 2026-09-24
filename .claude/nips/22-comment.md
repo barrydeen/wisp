@@ -1,6 +1,6 @@
 # NIP-22: Comment
 
-**Status in Wisp:** Implemented (consume only — we publish kind 1)
+**Status in Wisp:** Implemented (consume + publish — replies to a 1111 are 1111)
 **File:** `Nip22.kt`
 **Depends on:** NIP-01, NIP-10
 
@@ -9,7 +9,9 @@
 Kind 1111 is a generic "comment" event that targets any other event
 (any kind) via NIP-10 reply tags. Many clients are migrating replies
 (long-form article comments, thread replies) from kind 1 to kind 1111.
-Wisp ingests 1111 as a reply everywhere but always publishes kind 1.
+Wisp ingests 1111 as a reply everywhere and mirrors the target's
+namespace when publishing: a reply to a 1111 is itself published as a
+1111 (`Nip22.buildCommentTags`), a reply to kind 1 stays kind 1.
 
 ## Event Format
 
@@ -35,6 +37,10 @@ Wisp ingests 1111 as a reply everywhere but always publishes kind 1.
 
 - Comments MUST NOT appear in regular feeds — only in the thread/article
   view of the targeted event.
+- A kind 1 note replying to a 1111 comment is a stray main-feed note, not a
+  comment reply: thread/article views ignore it (`Nip22.isStrayKind1OnComment`)
+  and it does not bump the comment's reply count. Private gift-wrapped
+  replies are exempt (private comment publishing deferred, rumors are kind 1).
 - Comments count toward the targeted event's reply count.
 - A comment with a p-tag to me (or an e-tag to my event) is a reply
   notification.
