@@ -1,9 +1,8 @@
 package com.wisp.app.viewmodel
 
-/** Fetch history is not subscription liveness: closed events must be subscribed again on return. */
+/** Tracks which event IDs currently have live engagement subscriptions. */
 internal class FeedEngagementState {
     private val members = mutableMapOf<String, Set<String>>()
-    private val fetched = linkedSetOf<String>()
 
     fun isSubscribed(eventId: String): Boolean = members.values.any { eventId in it }
 
@@ -11,22 +10,12 @@ internal class FeedEngagementState {
         members[subscriptionId] = eventIds
     }
 
-    fun markFetched(subscriptionId: String) {
-        fetched.addAll(members[subscriptionId].orEmpty())
-        while (fetched.size > 5_000) fetched.remove(fetched.first())
-    }
-
-    fun wasFetched(eventId: String): Boolean = eventId in fetched
-
     fun distantSubscriptions(nearbyIds: Set<String>): List<String> =
         members.filterValues { ids -> ids.none { it in nearbyIds } }.keys.toList()
 
     fun remove(subscriptionId: String) { members.remove(subscriptionId) }
 
-    fun clear(clearHistory: Boolean = false) {
-        members.clear()
-        if (clearHistory) fetched.clear()
-    }
+    fun clear() { members.clear() }
 }
 
 /** Resolve stable keys against the current feed, never against a pre-debounce positional snapshot. */

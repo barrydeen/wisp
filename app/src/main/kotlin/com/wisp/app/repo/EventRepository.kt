@@ -48,7 +48,12 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     /** Late-bound for DIP-03 private zap decryption (recipient + self-attribution). */
     var keyRepo: KeyRepository? = null
     private val eventCache = ConcurrentHashMap<String, NostrEvent>()
-    private val addressIndex = mutableMapOf<String, NostrEvent>()
+    // Insertion-ordered and capped: live-stream/emoji-pack spam (kinds 10k/30k) would
+    // otherwise grow this forever on long sessions. Late observers care about recent
+    // addresses, so evicting the oldest entries is safe. Guarded by `synchronized(this)`.
+    private val addressIndex = object : LinkedHashMap<String, NostrEvent>() {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, NostrEvent>) = size > 512
+    }
     private val pendingAvailabilityIds = mutableSetOf<String>()
     private val pendingAvailabilityAddresses = mutableSetOf<String>()
     private val eventObservations = KeyedObservation<String, NostrEvent?>(this, ::peekEvent)

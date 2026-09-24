@@ -454,6 +454,21 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         groupRepo.clear()
         liveStreamRepo.clear()
     }
+
+    /** Blocks until every queued batch write is durable; failures are logged, not fatal. */
+    private suspend fun flushPersistedWrites() {
+        for ((name, block) in listOf<Pair<String, suspend () -> Unit>>(
+            "events" to { eventPersistence?.flush() },
+            "profiles" to { profileRepo.flush() },
+            "relay lists" to { relayListRepo.flush() }
+        )) {
+            try {
+                block()
+            } catch (e: Exception) {
+                Log.w("FeedVM", "Persisted write flush failed for $name during account switch", e)
+            }
+        }
+    }
     fun reloadForNewAccount() {
         safetyPrefs.reload(getUserPubkey())
         startup.reloadForNewAccount()
@@ -482,8 +497,10 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             // Join every old producer before changing the key or any repository owner.
             lifecycleManager.stopAndJoin()
             accountScope.stop()
+            // Drain batched writes under the OLD owner before any repo is cleared or rekeyed.
+            kotlinx.coroutines.withContext(Dispatchers.IO) { flushPersistedWrites() }
             beforeKeySwap()
-            resetForAccountSwitch(clearPersisted)
+            kotlinx.coroutines.withContext(Dispatchers.IO) { resetForAccountSwitch(clearPersisted) }
             swapKey()
             kotlinx.coroutines.withContext(Dispatchers.IO) { reloadForNewAccount() }
             _accountSwitching.value = false
@@ -827,5 +844,12 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         relayPool.disconnectAll()
         liveMetricsSocket?.close(1000, null)
         notifRepo.shutdown()
+        eventRepo.shutdown()
+        // viewModelScope is already cancelled here, so drain writers on a detached IO scope.
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob()).launch(kotlinx.coroutines.Dispatchers.IO) {
+            try { eventPersistence?.shutdown() } catch (e: Exception) { Log.w("FeedVM", "Event persistence shutdown failed", e) }
+            try { profileRepo.shutdown() } catch (e: Exception) { Log.w("FeedVM", "Profile persistence shutdown failed", e) }
+            try { relayListRepo.shutdown() } catch (e: Exception) { Log.w("FeedVM", "Relay list persistence shutdown failed", e) }
+        }
     }
 }

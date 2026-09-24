@@ -28,6 +28,17 @@ internal class BatchWriter<T>(
     private var failure: Throwable? = null
     private val worker = scope.launch {
         val batch = ArrayList<T>(maxBatchSize)
+        // Failures are reported exactly once: writing them into a flush's result clears
+        // them, so a stale failure can never poison every later flush or shutdown.
+        fun deliverFailure(result: CompletableDeferred<Unit>) {
+            val e = failure
+            if (e != null) {
+                failure = null
+                result.completeExceptionally(e)
+            } else {
+                result.complete(Unit)
+            }
+        }
         fun drain() {
             if (batch.isEmpty()) return
             try {
@@ -47,8 +58,7 @@ internal class BatchWriter<T>(
                         delay(settleMillis)
                     }
                     is Command.Flush -> {
-                        failure?.let { command.result.completeExceptionally(it) }
-                            ?: command.result.complete(Unit)
+                        deliverFailure(command.result)
                         continue
                     }
                 }
@@ -57,8 +67,7 @@ internal class BatchWriter<T>(
                         is Command.Value -> batch.add(next.value)
                         is Command.Flush -> {
                             drain()
-                            failure?.let { next.result.completeExceptionally(it) }
-                                ?: next.result.complete(Unit)
+                            deliverFailure(next.result)
                         }
                     }
                 }
@@ -70,7 +79,11 @@ internal class BatchWriter<T>(
     }
 
     fun enqueue(value: T) {
-        check(queue.trySend(Command.Value(value)).isSuccess) { "Persistence writer is closed" }
+        if (!queue.trySend(Command.Value(value)).isSuccess) {
+            // Dropped after close: report instead of throwing so post-teardown relay
+            // events can never crash the ingest hot path.
+            onFailure(IllegalStateException("Persistence writer is closed; dropped one write"))
+        }
     }
 
     /** Waits for writes accepted before this call; failures are not silently acknowledged. */
