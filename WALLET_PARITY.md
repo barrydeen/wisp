@@ -355,6 +355,44 @@ wallet_restore_relays_title      = "Restore from relays"
 wallet_restore_relays_subtitle   = "Encrypted backup from another device"
 ```
 
+### 2.7 NWC setup verification
+
+Connecting with a revoked or unresponsive connection string never actually
+talks to the wallet service — the relay subscription opens fine and the
+connect would look successful until the dashboard's balance fetch fails
+silently later. Both platforms therefore finish the **setup flow**
+(paste-string or restore-from-backup) with one `get_balance` round-trip
+on a **6s timeout** before declaring success:
+
+- **Confirmed** (balance response) → connect as before: fetch balance,
+  refresh transactions / node info, publish the NIP-78 backup, dismiss
+  to dashboard.
+- **Refused** (NIP-47 error answer) → the setup sheet shows the wallet's
+  own refusal; `UNAUTHORIZED` reads as *"may have been revoked"* with a
+  pointer to create a new connection string; other codes carry the
+  wallet's message (or the bare code when there is no message).
+- **Unresponsive** (silence) → *"No response from the wallet — the
+  connection may have been revoked, or the wallet is offline."*
+
+The failed attempt tears down and stays on the setup sheet with the
+reason; the **URI stays saved** so an offline wallet can simply be
+retried. `get_balance` over `get_info` because it's in every wallet's
+required method set while `get_info` is skippable.
+
+App-launch and account-switch reconnects keep the fast subscribe-only
+path — only the two setup surfaces verify.
+
+Failure copy (verbatim, both platforms):
+
+```
+UNAUTHORIZED → "The wallet rejected this connection — it may have been revoked.
+                Create a new connection string in your wallet and try again."
+other code   → "The wallet rejected the request: {message}."
+no message   → "The wallet rejected the request ({code})."
+silence      → "No response from the wallet — the connection may have been
+                revoked, or the wallet is offline."
+```
+
 ---
 
 ## 3. Wallet Dashboard
@@ -745,6 +783,9 @@ Derivation + flow:
       wallet"; section header is "Disconnect Wallet" (not "Danger Zone").
 - [x] Switch Wallet sets `wallet_skip_auto_create_<pubkey>` and does
       **not** call `deleteLightningAddress()`.
+- [x] NWC setup flow verifies the connection with one `get_balance`
+      round-trip on a 6s timeout per §2.7. (`NwcWallet.verify`,
+      `WalletStore.connectNwc`, `NwcSetupVerificationTests`)
 - [ ] Username generator uses the exact 28 colors × 38 animals × `[10,99]`
       space and a CSPRNG. (Currently uses Breez default generator.)
 - [ ] Test vectors in §1.3 produce identical mnemonics on iOS.
@@ -788,6 +829,11 @@ existing wallet have no obvious entry point.
 - [ ] Disconnect flow on a default wallet says **"Switch Wallet"** and
       the body copy refers to the wallet as your *default wallet* —
       never "Wisp wallet" or "wisp wallet".
+- [x] NWC setup flow verifies the connection with one `get_balance`
+      round-trip on a 6s timeout per §2.7; paste + restore-from-backup
+      surfaces verify, app-launch reconnects keep the fast path.
+      (`NwcRepository.verify`, `WalletViewModel.failNwcSetup`,
+      `NwcSetupVerificationTest`)
 - [ ] Settings section header renamed from "Danger Zone" to
       **"Disconnect Wallet"** (per §4.8).
 - [ ] Dashboard welcome banner for default wallets per §3.5 (blue/accent

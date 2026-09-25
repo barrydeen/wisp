@@ -343,7 +343,7 @@ fun WalletScreen(
                                 statusLines = viewModel.statusLines.collectAsState().value,
                                 nwcRestoreState = viewModel.nwcRestoreState.collectAsState().value,
                                 onConnectionStringChange = { viewModel.updateConnectionString(it) },
-                                onConnect = { viewModel.connectNwcWallet() },
+                                onConnect = { viewModel.connectNwcWallet(verifySetup = true) },
                                 onDisconnect = { viewModel.disconnectWallet() },
                                 onRestoreFromBackup = { viewModel.restoreFromNwcBackup() },
                                 onDismissRestore = { viewModel.dismissNwcRestore() },
