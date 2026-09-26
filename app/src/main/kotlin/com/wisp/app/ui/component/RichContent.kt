@@ -274,7 +274,7 @@ private fun isBlossomUrl(url: String): Boolean {
     }
 }
 
-private val combinedRegex = Regex("""nostr:(note1|nevent1|npub1|nprofile1|naddr1)[a-z0-9]+|(?<!\w)(npub1[a-z0-9]{58})(?!\w|\.[a-zA-Z])|(?:https?|wss?)://\S+|(?<!\w)((?:[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+(?:com|net|org|io|dev|app|pro|ai|co|me|info|xyz|cc|tv|to|gg|sh|im|is|it|rs|ly|site|online|store|tech|cloud|social|world|earth|space|lol|wtf|family|life|art|design|blog|news|live|video|media|chat|games|money|finance|agency|studio|build|run|codes|systems|network|zone|pub|blue|limo|fyi|wiki|page|link|click|exchange|markets|fun|club|today)(?:/\S*)?)(?!\w)|(?<!\w)#([\p{L}0-9_][\p{L}\p{M}0-9_-]*)|(?<!\w)((?:note1|nevent1|nprofile1|naddr1)[a-z0-9]{10,})(?!\w)""", RegexOption.IGNORE_CASE)
+private val combinedRegex = Regex("""nostr:(note1|nevent1|npub1|nprofile1|naddr1)[a-z0-9]+|(?<!\w)(npub1[a-z0-9]{58})(?!\w|\.[a-zA-Z])|(?:https?|wss?)://\S+|(?<!\w)((?:[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+(?:${IANA_TLD_ALTERNATION})(?:/\S*)?)(?!\w)|(?<!\w)#([\p{L}0-9_][\p{L}\p{M}0-9_-]*)|(?<!\w)((?:note1|nevent1|nprofile1|naddr1)[a-z0-9]{10,})(?!\w)""", RegexOption.IGNORE_CASE)
 
 private val emojiShortcodeRegex = Regex(""":([a-zA-Z0-9_-]+):""")
 
@@ -345,21 +345,11 @@ internal fun parseContent(content: String, emojiMap: Map<String, String> = empty
         if (!hashtagCapture.isNullOrEmpty() && token.startsWith("#")) {
             segments.add(ContentSegment.HashtagSegment(hashtagCapture))
         } else if (!bareDomainCapture.isNullOrEmpty() && !token.startsWith("http")) {
-            val url = stripTrackingParams("https://$bareDomainCapture")
-            val meta = imetaMap[url]
-            val imetaMime = meta?.mime?.let { classifyByMime(it) }
-            val ext = url.substringAfterLast('.').substringBefore('?').lowercase()
-            when {
-                imetaMime == "image" -> segments.add(ContentSegment.ImageSegment(meta!!))
-                imetaMime == "video" -> segments.add(ContentSegment.VideoSegment(meta!!))
-                imetaMime == "audio" -> segments.add(ContentSegment.AudioSegment(meta!!))
-                ext in imageExtensions -> segments.add(ContentSegment.ImageSegment(meta ?: MediaMeta(url)))
-                ext in videoExtensions -> segments.add(ContentSegment.VideoSegment(meta ?: MediaMeta(url)))
-                ext in audioExtensions -> segments.add(ContentSegment.AudioSegment(meta ?: MediaMeta(url)))
-                isBlossomUrl(url) -> segments.add(ContentSegment.UnknownMediaSegment(meta ?: MediaMeta(url)))
-                isStandaloneUrl(content, match.range) -> segments.add(ContentSegment.LinkSegment(url))
-                else -> segments.add(ContentSegment.InlineLinkSegment(url))
-            }
+            // A bare-domain match is a fuzzy inference: always an inline link
+            // with a synthesized scheme — never a preview card or media embed.
+            // A false positive must cost at most a stray underline.
+            val url = stripTrackingParams("https://$bareDomainCapture").trimEnd('.', ',', ')', ']', ';', ':', '!', '?')
+            segments.add(ContentSegment.InlineLinkSegment(url))
         } else if (token.startsWith("nostr:")) {
             when (val decoded = Nip19.decodeNostrUri(token)) {
                 is NostrUriData.NoteRef -> segments.add(ContentSegment.NostrNoteSegment(decoded.eventId, decoded.relays))
