@@ -89,4 +89,22 @@ class RichContentBareDomainTest {
         val content = "npub1hjlev3xn736aqr4ecmjxwwzuu9k523kp5fpz9n862s4lwah2h22sm2zg68.blossom.band/img.png"
         assertEquals(listOf("https://$content"), inlineLinks(content))
     }
+
+    @Test
+    fun `idn domains linkify`() {
+        assertEquals(listOf("https://пример.рф"), inlineLinks("see пример.рф today"))
+    }
+
+    @Test
+    fun `dotted email local part does not split`() {
+        assertEquals(emptyList<String>(), inlineLinks("first.last@zap.cooking"))
+        assertEquals(emptyList<String>(), inlineLinks("ping chef@zap.cooking please"))
+    }
+
+    @Test
+    fun `trailing punctuation is preserved as text`() {
+        val segments = parseContent("see jumble.social/notes, please")
+        assertEquals("https://jumble.social/notes", (segments[1] as ContentSegment.InlineLinkSegment).url)
+        assertTrue(segments.drop(2).any { it is ContentSegment.TextSegment && it.text.startsWith(",") })
+    }
 }
