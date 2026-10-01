@@ -17,7 +17,6 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -26,8 +25,12 @@ import okhttp3.OkHttpClient
 import java.util.concurrent.CopyOnWriteArrayList
 
 data class RelayEvent(val event: NostrEvent, val relayUrl: String, val subscriptionId: String)
-data class PublishResult(val relayUrl: String, val eventId: String, val accepted: Boolean, val message: String)
-data class BroadcastState(val accepted: Int, val sent: Int)
+data class BroadcastState(
+    val accepted: Int,
+    val sent: Int,
+    val finished: Boolean,
+    val rejected: Int
+)
 
 class RelayPool(private val prefs: SharedPreferences? = null) {
     /** Incremented on every reconnectAll()/forceReconnectAll(). Allows SubscriptionManager
@@ -177,6 +180,9 @@ class RelayPool(private val prefs: SharedPreferences? = null) {
 
     private val _relayEvents = MutableSharedFlow<RelayEvent>(extraBufferCapacity = 4096)
     val relayEvents: SharedFlow<RelayEvent> = _relayEvents
+    val eventProvenance = com.wisp.app.repo.RelayEventProvenance()
+    private val _verifiedRelayEvents = MutableSharedFlow<RelayEvent>(extraBufferCapacity = 4096)
+    val verifiedRelayEvents: SharedFlow<RelayEvent> = _verifiedRelayEvents
 
     private val _eoseSignals = MutableSharedFlow<String>(extraBufferCapacity = 64)
     val eoseSignals: SharedFlow<String> = _eoseSignals
@@ -391,14 +397,16 @@ class RelayPool(private val prefs: SharedPreferences? = null) {
                                 }
                             }
                         }
-                        if (shouldEmit) {
-                            // Verify signature off the hot path — retract if invalid
-                            scope.launch(Dispatchers.Default) {
-                                if (!msg.event.verifySignature()) {
-                                    Log.w("RelayPool", "Invalid signature: id=${msg.event.id.take(12)} kind=${msg.event.kind} relay=${relay.config.url}")
-                                    _invalidEvents.tryEmit(msg.event.id)
-                                }
+                        // Verify every relay copy, including duplicates suppressed from the feed.
+                        scope.launch(Dispatchers.Default) {
+                            if (eventProvenance.verifyAndRecord(msg.event, relay.config.url)) {
+                                _verifiedRelayEvents.emit(RelayEvent(msg.event, relay.config.url, msg.subscriptionId))
+                            } else if (shouldEmit) {
+                                // A suppressed invalid duplicate must not retract a cached valid copy.
+                                _invalidEvents.tryEmit(msg.event.id)
                             }
+                        }
+                        if (shouldEmit) {
                             if (msg.event.kind == 1018) {
                                 Log.d("POLL", "[Pool] emit kind 1018 id=${msg.event.id.take(12)} sub=${msg.subscriptionId} relay=${relay.config.url}")
                             }
@@ -601,6 +609,22 @@ class RelayPool(private val prefs: SharedPreferences? = null) {
         return sentCount
     }
 
+    /** Explicit publication attempt, without leaving an EVENT in the reconnect queue. */
+    suspend fun sendPublicationToRelay(url: String, event: NostrEvent): Boolean {
+        if (url in blockedUrls || !RelayConfig.isValidUrl(url)) return false
+        if (relayIndex[url] == null) {
+            if (healthTracker?.isBad(url) == true) return false
+            if (System.currentTimeMillis() < (relayCooldowns[url] ?: 0L)) return false
+            connectEphemeralRelay(url)
+        }
+        val relay = relayIndex[url] ?: return false
+        relay.resetBackoff()
+        relay.connect()
+        if (!relay.awaitConnected(5000)) return false
+        if (ephemeralRelays.containsKey(url)) ephemeralLastUsed[url] = System.currentTimeMillis()
+        return relay.send(ClientMessage.event(event), queueIfDisconnected = false)
+    }
+
     /** Send an EVENT message to all relays (read + write) so every relay gets it. */
     fun sendToAllRelays(message: String): Int {
         var sentCount = 0
@@ -668,28 +692,9 @@ class RelayPool(private val prefs: SharedPreferences? = null) {
         return final
     }
 
-    /**
-     * Start tracking OK responses for a published event.
-     * Updates [broadcastState] as relays respond, then auto-clears after all respond or timeout.
-     */
-    fun trackPublish(eventId: String, sentCount: Int) {
-        _broadcastState.value = BroadcastState(accepted = 0, sent = sentCount)
-        scope.launch {
-            var accepted = 0
-            var received = 0
-            withTimeoutOrNull(5000L) {
-                _publishResults
-                    .filter { it.eventId == eventId }
-                    .collect {
-                        if (it.accepted) accepted++
-                        received++
-                        _broadcastState.value = BroadcastState(accepted = accepted, sent = sentCount)
-                        if (received >= sentCount) return@collect
-                    }
-            }
-            delay(1500)
-            _broadcastState.value = null
-        }
+    /** UI summary only. Durable, per-event delivery state lives in NotePublisher. */
+    fun setBroadcastState(state: BroadcastState?) {
+        _broadcastState.value = state
     }
 
     fun sendToReadRelays(message: String) {

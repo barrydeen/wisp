@@ -42,6 +42,14 @@ Wisp implements a full NIP-65 outbox/inbox model with relay scoring:
 - **NIP-42 authentication** — signs AUTH challenges only for relays the user has explicitly approved, with persisted approvals, and waits for AUTH before sending sensitive publishes (DMs, group events)
 - **NIP-11 relay info** — fetches and respects relay metadata, capabilities, and limitations
 
+### Recoverable Note Publication
+
+Public posts are saved locally before sending. Use **Rebroadcast** in your own post's menu to resend the same signed event. Publication status shows each relay's acceptance, rejection, send failure or missing confirmation; a successful WebSocket send alone does not confirm publication.
+
+Recovery data belongs to each account and is removed after an accepted [NIP-01 OK response](https://github.com/nostr-protocol/nips/blob/master/01.md) or an identical relay copy with a verified ID and signature. Posts already confirmed this way do not enter recovery storage. At most 100 compact delivery receipts remain, without post content, tags or signatures.
+
+The composer completes after the post is saved; relay results cannot close another screen or clear a newer draft. Interrupted posts remain available for manual rebroadcast after a restart. Account changes and PoW cancellation stop previous operations without deleting saved posts. Reconnecting does not automatically resend them. Private replies, DMs and scheduled posts retain their existing delivery paths.
+
 ### Privacy & Private Messaging
 
 - **NIP-17 gift-wrap DMs** — three-layer privacy model (rumor → seal → gift wrap) with timestamp randomization

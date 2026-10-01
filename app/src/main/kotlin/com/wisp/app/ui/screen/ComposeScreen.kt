@@ -168,6 +168,7 @@ fun ComposeScreen(
     powPrefs: PowPreferences? = null,
     resolvedEmojis: Map<String, String> = emptyMap()
 ) {
+    val editor by com.wisp.app.ui.component.rememberComposeEditor(viewModel)
     val content by viewModel.content.collectAsState()
     val publishing by viewModel.publishing.collectAsState()
     val error by viewModel.error.collectAsState()
@@ -1289,7 +1290,9 @@ fun ComposeScreen(
                 } else {
                     Button(
                         onClick = {
+                            val owner = editor ?: return@Button
                             viewModel.publish(
+                                editor = owner,
                                 relayPool = relayPool,
                                 replyTo = replyTo,
                                 quoteTo = quoteTo,
@@ -1302,7 +1305,7 @@ fun ComposeScreen(
                                 resolvedEmojis = resolvedEmojis
                             )
                         },
-                        enabled = !publishing && !isMiningBusy,
+                        enabled = editor != null && !publishing && !isMiningBusy,
                         modifier = Modifier.fillMaxWidth().height(44.dp),
                         contentPadding = PaddingValues(0.dp)
                     ) {

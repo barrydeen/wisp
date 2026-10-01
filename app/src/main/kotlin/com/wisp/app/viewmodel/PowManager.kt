@@ -1,20 +1,16 @@
 package com.wisp.app.viewmodel
 
-import com.wisp.app.nostr.ClientMessage
 import com.wisp.app.nostr.Nip13
-import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.NostrSigner
-import com.wisp.app.relay.OutboxRouter
-import com.wisp.app.relay.RelayPool
-import com.wisp.app.repo.EventRepository
-import com.wisp.app.repo.PowPreferences
-import kotlinx.coroutines.CoroutineScope
+import com.wisp.app.repo.NotePublisher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 sealed class PowStatus {
@@ -25,16 +21,15 @@ sealed class PowStatus {
 }
 
 class PowManager(
-    private val powPrefs: PowPreferences,
-    private val relayPool: RelayPool,
-    private val outboxRouter: OutboxRouter,
-    private val eventRepo: EventRepository,
-    private val scope: CoroutineScope
+    private val getDifficulty: () -> Int,
+    private val getPublisher: () -> NotePublisher?,
+    private val miningDispatcher: CoroutineDispatcher = Dispatchers.Default
 ) {
     private val _status = MutableStateFlow<PowStatus>(PowStatus.Idle)
     val status: StateFlow<PowStatus> = _status
 
     private var miningJob: Job? = null
+    private var generation = 0L
 
     val isBusy: Boolean get() = _status.value is PowStatus.Mining
 
@@ -46,16 +41,19 @@ class PowManager(
         replyToPubkey: String? = null,
         inboxPubkeys: Collection<String> = replyToPubkey?.let { listOf(it) } ?: emptyList(),
         onPublished: (() -> Unit)? = null
-    ) {
-        miningJob?.cancel()
-        val difficulty = powPrefs.getNoteDifficulty()
+    ): Boolean {
+        val notePublisher = getPublisher() ?: return false
+        if (!notePublisher.isActive || signer.pubkeyHex != notePublisher.accountPubkey) return false
+        cancel()
+        val token = generation
+        val difficulty = getDifficulty()
         val createdAt = System.currentTimeMillis() / 1000
 
-        miningJob = scope.launch {
+        miningJob = notePublisher.launchWork {
             try {
                 _status.value = PowStatus.Mining(kind, 0, difficulty)
 
-                val result = withContext(Dispatchers.Default) {
+                val result = withContext(miningDispatcher) {
                     Nip13.mine(
                         pubkeyHex = signer.pubkeyHex,
                         kind = kind,
@@ -64,7 +62,9 @@ class PowManager(
                         targetDifficulty = difficulty,
                         createdAt = createdAt,
                         onProgress = { attempts ->
-                            _status.value = PowStatus.Mining(kind, attempts, difficulty)
+                            notePublisher.launchWork {
+                                if (token == generation) _status.value = PowStatus.Mining(kind, attempts, difficulty)
+                            }
                         }
                     )
                 }
@@ -76,40 +76,20 @@ class PowManager(
                     createdAt = result.createdAt
                 )
 
-                val msg = ClientMessage.event(event)
-                var sentCount = if (inboxPubkeys.isNotEmpty()) {
-                    outboxRouter.publishToInbox(msg, inboxPubkeys)
-                } else {
-                    relayPool.sendToWriteRelays(msg)
-                }
-
-                if (sentCount == 0) {
-                    val reconnected = relayPool.ensureWriteRelaysConnected()
-                    if (reconnected > 0) {
-                        sentCount = if (inboxPubkeys.isNotEmpty()) {
-                            outboxRouter.publishToInbox(msg, inboxPubkeys)
-                        } else {
-                            relayPool.sendToWriteRelays(msg)
-                        }
-                    }
-                }
-
-                if (sentCount == 0) {
-                    _status.value = PowStatus.Failed("No relays connected")
-                    delay(3000)
-                    _status.value = PowStatus.Idle
-                    return@launch
-                }
-
-                relayPool.trackPublish(event.id, sentCount)
-                eventRepo.addEvent(event)
+                val publication = notePublisher.publish(event, inboxPubkeys)
+                currentCoroutineContext().ensureActive()
                 onPublished?.invoke()
 
-                _status.value = PowStatus.Done("Published to $sentCount relay${if (sentCount != 1) "s" else ""}")
+                val accepted = publication.acceptedCount
+                _status.value = if (accepted > 0) {
+                    PowStatus.Done("Confirmed by $accepted relay${if (accepted != 1) "s" else ""}")
+                } else {
+                    PowStatus.Failed("No relay confirmed publication. Note saved; use Rebroadcast to retry.")
+                }
                 delay(3000)
                 _status.value = PowStatus.Idle
             } catch (e: kotlinx.coroutines.CancellationException) {
-                _status.value = PowStatus.Idle
+                if (token == generation) _status.value = PowStatus.Idle
                 throw e
             } catch (e: Exception) {
                 _status.value = PowStatus.Failed(e.message ?: "Mining failed")
@@ -117,9 +97,11 @@ class PowManager(
                 _status.value = PowStatus.Idle
             }
         }
+        return true
     }
 
     fun cancel() {
+        generation++
         miningJob?.cancel()
         miningJob = null
         _status.value = PowStatus.Idle
