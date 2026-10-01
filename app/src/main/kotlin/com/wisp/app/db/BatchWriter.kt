@@ -1,5 +1,6 @@
 package com.wisp.app.db
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -43,7 +44,13 @@ internal class BatchWriter<T>(
             if (batch.isEmpty()) return
             try {
                 write(batch)
-            } catch (e: Exception) {
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                // Report-once tradeoff: only the first unreported failure is kept for the next
+                // flush/shutdown (later ones are coalesced), but every failure hits onFailure.
+                // Catching Throwable keeps JNI/linkage errors from killing the worker and
+                // hanging pending flush() callers.
                 failure = failure ?: e
                 onFailure(e)
             } finally {

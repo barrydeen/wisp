@@ -11,6 +11,19 @@ import org.junit.Test
 
 class BatchWriterTest {
     @Test
+    fun nonExceptionThrowableDoesNotKillWorkerOrHangFlush() = runBlocking {
+        val failNext = AtomicBoolean(true)
+        val writer = BatchWriter<Int>(settleMillis = 1, onFailure = {}) {
+            if (failNext.getAndSet(false)) throw UnsatisfiedLinkError("jni")
+        }
+        writer.enqueue(1)
+        assertTrue(withTimeout(2_000) { runCatching { writer.flush() }.isFailure })
+        writer.enqueue(2)
+        withTimeout(2_000) { writer.flush() }
+        writer.shutdown()
+    }
+
+    @Test
     fun flushAwaitsDurabilityOfAcceptedWrites() = runBlocking {
         val written = CopyOnWriteArrayList<List<Int>>()
         val writer = BatchWriter<Int>(settleMillis = 5, onFailure = {}) { written.add(it.toList()) }

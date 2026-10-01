@@ -18,6 +18,21 @@ import org.junit.Test
 
 class BoundedVerificationTest {
     @Test
+    fun nonExceptionThrowableFailsClosedAndWorkerSurvives() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        try {
+            val verifier = BoundedVerification<String>(scope, workerCount = 1) {
+                if (it == "boom") throw UnsatisfiedLinkError("jni")
+                true
+            }
+            assertFalse(withTimeout(2_000) { verifier.verify("boom") })
+            assertTrue(withTimeout(2_000) { verifier.verify("ok") })
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
     fun cacheIncludesPayloadAndSignatureNotJustClaimedId() = runBlocking {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         try {

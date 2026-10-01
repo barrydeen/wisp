@@ -1,5 +1,6 @@
 package com.wisp.app.relay
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -30,9 +31,14 @@ internal class BoundedVerification<K : Any>(
                         size > cacheSize
                 }
                 for (request in queue) {
+                    // Fail closed on any Throwable (e.g. JNI UnsatisfiedLinkError, OOM) so the
+                    // worker survives and no caller is left awaiting a result forever.
                     val valid = cache[request.key] ?: try {
                         verify(request.key)
-                    } catch (_: Exception) {
+                    } catch (e: CancellationException) {
+                        request.result.cancel(e)
+                        throw e
+                    } catch (_: Throwable) {
                         false
                     }.also { cache[request.key] = it }
                     request.result.complete(valid)
