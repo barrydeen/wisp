@@ -385,6 +385,14 @@ class NwcRepository(private val context: Context, private val relayPool: RelayPo
         }
     }
 
+    suspend fun disconnectAndJoin() {
+        val oldJob = scope?.coroutineContext?.get(kotlinx.coroutines.Job)
+        disconnect()
+        oldJob?.join()
+        // A cancelled negotiation may have been returning when disconnect ran.
+        disconnect()
+    }
+
     override fun disconnect() {
         scope?.cancel()
         scope = null
@@ -393,6 +401,12 @@ class NwcRepository(private val context: Context, private val relayPool: RelayPo
         connection = null
         _isReady.value = false
         _isConnected.value = false
+        _balance.value = null
+        _nodeAlias.value = null
+        _supportedMethods.value = emptyList()
+        _connectionInfo.value = null
+        pendingRequests.values.toList().forEach { it.cancel() }
+        pendingRequests.clear()
     }
 
     private fun createEncPrefs(pubkeyHex: String?) = EncryptedSharedPreferences.create(

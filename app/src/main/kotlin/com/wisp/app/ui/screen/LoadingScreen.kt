@@ -49,23 +49,36 @@ fun LoadingScreen(
     val initLoadingState by viewModel.initLoadingState.collectAsState()
     val feed by viewModel.feed.collectAsState()
     val initialLoadDone by viewModel.initialLoadDone.collectAsState()
+    val switching by viewModel.accountSwitching.collectAsState()
+    val generation by viewModel.accountGeneration.collectAsState()
 
-    var minTimeElapsed by remember { mutableStateOf(false) }
-    var timedOut by remember { mutableStateOf(false) }
+    var minTimeElapsed by remember(generation, switching) { mutableStateOf(false) }
+    var timedOut by remember(generation, switching) { mutableStateOf(false) }
+    // Feed "settle": true once the feed stopped growing for a short window, so we
+    // never dismiss into a feed that is still visibly filling in (account switches
+    // seed thousands of events in one burst, then trickle).
+    var feedSettled by remember(generation, switching) { mutableStateOf(false) }
+    LaunchedEffect(feed.size, generation, switching) {
+        feedSettled = false
+        if (!switching && feed.isNotEmpty()) {
+            delay(400)
+            feedSettled = true
+        }
+    }
 
-    val pubkey = remember { viewModel.getUserPubkey() }
-    val cachedProfile = remember { pubkey?.let { viewModel.profileRepo.get(it) } }
+    val pubkey = remember(generation, switching) { if (switching) null else viewModel.getUserPubkey() }
+    val cachedProfile = remember(pubkey) { pubkey?.let { viewModel.profileRepo.get(it) } }
 
     // Use locally cached avatar file if available (instant, no network/decode overhead),
     // otherwise fall back to the remote URL
-    val localAvatar = remember { pubkey?.let { viewModel.profileRepo.getLocalAvatar(it) } }
+    val localAvatar = remember(pubkey) { pubkey?.let { viewModel.profileRepo.getLocalAvatar(it) } }
 
     // Sticky profile state — once we learn the profile pic/name, keep showing it
-    var stickyPicture by remember { mutableStateOf(localAvatar ?: cachedProfile?.picture) }
-    var stickyName by remember { mutableStateOf(cachedProfile?.displayString) }
+    var stickyPicture by remember(pubkey) { mutableStateOf(localAvatar ?: cachedProfile?.picture) }
+    var stickyName by remember(pubkey) { mutableStateOf(cachedProfile?.displayString) }
 
     // Update sticky state whenever FoundProfile is emitted
-    if (initLoadingState is InitLoadingState.FoundProfile) {
+    if (!switching && initLoadingState is InitLoadingState.FoundProfile) {
         val fp = initLoadingState as InitLoadingState.FoundProfile
         stickyPicture = fp.picture
         stickyName = fp.name
@@ -74,21 +87,25 @@ fun LoadingScreen(
     val showProfilePic = stickyPicture != null
 
     // Minimum display time
-    LaunchedEffect(Unit) {
+    LaunchedEffect(generation, switching) {
+        if (switching) return@LaunchedEffect
         delay(1500)
         minTimeElapsed = true
     }
 
     // Safety timeout
-    LaunchedEffect(Unit) {
+    LaunchedEffect(generation, switching) {
+        if (switching) return@LaunchedEffect
         delay(30_000)
         timedOut = true
     }
 
-    // Navigate when ready: require Done + feed content, with a brief settle delay.
-    // Early exit: if min time elapsed and we already have 5+ notes, go to feed even
-    // before EOSE — notes will continue trickling in via the open subscription.
-    LaunchedEffect(minTimeElapsed, initLoadingState, timedOut, feed.size, initialLoadDone) {
+    // Navigate when ready: require Done + feed content, or 5+ notes and a quiet
+    // feed. The feedSettled requirement means we never dismiss the exact moment
+    // new events land mid-insert — dismissal always lands on a stable, fully
+    // painted feed (cards no longer visibly pop in behind the transition).
+    LaunchedEffect(minTimeElapsed, initLoadingState, timedOut, feed.size, initialLoadDone, feedSettled, generation, switching) {
+        if (switching || viewModel.accountSwitching.value || generation != viewModel.accountGeneration.value) return@LaunchedEffect
         val initDone = initLoadingState == InitLoadingState.Done
         val feedReady = feed.isNotEmpty()
         if (timedOut && feedReady) {
@@ -101,10 +118,12 @@ fun LoadingScreen(
         } else if (minTimeElapsed && initDone && feedReady) {
             // Brief settle so "Done" state is visible
             delay(300)
+            if (viewModel.accountSwitching.value || generation != viewModel.accountGeneration.value) return@LaunchedEffect
             viewModel.markLoadingComplete()
             onReady()
-        } else if (minTimeElapsed && feed.size >= 5) {
-            // Early exit: enough notes to show a useful feed, don't wait for full EOSE
+        } else if (minTimeElapsed && feed.size >= 5 && feedSettled) {
+            // Early exit: enough notes to show a useful feed and the feed has gone
+            // quiet — don't wait for full EOSE, notes keep trickling after.
             viewModel.markLoadingComplete()
             onReady()
         }

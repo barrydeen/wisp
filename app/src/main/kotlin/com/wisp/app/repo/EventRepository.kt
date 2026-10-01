@@ -16,15 +16,20 @@ import com.wisp.app.nostr.ProfileData
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import com.wisp.app.db.EventPersistence
 import java.util.concurrent.ConcurrentHashMap
+
+private const val ADDRESS_INDEX_CAPACITY = 512
 
 data class ZapDetail(
     val pubkey: String,
@@ -45,6 +50,23 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     /** Late-bound for DIP-03 private zap decryption (recipient + self-attribution). */
     var keyRepo: KeyRepository? = null
     private val eventCache = ConcurrentHashMap<String, NostrEvent>()
+    // Insertion-ordered (not access-ordered, so reads never mutate) and capped: live-stream/
+    // emoji-pack spam (kinds 10k/30k) would otherwise grow this forever on long sessions.
+    // Evicted addresses still resolve via the eventCache fallback in addressSnapshot().
+    // addressIdIndex maps event id -> address for O(1) removal. Guarded by `synchronized(this)`.
+    private val addressIdIndex = HashMap<String, String>()
+    private val addressIndex = object : LinkedHashMap<String, NostrEvent>() {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, NostrEvent>): Boolean {
+            if (size <= ADDRESS_INDEX_CAPACITY) return false
+            addressIdIndex.remove(eldest.value.id)
+            return true
+        }
+    }
+    private val pendingAvailabilityIds = mutableSetOf<String>()
+    private val pendingAvailabilityAddresses = mutableSetOf<String>()
+    private val eventObservations = KeyedObservation<String, NostrEvent?>(this, ::peekEvent)
+    private val addressObservations = KeyedObservation<String, NostrEvent?>(this, ::addressSnapshot)
+    @Volatile private var closed = false
     private val seenEventIds = ConcurrentHashMap.newKeySet<String>()  // thread-safe dedup that doesn't evict
 
     // NIP-17 private events: event IDs (= rumor IDs) of any rumor we materialised from a gift wrap
@@ -209,6 +231,137 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     private val _onlinePubkeys = MutableStateFlow<List<String>>(emptyList())
     val onlinePubkeys: StateFlow<List<String>> = _onlinePubkeys
 
+    // Fine-grained per-event engagement versions. Feed items collect their own event's
+    // version so a reaction/zap/reply/repost on one post no longer recomposes every
+    // visible card. Flushed in the same 50ms window as the global category counters —
+    // only events actually touched by the window are bumped.
+    private var observationVersion = 1
+    private val eventVersionFlows = KeyedObservation<String, Int>(this) { observationVersion }
+    private val pendingEventVersionIds = ConcurrentHashMap.newKeySet<String>()
+    private val profileVersionFlows = KeyedObservation<String, Int>(this) { observationVersion }
+    private val pendingProfileVersionKeys = ConcurrentHashMap.newKeySet<String>()
+
+    /** Collector-owned invalidation Flow; Compose: collectAsState(initial = 0). Emits on registration. */
+    fun engagementVersion(eventId: String): Flow<Int> = eventVersionFlows.observe(eventId)
+
+    /** Collector-owned invalidation Flow; Compose: collectAsState(initial = 0). Emits on registration. */
+    fun profileVersionFor(pubkey: String): Flow<Int> = profileVersionFlows.observe(pubkey)
+
+    private fun addressKey(kind: Int, author: String, dTag: String) = "$kind:$author:$dTag"
+
+    /** Address key for replaceable and parameterized-replaceable events, otherwise null. */
+    private fun addressableKey(event: NostrEvent): String? {
+        if (event.kind !in 10000..19999 && event.kind !in 30000..39999) return null
+        val dTag = event.tags.firstOrNull { it.size >= 2 && it[0] == "d" }?.get(1) ?: ""
+        return addressKey(event.kind, event.pubkey, dTag)
+    }
+
+    /** Visibility filter shared by all observation snapshots (no disk I/O). */
+    private fun isVisible(event: NostrEvent): Boolean {
+        if (muteRepo?.isBlocked(event.pubkey) == true) return false
+        if (deletedEventsRepo?.isDeleted(event.id) == true) return false
+        return true
+    }
+
+    /** Memory-only lookup — safe to call from composition (never touches ObjectBox). */
+    fun peekEvent(id: String): NostrEvent? = eventCache[id]?.takeIf(::isVisible)
+
+    /**
+     * Reactive event observation. Emits the current cached state immediately (null when
+     * absent), then again whenever the event arrives or is removed. Callers pair this with
+     * requestQuotedEvent()/requestOwnEvent() to fetch misses — arrival wakes the observers.
+     */
+    fun observeEvent(id: String): Flow<NostrEvent?> = eventObservations.observe(id)
+
+    /** Reactive addressable-event observation keyed by kind:author:d-tag. */
+    fun observeAddressableEvent(kind: Int, author: String, dTag: String): Flow<NostrEvent?> =
+        addressObservations.observe(addressKey(kind, author, dTag))
+
+    /** Newest visible event for [key], from the capped index or still in [eventCache]. */
+    private fun addressSnapshot(key: String): NostrEvent? {
+        addressIndex[key]?.takeIf(::isVisible)?.let { return it }
+        val parts = key.split(":", limit = 3)
+        if (parts.size < 3) return null
+        val kind = parts[0].toIntOrNull() ?: return null
+        val author = parts[1]
+        if (muteRepo?.isBlocked(author) == true) return null
+        val dTag = parts[2]
+        var best: NostrEvent? = null
+        for (event in eventCache.values) {
+            if (event.kind != kind || event.pubkey != author || !isVisible(event)) continue
+            val eventDTag = event.tags.firstOrNull { it.size >= 2 && it[0] == "d" }?.get(1) ?: ""
+            if (eventDTag != dTag) continue
+            if (best == null || best.created_at <= event.created_at) best = event
+        }
+        return best
+    }
+
+    /** Index the newest event per address (capped) and wake collectors. Takes the repository lock. */
+    private fun trackIncoming(event: NostrEvent) {
+        var dirty = false
+        synchronized(this) {
+            if (eventObservations.hasCollectors(event.id)) {
+                pendingAvailabilityIds.add(event.id)
+                dirty = true
+            }
+            val key = addressableKey(event)
+            if (key != null) {
+                val existing = addressIndex[key]
+                if (existing == null || existing.created_at <= event.created_at) {
+                    if (existing != null && existing.id != event.id) addressIdIndex.remove(existing.id)
+                    addressIndex[key] = event
+                    addressIdIndex[event.id] = key
+                    if (existing?.id != event.id && addressObservations.hasCollectors(key)) {
+                        pendingAvailabilityAddresses.add(key)
+                        dirty = true
+                    }
+                }
+            }
+        }
+        if (dirty) versionDirty.trySend(Unit)
+    }
+
+    /** Publish pending event/address availability updates. Must be called under `this` lock. */
+    private fun publishAvailability() {
+        if (pendingAvailabilityIds.isNotEmpty()) {
+            val drained = pendingAvailabilityIds.toSet()
+            pendingAvailabilityIds.clear()
+            for (id in drained) eventObservations.publish(id)
+        }
+        if (pendingAvailabilityAddresses.isNotEmpty()) {
+            val drained = pendingAvailabilityAddresses.toSet()
+            pendingAvailabilityAddresses.clear()
+            for (key in drained) addressObservations.publish(key)
+        }
+    }
+
+    /** Publish current (post-change) snapshots to all availability observers. */
+    private fun republishAvailability() = synchronized(this) {
+        eventObservations.publishAll()
+        addressObservations.publishAll()
+    }
+
+    /** Cancel internal emission jobs and complete all observation Flows. */
+    fun shutdown() {
+        if (closed) return
+        closed = true
+        scope.cancel()
+        eventObservations.close()
+        addressObservations.close()
+        eventVersionFlows.close()
+        profileVersionFlows.close()
+    }
+
+    private fun markEventVersionDirty(eventId: String) {
+        pendingEventVersionIds.add(eventId)
+        versionDirty.trySend(Unit)
+    }
+
+    private fun markProfileVersionDirty(pubkey: String) {
+        pendingProfileVersionKeys.add(pubkey)
+        versionDirty.trySend(Unit)
+    }
+
     // Debouncing: coalesce rapid-fire feed list and version updates
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val feedDirty = Channel<Unit>(Channel.CONFLATED)
@@ -232,7 +385,9 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         scope.launch {
             for (signal in relayFeedInserted) {
                 delay(50)
-                _relayFeed.value = synchronized(relayFeedList) { relayFeedList.toList() }
+                synchronized(this@EventRepository) {
+                    synchronized(relayFeedList) { _relayFeed.value = relayFeedList.toList() }
+                }
             }
         }
         // Immediate emission channel — used for explicit flushes (purge, filter change, etc.)
@@ -253,6 +408,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
             for (signal in versionDirty) {
                 // Drain all pending flags and wait for a quiet period
                 delay(50)
+                synchronized(this@EventRepository) {
                 if (pendingProfile || profileDirty) { _profileVersion.value++; profileDirty = false }
                 if (pendingReaction || reactionDirty) { _reactionVersion.value++; reactionDirty = false }
                 if (pendingReplyCount || replyCountDirtyFlag) { _replyCountVersion.value++; replyCountDirtyFlag = false }
@@ -267,6 +423,21 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                 pendingRepost = false
                 pendingRelaySource = false
                 pendingPollVote = false
+                // Per-event engagement versions — bump only the events touched in this window
+                if (pendingEventVersionIds.isNotEmpty()) {
+                    val drained = pendingEventVersionIds.toSet()
+                    pendingEventVersionIds.removeAll(drained)
+                    observationVersion++
+                    for (id in drained) eventVersionFlows.publish(id)
+                }
+                if (pendingProfileVersionKeys.isNotEmpty()) {
+                    val drained = pendingProfileVersionKeys.toSet()
+                    pendingProfileVersionKeys.removeAll(drained)
+                    observationVersion++
+                    for (pk in drained) profileVersionFlows.publish(pk)
+                }
+                publishAvailability()
+                }
             }
         }
         // Online users: debounce updates triggered by new events
@@ -299,10 +470,6 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     @Volatile private var repostDirty = false
     @Volatile private var relaySourceDirtyFlag = false
     @Volatile private var pollVoteDirty = false
-
-    private fun markVersionDirty() {
-        versionDirty.trySend(Unit)
-    }
 
     private val WOT_EXEMPT_KINDS = intArrayOf(0, 3, 4, 10002, 10050, 1059, 13, 14)
 
@@ -354,6 +521,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         // Zap receipts (9735) are cached for the zap inspector debug feature.
         if (event.kind != 7 && event.kind != 6 && event.kind != Nip88.KIND_POLL_RESPONSE) {
             eventCache[event.id] = event
+            trackIncoming(event)
         }
         eventPersistence?.persistEvent(event)
         relayHintStore?.extractHintsFromTags(event)
@@ -363,7 +531,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                 val updated = profileRepo?.updateFromEvent(event)
                 if (updated != null) {
                     profileDirty = true
-                    markVersionDirty()
+                    markProfileVersionDirty(event.pubkey)
                     updateAccountRegistryIfKnownAccount(event.pubkey, updated)
                 }
             }
@@ -399,7 +567,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                             userReposts.put(inner.id, true)
                         }
                         repostDirty = true
-                        markVersionDirty()
+                        markEventVersionDirty(inner.id)
                         val isReply = Nip10.isReply(inner)
                         // Only bump feed sort time if the reposter is a followed author.
                         // Engagement subscriptions bring in reposts from anyone — non-followed
@@ -408,6 +576,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                         val reposterIsFollowed = filter == null || event.pubkey in filter
                         if (seenEventIds.add(inner.id)) {
                             eventCache[inner.id] = inner
+                            trackIncoming(inner)
                             if (!isReply) {
                                 if (reposterIsFollowed) {
                                     feedSortTime.put(inner.id, event.created_at)
@@ -546,7 +715,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
             emojiMap[emoji] = event.id
         }
         reactionDirty = true
-        markVersionDirty()
+        markEventVersionDirty(targetEventId)
     }
 
     private fun addPollVote(event: NostrEvent) {
@@ -603,7 +772,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         }
 
         pollVoteDirty = true
-        markVersionDirty()
+        markEventVersionDirty(pollId)
     }
 
     fun getPollVoteCounts(pollId: String): Map<String, Int> {
@@ -650,7 +819,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         }
 
         pollVoteDirty = true
-        markVersionDirty()
+        markEventVersionDirty(pollId)
     }
 
     fun getZapPollSatsCounts(pollId: String): Map<Int, Long> {
@@ -771,6 +940,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         if (eventCache.containsKey(event.id)) return
         seenEventIds.add(event.id)
         eventCache[event.id] = event
+        trackIncoming(event)
         // Don't persist future-dated notes — scheduled posts fetched from the scheduler
         // relay would poison the ObjectBox cache and the feed's since filter on next boot.
         if (event.created_at <= System.currentTimeMillis() / 1000 + 30) {
@@ -781,7 +951,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
             val updated = profileRepo?.updateFromEvent(event)
             if (updated != null) {
                 profileDirty = true
-                markVersionDirty()
+                markProfileVersionDirty(event.pubkey)
                 updateAccountRegistryIfKnownAccount(event.pubkey, updated)
             }
         }
@@ -791,7 +961,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     }
 
     fun removeEvent(eventId: String) {
-        eventCache.remove(eventId)
+        val removed = eventCache.remove(eventId)
         synchronized(feedList) {
             if (feedIds.remove(eventId)) {
                 feedList.removeAll { it.id == eventId }
@@ -808,6 +978,29 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         }
         feedDirty.trySend(Unit)
         _removedEvents.tryEmit(eventId)
+        var dirty = false
+        synchronized(this) {
+            if (eventObservations.hasCollectors(eventId)) {
+                pendingAvailabilityIds.add(eventId)
+                dirty = true
+            }
+            val key = addressIdIndex.remove(eventId)
+            if (key != null && addressIndex[key]?.id == eventId) {
+                addressIndex.remove(key)
+                if (addressObservations.hasCollectors(key)) {
+                    pendingAvailabilityAddresses.add(key)
+                    dirty = true
+                }
+            } else {
+                val address = removed?.let(::addressableKey)
+                val indexed = address?.let { addressIndex[it] }
+                if (address != null && (indexed == null || !isVisible(indexed)) && addressObservations.hasCollectors(address)) {
+                    pendingAvailabilityAddresses.add(address)
+                    dirty = true
+                }
+            }
+        }
+        if (dirty) versionDirty.trySend(Unit)
     }
 
     fun requestQuotedEvent(eventId: String, relayHints: List<String> = emptyList()) {
@@ -888,6 +1081,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
             if (muteRepo?.isBlocked(event.pubkey) == true) continue
             if (!seenEventIds.add(event.id)) continue
             eventCache[event.id] = event
+            trackIncoming(event)
             if (event.kind == 0) {
                 val updated = profileRepo?.updateFromEvent(event)
                 if (updated != null) updateAccountRegistryIfKnownAccount(event.pubkey, updated)
@@ -1027,14 +1221,14 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         }
 
         reactionDirty = true
-        markVersionDirty()
+        markEventVersionDirty(eventId)
     }
 
     fun addZapSats(eventId: String, sats: Long) {
         val current = zapSats.get(eventId) ?: 0L
         zapSats.put(eventId, current + sats)
         zapDirty = true
-        markVersionDirty()
+        markEventVersionDirty(eventId)
     }
 
     fun getZapSats(eventId: String): Long = zapSats.get(eventId) ?: 0L
@@ -1065,7 +1259,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         val current = replyCounts.get(parentEventId) ?: 0
         replyCounts.put(parentEventId, current + 1)
         replyCountDirtyFlag = true
-        markVersionDirty()
+        markEventVersionDirty(parentEventId)
         return true
     }
 
@@ -1114,7 +1308,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         }
         if (relays.add(relayUrl)) {
             relaySourceDirtyFlag = true
-            markVersionDirty()
+            markEventVersionDirty(eventId)
         }
     }
 
@@ -1157,7 +1351,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
             ?: ConcurrentHashMap.newKeySet<String>().also { repostAuthors.put(eventId, it) }
         if (currentUserPubkey != null) authors.add(currentUserPubkey!!)
         repostDirty = true
-        markVersionDirty()
+        markEventVersionDirty(eventId)
     }
 
     fun hasUserReposted(eventId: String): Boolean = userReposts.get(eventId) == true
@@ -1260,6 +1454,14 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                 seenEventIds.remove(id)  // allow re-entry if later unblocked
             }
         }
+        synchronized(this) {
+            addressIndex.entries.removeIf { entry ->
+                if (entry.value.pubkey != pubkey) return@removeIf false
+                addressIdIndex.remove(entry.value.id)
+                true
+            }
+        }
+        republishAvailability()
         feedDirty.trySend(Unit)
     }
 
@@ -1410,7 +1612,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                             userReposts.put(inner.id, true)
                         }
                         repostDirty = true
-                        markVersionDirty()
+                        markEventVersionDirty(inner.id)
                         val isReply = Nip10.isReply(inner)
                         if (!isReply) {
                             eventCache[inner.id] = inner
@@ -1468,7 +1670,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                             userReposts.put(inner.id, true)
                         }
                         repostDirty = true
-                        markVersionDirty()
+                        markEventVersionDirty(inner.id)
                         val isReply = Nip10.isReply(inner)
                         if (!isReply) {
                             eventCache[inner.id] = inner
@@ -1487,6 +1689,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
             if (!relayFeedIds.add(event.id)) return
             relayFeedList.add(event)  // append to end — preserves relay ordering
         }
+        trackIncoming(event)
         relayFeedInserted.trySend(Unit)
     }
 
@@ -1501,6 +1704,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
             }
             relayFeedList.add(low, event)
         }
+        trackIncoming(event)
         relayFeedInserted.trySend(Unit)
     }
 
@@ -1523,6 +1727,13 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         eventCache.clear()
         seenEventIds.clear()
         privateEventIds.clear()
+        synchronized(this) {
+            addressIndex.clear()
+            addressIdIndex.clear()
+            pendingAvailabilityIds.clear()
+            pendingAvailabilityAddresses.clear()
+        }
+        republishAvailability()
     }
 
     fun clearAll() {
@@ -1550,5 +1761,12 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         _zapVersion.value = 0
         _relaySourceVersion.value = 0
         _reactionVersion.value = 0
+        // Complete-on-close would strand still-collecting screens; re-publish instead so
+        // every keyed observer re-snapshots the cleared state.
+        synchronized(this) { observationVersion++ }
+        eventVersionFlows.publishAll()
+        profileVersionFlows.publishAll()
+        pendingEventVersionIds.clear()
+        pendingProfileVersionKeys.clear()
     }
 }

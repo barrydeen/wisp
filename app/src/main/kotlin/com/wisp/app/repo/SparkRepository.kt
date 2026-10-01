@@ -38,6 +38,13 @@ import breez_sdk_spark.defaultConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -81,10 +88,13 @@ class SparkRepository(
         .build()
 
     private var encPrefs = createEncPrefs(pubkeyHex)
+    private var ownerPubkey = pubkeyHex
 
     fun reload(pubkeyHex: String?) {
-        disconnect()
+        if (ownerPubkey == pubkeyHex) return
+        check(scope == null && sdk == null) { "Disconnect Spark before reloading account credentials" }
         encPrefs = createEncPrefs(pubkeyHex)
+        ownerPubkey = pubkeyHex
         _balance.value = null
     }
 
@@ -96,9 +106,13 @@ class SparkRepository(
         EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
     )
 
-    private var sdk: breez_sdk_spark.BreezSdk? = null
+    @Volatile private var sdk: breez_sdk_spark.BreezSdk? = null
     private var eventListenerId: String? = null
     private var scope: CoroutineScope? = null
+    private val lifecycleScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val lifecycleMutex = Mutex()
+    private var teardownJob: Job? = null
+    @Volatile private var generation = 0L
 
     private val _balance = MutableStateFlow<Long?>(null)
     override val balance: StateFlow<Long?> = _balance
@@ -291,11 +305,15 @@ class SparkRepository(
             return
         }
 
-        scope?.cancel()
+        disconnect()
+        val teardown = teardownJob
+        val connectGeneration = generation
         val newScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         scope = newScope
 
         newScope.launch {
+            teardown?.join()
+            lifecycleMutex.withLock {
             try {
                 emitStatus("Initializing Spark SDK...")
 
@@ -309,12 +327,19 @@ class SparkRepository(
                     storageDir = storageDir.absolutePath
                 )
 
-                val instance = connect(request)
-                sdk = instance
+                // Native connect may finish after cancellation. Retain its handle so
+                // the queued teardown can always disconnect it before another connect.
+                val instance = withContext(NonCancellable) {
+                    connect(request).also { sdk = it }
+                }
+                currentCoroutineContext().ensureActive()
 
                 // Register event listener
                 val listener = object : EventListener {
                     override suspend fun onEvent(e: SdkEvent) {
+                        if (connectGeneration != generation) return
+                        newScope.launch {
+                        if (connectGeneration != generation) return@launch
                         when (e) {
                             is SdkEvent.Synced -> {
                                 emitStatus("Synced")
@@ -341,46 +366,72 @@ class SparkRepository(
                             }
                             else -> {}
                         }
+                        }
                     }
                 }
                 eventListenerId = instance.addEventListener(listener)
-
+                currentCoroutineContext().ensureActive()
                 _isConnected.value = true
                 emitStatus("Connected to Spark")
 
                 refreshBalanceInternal()
                 claimPendingDeposits()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
+                if (connectGeneration != generation) return@withLock
                 emitStatus("Connection failed: ${e.message}")
                 Log.e(TAG, "Spark connect failed", e)
                 _isConnected.value = false
+            }
             }
         }
     }
 
     override fun disconnect() {
-        val instance = sdk
-        val listenerId = eventListenerId
-        sdk = null
-        eventListenerId = null
+        generation++
+        val oldJob = scope?.coroutineContext?.get(Job)
+        val previousTeardown = teardownJob
         scope?.cancel()
         scope = null
         _isConnected.value = false
+        _balance.value = null
+        _identityPubkey.value = null
+        preparedWithdrawal = null
 
-        // Clean up native SDK on a standalone scope so cancelling our main scope
-        // doesn't kill the teardown coroutine
-        if (instance != null) {
-            CoroutineScope(Dispatchers.IO).launch {
+        teardownJob = lifecycleScope.launch {
+            previousTeardown?.join()
+            oldJob?.join()
+            lifecycleMutex.withLock {
+                val instance = sdk
+                val listenerId = eventListenerId
+                sdk = null
+                eventListenerId = null
+                if (instance == null) return@withLock
                 try {
                     if (listenerId != null) {
                         instance.removeEventListener(listenerId)
                     }
-                    instance.disconnect()
                 } catch (e: Exception) {
-                    Log.e(TAG, "Spark disconnect error", e)
+                    Log.e(TAG, "Spark listener removal error", e)
+                } finally {
+                    try {
+                        instance.disconnect()
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Spark disconnect error", e)
+                    }
                 }
             }
         }
+    }
+
+    suspend fun disconnectAndJoin() {
+        disconnect()
+        teardownJob?.join()
+        _isConnected.value = false
+        _balance.value = null
+        _identityPubkey.value = null
+        preparedWithdrawal = null
     }
 
     // --- Balance ---
@@ -389,6 +440,8 @@ class SparkRepository(
         try {
             val instance = sdk ?: return
             val info = instance.getInfo(GetInfoRequest(ensureSynced = false))
+            currentCoroutineContext().ensureActive()
+            if (instance !== sdk) return
             _balance.value = info.balanceSats.toLong() * 1000 // convert sats to msats
             _identityPubkey.value = info.identityPubkey
         } catch (e: Exception) {
@@ -400,6 +453,8 @@ class SparkRepository(
         try {
             val instance = sdk ?: return@withContext Result.failure(Exception("Not connected"))
             val info = instance.getInfo(GetInfoRequest(ensureSynced = false))
+            currentCoroutineContext().ensureActive()
+            if (instance !== sdk) return@withContext Result.failure(Exception("Wallet changed"))
             val balanceMsats = info.balanceSats.toLong() * 1000
             _balance.value = balanceMsats
             _identityPubkey.value = info.identityPubkey

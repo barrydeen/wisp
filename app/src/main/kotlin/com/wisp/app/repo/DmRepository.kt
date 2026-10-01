@@ -38,6 +38,7 @@ class DmRepository(
     }
 
     private var myPubkey: String? = pubkeyHex
+    @Volatile private var accountGeneration = 0L
     private var prefs: SharedPreferences? =
         context?.getSharedPreferences("wisp_dm_${pubkeyHex ?: "anon"}", Context.MODE_PRIVATE)
     private var lastReadDmTimestamp: Long = prefs?.getLong("last_read_dm", 0L) ?: 0L
@@ -96,7 +97,8 @@ class DmRepository(
 
     init {
         // Seeding queries ObjectBox — dispatch off the main thread so cold-start UI isn't blocked.
-        ioScope.launch { seedFromPersistence() }
+        val generation = accountGeneration
+        ioScope.launch { seedFromPersistence(pubkeyHex, generation) }
     }
 
     /**
@@ -105,13 +107,14 @@ class DmRepository(
      * existing dedup in [addPendingGiftWrap] then short-circuits relay-redelivered wraps
      * before they hit the signer.
      */
-    private fun seedFromPersistence() {
-        val owner = myPubkey ?: return
+    private fun seedFromPersistence(pubkey: String?, generation: Long) {
+        val owner = pubkey ?: return
         val p = persistence ?: return
         val loaded = p.loadAll(owner)
         if (loaded.isEmpty()) return
         var newestSeen = 0L
         synchronized(lock) {
+            if (generation != accountGeneration || owner != myPubkey) return
             for ((convKey, msg) in loaded) {
                 if (seenGiftWraps.containsKey(msg.giftWrapId)) continue
                 seenGiftWraps[msg.giftWrapId] = msg.id
@@ -130,9 +133,9 @@ class DmRepository(
             for ((_, list) in conversations) list.sortBy { it.createdAt }
             val sorted = dmNotifItems.sortedByDescending { it.timestamp }
             _dmNotifications.value = if (sorted.size > 200) sorted.take(200) else sorted
+            if (newestSeen > lastReadDmTimestamp) _hasUnreadDms.value = true
+            updateConversationList()
         }
-        if (newestSeen > lastReadDmTimestamp) _hasUnreadDms.value = true
-        updateConversationList()
     }
 
     /**
@@ -482,20 +485,21 @@ class DmRepository(
 
     /** Call when switching accounts — clears all state and re-keys to the new pubkey. */
     fun reload(pubkeyHex: String) {
-        clear()
+        clear(clearPersisted = false)
         myPubkey = pubkeyHex
         prefs = context?.getSharedPreferences("wisp_dm_$pubkeyHex", Context.MODE_PRIVATE)
         lastReadDmTimestamp = prefs?.getLong("last_read_dm", 0L) ?: 0L
         latestGiftWrapTs = prefs?.getLong("latest_gwrap_ts", 0L) ?: 0L
         // Hydrate decrypted DMs for the new account so we don't re-decrypt on switch.
-        ioScope.launch { seedFromPersistence() }
+        val generation = accountGeneration
+        ioScope.launch { seedFromPersistence(pubkeyHex, generation) }
     }
 
-    fun clear() {
-        // Wipe persistence for the previous owner — clear() is invoked on logout / account
-        // switch where keeping decrypted DMs around would be wrong.
-        myPubkey?.let { persistence?.deleteAllForOwner(it) }
+    fun clear(clearPersisted: Boolean = true) {
         synchronized(lock) {
+            accountGeneration++
+            if (clearPersisted) myPubkey?.let { persistence?.deleteAllForOwner(it) }
+            myPubkey = null
             conversations.clear()
             conversationParticipants.clear()
             conversationKeyCache.evictAll()
@@ -516,7 +520,8 @@ class DmRepository(
         decryptingRefCount.set(0)
         soundEligibleAfter = System.currentTimeMillis() / 1000
         latestGiftWrapTs = 0L
-        prefs?.edit()?.clear()?.apply()
+        lastReadDmTimestamp = 0L
+        if (clearPersisted) prefs?.edit()?.clear()?.apply()
     }
 
     private fun updateConversationList() {

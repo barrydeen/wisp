@@ -386,7 +386,7 @@ class NotificationRepository(
         }
     }
 
-    fun clear() {
+    fun clear(clearPersisted: Boolean = false) {
         synchronized(lock) {
             seenEvents.evictAll()
             groupMap.clear()
@@ -398,6 +398,12 @@ class NotificationRepository(
             _summary24h.value = NotificationSummary()
             _hasUnread.value = false
             soundEligibleAfter = System.currentTimeMillis() / 1000
+            myOwnEventIds = emptySet()
+            if (clearPersisted) {
+                prefs.edit().clear().apply()
+                lastReadTimestamp = 0L
+                latestNotifTs = 0L
+            }
         }
         // DO NOT reset latestNotifTs or wipe prefs here — `prefs` may still
         // point to the outgoing account during switch. `reload()` re-points

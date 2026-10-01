@@ -238,6 +238,7 @@ fun WispNavHost(
     val context = LocalContext.current
     val signingMode by authViewModel.signingModeFlow.collectAsState()
     val npub by authViewModel.npub.collectAsState()
+    val accountSwitching by feedViewModel.accountSwitching.collectAsState()
     val activeSigner = remember(signingMode, npub) {
         when (signingMode) {
             SigningMode.LOCAL -> {
@@ -249,8 +250,11 @@ fun WispNavHost(
     }
 
     // Push signer into FeedViewModel when it becomes available
-    LaunchedEffect(activeSigner) {
-        activeSigner?.let { feedViewModel.setSigner(it) }
+    LaunchedEffect(activeSigner, accountSwitching) {
+        if (!accountSwitching) {
+            if (activeSigner != null) feedViewModel.setSigner(activeSigner)
+            else feedViewModel.clearSigner()
+        }
     }
 
     var replyTarget by remember { mutableStateOf<NostrEvent?>(null) }
@@ -263,30 +267,40 @@ fun WispNavHost(
     var groupListInitKey by rememberSaveable { mutableStateOf(0) }
 
     val onSwitchAccount: (String) -> Unit = { pubkeyHex ->
-        feedViewModel.clearSigner()
-        feedViewModel.resetForAccountSwitch()
-        walletViewModel.suspendForAccountSwitch()  // disconnect only, preserve credentials
-        groupListViewModel.reset()
-        authViewModel.switchAccount(pubkeyHex)
-        feedViewModel.reloadForNewAccount()
-        relayViewModel.reload()
-        blossomServersViewModel.reload()
-        composeViewModel.reloadBlossomRepo()
-        walletViewModel.refreshState()
-        groupListInitKey++
-        // initRelays() is called by the LOADING composable's LaunchedEffect
-        navController.navigate(Routes.LOADING) {
-            popUpTo(0) { inclusive = true }
+        val started = feedViewModel.beginAccountSwitch(
+            beforeKeySwap = {
+                groupListViewModel.reset()
+                walletViewModel.suspendForAccountSwitch()
+            },
+            swapKey = { authViewModel.switchAccount(pubkeyHex) }
+        ) {
+            relayViewModel.reload()
+            blossomServersViewModel.reload()
+            composeViewModel.reloadBlossomRepo()
+            walletViewModel.refreshState()
+        }
+        if (started) {
+            groupListInitKey++
+            // initRelays() is called by the LOADING composable's LaunchedEffect
+            navController.navigate(Routes.LOADING) {
+                popUpTo(0) { inclusive = true }
+            }
         }
     }
 
     val onAddAccount: () -> Unit = {
         authViewModel.previousAccountPubkey = authViewModel.keyRepo.getPubkeyHex()
         authViewModel.isAddingAccount = true
-        feedViewModel.resetForAccountSwitch()
-        walletViewModel.suspendForAccountSwitch()  // disconnect only, preserve credentials
-        navController.navigate(Routes.SPLASH) {
-            popUpTo(0) { inclusive = true }
+        feedViewModel.beginAccountSwitch(
+            beforeKeySwap = {
+                groupListViewModel.reset()
+                walletViewModel.suspendForAccountSwitch()
+            },
+            swapKey = {}
+        ) {
+            navController.navigate(Routes.SPLASH) {
+                popUpTo(0) { inclusive = true }
+            }
         }
     }
 
@@ -350,7 +364,10 @@ fun WispNavHost(
     }
 
     // Initialize group list viewmodel with shared repo; key changes on account switch to re-init
-    LaunchedEffect(groupListInitKey) {
+    LaunchedEffect(groupListInitKey, npub) {
+        feedViewModel.awaitAccountSwitch()
+        if (feedViewModel.accountSwitching.value || npub == null || authViewModel.isAddingAccount) return@LaunchedEffect
+        groupListViewModel.reset()
         feedViewModel.onGroupReconnect = { groupListViewModel.resubscribeNotifiedGroups() }
         groupListViewModel.init(feedViewModel.groupRepo, feedViewModel.relayPool, feedViewModel.eventRepo,
             feedViewModel.notifRepo, feedViewModel.getUserPubkey())
@@ -636,6 +653,7 @@ fun WispNavHost(
                     }
                 },
                 onLoggedIn = {
+                    authViewModel.isAddingAccount = false
                     feedViewModel.reloadForNewAccount()
                     relayViewModel.reload()
                     blossomServersViewModel.reload()
@@ -660,19 +678,7 @@ fun WispNavHost(
                         val prev = authViewModel.previousAccountPubkey
                         authViewModel.isAddingAccount = false
                         authViewModel.previousAccountPubkey = null
-                        if (prev != null) {
-                            authViewModel.keyRepo.switchToAccount(prev)
-                            authViewModel.keyRepo.reloadPrefs(prev)
-                        }
-                        feedViewModel.reloadForNewAccount()
-                        relayViewModel.reload()
-                        blossomServersViewModel.reload()
-                        composeViewModel.reloadBlossomRepo()
-                        feedViewModel.initRelays()
-                        walletViewModel.refreshState()
-                        navController.navigate(Routes.LOADING) {
-                            popUpTo(Routes.SPLASH) { inclusive = true }
-                        }
+                        if (prev != null) onSwitchAccount(prev)
                     }
                 } else null
             )
@@ -773,7 +779,10 @@ fun WispNavHost(
             // Ensure relays are initialized whenever the loading screen is shown —
             // covers both initial cold start and account switches (where initRelays()
             // is not called eagerly so old relay connections fully close first).
+            // On account switch this awaits the off-main repo re-key started by
+            // onSwitchAccount, so startup runs against the new account's state.
             LaunchedEffect(Unit) {
+                feedViewModel.awaitAccountSwitch()
                 feedViewModel.initRelays()
             }
             LoadingScreen(
@@ -880,13 +889,20 @@ fun WispNavHost(
                 onMoveAccount = { pubkeyHex, offset -> authViewModel.moveAccount(pubkeyHex, offset) },
                 hasEmbeddedWallet = walletViewModel.walletMode.collectAsState().value == com.wisp.app.repo.WalletMode.SPARK,
                 onLogout = {
-                    feedViewModel.clearSigner()
-                    feedViewModel.resetForAccountSwitch()
-                    walletViewModel.disconnectWallet()  // full clear — intentional logout
-                    val hasRemaining = authViewModel.logOut()
+                    var hasRemaining = false
+                    feedViewModel.beginAccountSwitch(
+                        beforeKeySwap = {
+                            groupListViewModel.reset()
+                            walletViewModel.suspendForAccountSwitch()
+                            walletViewModel.nwcRepo.clearConnection()
+                            walletViewModel.sparkRepo.clearMnemonic()
+                            walletViewModel.walletModeRepo.setMode(com.wisp.app.repo.WalletMode.NONE)
+                        },
+                        swapKey = { hasRemaining = authViewModel.logOut() },
+                        clearPersisted = true
+                    ) {
+                    groupListInitKey++
                     if (hasRemaining) {
-                        // logOut() already switched to the first remaining account
-                        feedViewModel.reloadForNewAccount()
                         relayViewModel.reload()
                         blossomServersViewModel.reload()
                         composeViewModel.reloadBlossomRepo()
@@ -902,6 +918,7 @@ fun WispNavHost(
                         navController.navigate(Routes.SPLASH) {
                             popUpTo(0) { inclusive = true }
                         }
+                    }
                     }
                 },
                 onMediaServers = {
