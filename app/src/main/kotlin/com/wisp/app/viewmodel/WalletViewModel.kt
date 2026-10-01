@@ -710,7 +710,7 @@ class WalletViewModel(
         if (state is NwcRestoreState.Found) {
             _nwcRestoreState.value = NwcRestoreState.Idle
             _connectionString.value = state.uri
-            connectNwcWallet(state.uri)
+            connectNwcWallet(state.uri, verifySetup = true)
         }
     }
 
@@ -741,7 +741,11 @@ class WalletViewModel(
         _connectionString.value = value
     }
 
-    fun connectNwcWallet(uri: String = _connectionString.value, silent: Boolean = false) {
+    fun connectNwcWallet(
+        uri: String = _connectionString.value,
+        silent: Boolean = false,
+        verifySetup: Boolean = false
+    ) {
         val trimmed = uri.trim()
         if (trimmed.isEmpty()) return
 
@@ -768,7 +772,7 @@ class WalletViewModel(
 
         startStatusCollection(nwcRepo)
         nwcRepo.connect()
-        startConnectionMonitor(nwcRepo)
+        startConnectionMonitor(nwcRepo, verifySetup = verifySetup)
     }
 
     // --- Spark Connection ---
@@ -861,7 +865,7 @@ class WalletViewModel(
         }
     }
 
-    private fun startConnectionMonitor(provider: WalletProvider) {
+    private fun startConnectionMonitor(provider: WalletProvider, verifySetup: Boolean = false) {
         connectJob?.cancel()
         val timeoutMs = if (_walletMode.value == WalletMode.SPARK) 60_000L else 20_000L
         connectJob = accountScope.launch {
@@ -876,9 +880,36 @@ class WalletViewModel(
 
         connectionMonitorJob?.cancel()
         connectionMonitorJob = accountScope.launch {
+            // Verify at most once per setup connect — a relay auto-reconnect
+            // re-emits connected=true and only needs the balance refetch,
+            // not another verification round-trip.
+            var verified = false
             provider.isConnected.collect { connected ->
                 if (connected) {
-                    val result = provider.fetchBalance()
+                    // Opening the subscription says nothing about whether
+                    // the wallet service still answers — a revoked URI
+                    // "connects" fine and the dashboard's balance fetch
+                    // would only fail, silently, later with no explanation.
+                    // One short round-trip proves the service is alive so
+                    // setup can alert within seconds. Only the setup flow
+                    // (paste / restore-from-backup) verifies; app-launch
+                    // and account-switch reconnects keep the fast path.
+                    var verifiedBalanceMsats: Long? = null
+                    if (verifySetup && provider === nwcRepo && !verified) {
+                        verified = true
+                        val outcome = nwcRepo.verify(NWC_VERIFY_TIMEOUT_MS)
+                        if (outcome !is NwcRepository.VerifyOutcome.Confirmed) {
+                            failNwcSetup(nwcSetupFailureMessage(outcome))
+                            return@collect
+                        }
+                        // verify() just made the get_balance round-trip —
+                        // reuse its answer instead of sending the same
+                        // request again. Only this first emission skips the
+                        // refetch; a later reconnect re-fetches.
+                        verifiedBalanceMsats = outcome.balanceMsats
+                    }
+                    val result = verifiedBalanceMsats?.let { Result.success(it) }
+                        ?: provider.fetchBalance()
                     result.fold(
                         onSuccess = { balanceMsats ->
                             _walletState.value = WalletState.Connected(balanceMsats)
@@ -916,6 +947,29 @@ class WalletViewModel(
                 }
             }
         }
+    }
+
+    /**
+     * Tear a failed NWC setup attempt down and leave the reason on the error
+     * state the setup sheet reads. Cancelling the status collector first
+     * stops the wallet's still-buffered status lines from appending after
+     * the failure lands. The URI stays saved either way — an offline wallet
+     * may come back, and pasting a new string overwrites it.
+     *
+     * Runs inside connectionMonitorJob's collect: cancelling that job here
+     * means every step afterwards must be non-suspend from the caller's
+     * perspective — the repo teardown's join ([disconnectAndJoin], which
+     * awaits the repository's own scope) is dispatched to the ViewModel
+     * scope, since awaiting from the just-cancelled coroutine would throw
+     * CancellationException at the suspension point.
+     */
+    private fun failNwcSetup(message: String) {
+        statusCollectJob?.cancel()
+        statusCollectJob = null
+        connectJob?.cancel()
+        connectionMonitorJob?.cancel()
+        _walletState.value = WalletState.Error(message)
+        viewModelScope.launch { nwcRepo.disconnectAndJoin() }
     }
 
     fun refreshBalance() {
@@ -2011,5 +2065,32 @@ class WalletViewModel(
 
     fun resetDeleteBackupStatus() {
         _deleteBackupStatus.value = DeleteBackupStatus.Idle
+    }
+
+    companion object {
+        /**
+         * How long the setup flow waits for the verification round-trip before
+         * declaring the connection dead. Long enough for a slow wallet on a cold
+         * relay, short enough that a revoked or offline string alerts within a
+         * few seconds instead of "succeeding" into a silently broken dashboard.
+         */
+        private const val NWC_VERIFY_TIMEOUT_MS = 6_000L
+
+        /**
+         * User-facing wording for a failed NWC setup verification. Public for
+         * unit tests pinning the per-outcome copy, especially the
+         * UNAUTHORIZED "may have been revoked" reading.
+         */
+        fun nwcSetupFailureMessage(outcome: NwcRepository.VerifyOutcome): String = when (outcome) {
+            is NwcRepository.VerifyOutcome.Confirmed -> "Connected"
+            is NwcRepository.VerifyOutcome.Refused -> when {
+                outcome.code == "UNAUTHORIZED" ->
+                    "The wallet rejected this connection — it may have been revoked. Create a new connection string in your wallet and try again."
+                outcome.message != null -> "The wallet rejected the request: ${outcome.message}."
+                else -> "The wallet rejected the request (${outcome.code})."
+            }
+            NwcRepository.VerifyOutcome.Unresponsive ->
+                "No response from the wallet — the connection may have been revoked, or the wallet is offline."
+        }
     }
 }
