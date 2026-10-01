@@ -92,6 +92,10 @@ object Nip69 {
             .map { it[1] }
     }
 
+    /** As [parseZapPollRelays], capped by [Nip88.MAX_POLL_RELAY_HINTS]. */
+    fun cappedZapPollRelays(event: NostrEvent): List<String> =
+        parseZapPollRelays(event).take(Nip88.MAX_POLL_RELAY_HINTS)
+
     /**
      * Extract the poll_option index from a kind 9735 zap receipt.
      * The description tag contains the serialized kind 9734 zap request
