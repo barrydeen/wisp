@@ -8,6 +8,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
@@ -69,6 +70,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -145,7 +147,6 @@ import com.wisp.app.viewmodel.TRENDING_USERS_RELAY_URL
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -200,33 +201,14 @@ fun FeedScreen(
     val contentFilter by viewModel.feedContentFilter.collectAsState()
     val selectedRelay by viewModel.selectedRelay.collectAsState()
     val selectedRelaySet by viewModel.selectedRelaySet.collectAsState()
-    val replyCountVersion by viewModel.eventRepo.replyCountVersion.collectAsState()
-    val zapVersion by viewModel.eventRepo.zapVersion.collectAsState()
-    val reactionVersion by viewModel.eventRepo.reactionVersion.collectAsState()
-    val repostVersion by viewModel.eventRepo.repostVersion.collectAsState()
-    val relaySourceVersion by viewModel.eventRepo.relaySourceVersion.collectAsState()
+    // Engagement/profile/metadata versions are collected per feed item (against the
+    // specific event/author), NOT here — collecting global counters at screen level
+    // recomposes every visible card on every reaction, zap, or profile event.
     val followList by viewModel.contactRepo.followList.collectAsState()
-    val profileVersion by viewModel.eventRepo.profileVersion.collectAsState()
     val statusVersion by viewModel.eventRepo.statusVersion.collectAsState()
-    val nip05Version by viewModel.nip05Repo.version.collectAsState()
-    val pollVoteVersion by viewModel.eventRepo.pollVoteVersion.collectAsState()
-    val translationVersion by viewModel.translationRepo.version.collectAsState()
     val connectedCount by viewModel.relayPool.connectedCount.collectAsState()
     val liveNowStreams by viewModel.liveNowStreams.collectAsState()
     val listState = rememberLazyListState()
-
-    // Viewport-aware engagement: notify ViewModel of visible item range
-    LaunchedEffect(listState) {
-        snapshotFlow { listState.layoutInfo.visibleItemsInfo }
-            .mapNotNull { items ->
-                if (items.isEmpty()) null
-                else items.first().index to items.last().index
-            }
-            .distinctUntilChanged()
-            .collectLatest { (first, last) ->
-                viewModel.onVisibleRangeChanged(first, last)
-            }
-    }
 
     var handledScrollTrigger by rememberSaveable { mutableStateOf(scrollToTopTrigger) }
     LaunchedEffect(scrollToTopTrigger) {
@@ -292,7 +274,12 @@ fun FeedScreen(
     var showSocialGraphDialog by remember { mutableStateOf(false) }
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
-    val userProfile = profileVersion.let { userPubkey?.let { viewModel.eventRepo.getProfileData(it) } }
+    val myProfileVersion by remember(viewModel, userPubkey) {
+        userPubkey?.let { viewModel.eventRepo.profileVersionFor(it) } ?: MutableStateFlow(0)
+    }.collectAsState(initial = 0)
+    val userProfile = remember(viewModel, myProfileVersion, userPubkey) {
+        userPubkey?.let { viewModel.eventRepo.getProfileData(it) }
+    }
 
     val newNoteCount by viewModel.newNoteCount.collectAsState()
     val newNotesButtonHidden by viewModel.newNotesButtonHidden.collectAsState()
@@ -322,7 +309,11 @@ fun FeedScreen(
         onDispose { com.wisp.app.ui.component.emojiRemoveCallback = null }
     }
 
-    val noteActions = remember(userPubkey) {
+    val noteActions = remember(
+        viewModel, userPubkey, followList, onReply, onReact, onRepost, onQuote,
+        onProfileClick, onQuotedNoteClick, onAddToList, onHashtagClick,
+        onArticleClick, onGroupRoom, onLiveStreamClick, fetchGroupPreview
+    ) {
         NoteActions(
             onReply = onReply,
             onReact = onReact,
@@ -1138,7 +1129,7 @@ fun FeedScreen(
                                 )
                             }
                             initLoadingState != InitLoadingState.Done -> {
-                                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                                FeedSkeleton()
                             }
                             contentFilter != FeedContentFilter.ALL -> {
                                 // Content filter active but no matching posts
@@ -1180,56 +1171,53 @@ fun FeedScreen(
                                 }
                             }
                             items(items = feed, key = { it.id }, contentType = { if (it.kind == 30023) "article" else "post" }) { event ->
+                                val itemOnReply = { onReply(event) }
+                                val itemOnProfileClick = { onProfileClick(event.pubkey) }
+                                val itemOnNoteClick = { onNoteClick(event) }
+                                val itemOnReact = { emoji: String -> onReact(event, emoji) }
+                                val itemOnRepost = { onRepost(event) }
+                                val itemOnQuote = { onQuote(event) }
+                                val itemOnZap = { zapTargetEvent = event }
+                                val itemOnAddToList = { onAddToList(event.id) }
+                                val itemOnOpenEmojiLibrary = { showEmojiLibrary = true }
                                 if (event.kind == 30023) {
                                     FeedArticleItem(
                                         event = event,
                                         viewModel = viewModel,
                                         userPubkey = userPubkey,
-                                        profileVersion = profileVersion,
-                                        reactionVersion = reactionVersion,
-                                        replyCountVersion = replyCountVersion,
-                                        zapVersion = zapVersion,
-                                        repostVersion = repostVersion,
                                         isZapAnimating = event.id in zapAnimatingIds,
                                         isZapInProgress = event.id in zapInProgress,
                                         isInList = event.id in listedIds,
                                         onArticleClick = onArticleClick,
                                         onProfileClick = onProfileClick,
-                                        onReply = { onReply(event) },
-                                        onReact = { emoji -> onReact(event, emoji) },
-                                        onRepost = { onRepost(event) },
-                                        onQuote = { onQuote(event) },
-                                        onZap = { zapTargetEvent = event },
-                                        onAddToList = { onAddToList(event.id) },
-                                        onOpenEmojiLibrary = { showEmojiLibrary = true }
+                                        onReply = itemOnReply,
+                                        onReact = itemOnReact,
+                                        onRepost = itemOnRepost,
+                                        onQuote = itemOnQuote,
+                                        onZap = itemOnZap,
+                                        onAddToList = itemOnAddToList,
+                                        onOpenEmojiLibrary = itemOnOpenEmojiLibrary
                                     )
                                 } else {
                                 FeedItem(
                                     event = event,
                                     viewModel = viewModel,
                                     userPubkey = userPubkey,
-                                    profileVersion = profileVersion,
-                                    reactionVersion = reactionVersion,
-                                    replyCountVersion = replyCountVersion,
-                                    zapVersion = zapVersion,
-                                    repostVersion = repostVersion,
-                                    relaySourceVersion = relaySourceVersion,
-                                    nip05Version = nip05Version,
                                     followList = followList,
                                     isZapAnimating = event.id in zapAnimatingIds,
                                     isZapInProgress = event.id in zapInProgress,
                                     isInList = event.id in listedIds,
                                     isPinned = event.id in pinnedIds,
-                                    onReply = { onReply(event) },
-                                    onProfileClick = { onProfileClick(event.pubkey) },
+                                    onReply = itemOnReply,
+                                    onProfileClick = itemOnProfileClick,
                                     onNavigateToProfile = onProfileClick,
-                                    onNoteClick = { onNoteClick(event) },
+                                    onNoteClick = itemOnNoteClick,
                                     onQuotedNoteClick = onQuotedNoteClick,
-                                    onReact = { emoji -> onReact(event, emoji) },
-                                    onRepost = { onRepost(event) },
-                                    onQuote = { onQuote(event) },
-                                    onZap = { zapTargetEvent = event },
-                                    onAddToList = { onAddToList(event.id) },
+                                    onReact = itemOnReact,
+                                    onRepost = itemOnRepost,
+                                    onQuote = itemOnQuote,
+                                    onZap = itemOnZap,
+                                    onAddToList = itemOnAddToList,
                                     onPin = { viewModel.togglePin(event.id) },
                                     onDelete = { viewModel.deleteEvent(event.id, event.kind) },
                                     onRelayClick = { url ->
@@ -1237,9 +1225,7 @@ fun FeedScreen(
                                         viewModel.setFeedType(FeedType.RELAY)
                                     },
                                     noteActions = noteActions,
-                                    onOpenEmojiLibrary = { showEmojiLibrary = true },
-                                    translationVersion = translationVersion,
-                                    pollVoteVersion = pollVoteVersion,
+                                    onOpenEmojiLibrary = itemOnOpenEmojiLibrary,
                                     onPollVote = { optionIds -> viewModel.publishPollVote(event.id, optionIds) },
                                     onZapPollVote = { optionIndex -> zapPollTarget = Pair(event, optionIndex) }
                                 )
@@ -1261,10 +1247,33 @@ fun FeedScreen(
                             }
                         }
 
+                        // Keys exclude headers/loaders and stay correct when the displayed feed changes.
+                        LaunchedEffect(
+                            listState, viewModel, feed, feedType, contentFilter,
+                            selectedList, selectedRelay, selectedRelaySet,
+                            trendingMetric, trendingTimeframe, trendingMode
+                        ) {
+                            val eventIds = feed.mapTo(HashSet()) { it.id }
+                            snapshotFlow {
+                                val layout = listState.layoutInfo
+                                layout.visibleItemsInfo.mapNotNull { item ->
+                                    (item.key as? String)?.takeIf {
+                                        it in eventIds && item.offset < layout.viewportEndOffset &&
+                                            item.offset + item.size > layout.viewportStartOffset
+                                    }
+                                }
+                            }.distinctUntilChanged().collectLatest { visibleIds ->
+                                viewModel.onViewportChanged(visibleIds)
+                            }
+                        }
+                        DisposableEffect(listState, viewModel) {
+                            onDispose { viewModel.onViewportChanged(emptyList()) }
+                        }
+
                         NewNotesButton(
-                            visible = newNoteCount > 0 && !isAtTop && !newNotesButtonHidden,
+                            visible = newNoteCount > 0 && !newNotesButtonHidden,
                             count = newNoteCount,
-                            isScrolling = listState.isScrollInProgress,
+                            listState = listState,
                             onClick = {
                                 scope.launch {
                                     listState.scrollToItem(0)
@@ -1309,13 +1318,6 @@ private fun FeedItem(
     event: NostrEvent,
     viewModel: FeedViewModel,
     userPubkey: String?,
-    profileVersion: Int,
-    reactionVersion: Int,
-    replyCountVersion: Int,
-    zapVersion: Int,
-    repostVersion: Int = 0,
-    relaySourceVersion: Int,
-    nip05Version: Int = 0,
     followList: List<com.wisp.app.nostr.Nip02.FollowEntry> = emptyList(),
     isZapAnimating: Boolean,
     isZapInProgress: Boolean = false,
@@ -1336,81 +1338,98 @@ private fun FeedItem(
     onRelayClick: (String) -> Unit = {},
     noteActions: NoteActions? = null,
     onOpenEmojiLibrary: (() -> Unit)? = null,
-    translationVersion: Int = 0,
-    pollVoteVersion: Int = 0,
     onPollVote: (List<String>) -> Unit = {},
     onZapPollVote: (Int) -> Unit = {}
 ) {
-    val profileData = remember(profileVersion, event.pubkey) {
+    // Fine-grained invalidation: engagementVersion bumps only when engagement for
+    // THIS event arrives, profileVersionFor only when THIS author's profile arrives.
+    // Engagement on another post never recomposes this item.
+    val engagement by remember(viewModel, event.id) {
+        viewModel.eventRepo.engagementVersion(event.id)
+    }.collectAsState(initial = 0)
+    val profileVersion by remember(viewModel, event.pubkey) {
+        viewModel.eventRepo.profileVersionFor(event.pubkey)
+    }.collectAsState(initial = 0)
+    val translationState by remember(viewModel, event.id) {
+        viewModel.translationRepo.stateFor(event.id)
+    }.collectAsState(initial = viewModel.translationRepo.getState(event.id))
+    val profileData = remember(viewModel, profileVersion, event.pubkey) {
         viewModel.eventRepo.getProfileData(event.pubkey)
     }
-    val likeCount = remember(reactionVersion, event.id) {
+    val likeCount = remember(viewModel, engagement, event.id) {
         viewModel.eventRepo.getReactionCount(event.id)
     }
-    val replyCount = remember(replyCountVersion, event.id) {
+    val replyCount = remember(viewModel, engagement, event.id) {
         viewModel.eventRepo.getReplyCount(event.id)
     }
-    val zapSats = remember(zapVersion, event.id) {
+    val zapSats = remember(viewModel, engagement, event.id) {
         viewModel.eventRepo.getZapSats(event.id)
     }
-    val userEmojis = remember(reactionVersion, event.id, userPubkey) {
+    val userEmojis = remember(viewModel, engagement, event.id, userPubkey) {
         userPubkey?.let { viewModel.eventRepo.getUserReactionEmojis(event.id, it) } ?: emptySet()
     }
-    val relayIcons = remember(relaySourceVersion, event.id) {
+    val relayIcons = remember(viewModel, engagement, event.id) {
         viewModel.eventRepo.getEventRelays(event.id).map { url ->
             url to viewModel.relayInfoRepo.getIconUrl(url)
         }
     }
-    val repostTime = remember(repostVersion, event.id) {
+    val repostTime = remember(viewModel, engagement, event.id) {
         viewModel.eventRepo.getRepostTime(event.id)
     }
-    val reactionDetails = remember(reactionVersion, event.id) {
+    // Category revisions are sampled, not collected, so unrelated posts do not invalidate this item.
+    val reactionRevision = remember(viewModel, engagement, event.id) { viewModel.eventRepo.reactionVersion.value }
+    val zapRevision = remember(viewModel, engagement, event.id) { viewModel.eventRepo.zapVersion.value }
+    val reactionDetails = remember(viewModel, reactionRevision, event.id) {
         viewModel.eventRepo.getReactionDetails(event.id)
     }
-    val zapDetails = remember(zapVersion, event.id) {
+    val zapDetails = remember(viewModel, zapRevision, event.id) {
         viewModel.eventRepo.getZapDetails(event.id)
     }
-    val repostCount = remember(repostVersion, event.id) {
+    val repostCount = remember(viewModel, engagement, event.id) {
         viewModel.eventRepo.getRepostCount(event.id)
     }
-    val repostPubkeys = remember(repostVersion, event.id) {
+    val repostPubkeys = remember(viewModel, engagement, event.id) {
         viewModel.eventRepo.getReposterPubkeys(event.id)
     }
-    val hasUserReposted = remember(repostVersion, event.id) {
+    val hasUserReposted = remember(viewModel, engagement, event.id, userPubkey) {
         viewModel.eventRepo.hasUserReposted(event.id)
     }
-    val hasUserZapped = remember(zapVersion, event.id) {
+    val hasUserZapped = remember(viewModel, engagement, event.id, userPubkey) {
         viewModel.eventRepo.hasUserZapped(event.id)
     }
-    val isFollowing = remember(followList, event.pubkey) {
+    val isFollowing = remember(viewModel, followList, event.pubkey) {
         viewModel.contactRepo.isFollowing(event.pubkey)
     }
     val resolvedEmojis by viewModel.customEmojiRepo.resolvedEmojis.collectAsState()
     val unicodeEmojis by viewModel.customEmojiRepo.sortedUnicodeEmojis.collectAsState()
-    val eventReactionEmojiUrls = remember(reactionVersion, event.id) {
+    val eventReactionEmojiUrls = remember(viewModel, reactionRevision, event.id) {
         viewModel.eventRepo.getReactionEmojiUrls(event.id)
     }
-    val translationState = remember(translationVersion, event.id) {
-        viewModel.translationRepo.getState(event.id)
-    }
-    val pollVoteCounts = remember(pollVoteVersion, event.id) {
+    val pollVoteCounts = remember(viewModel, engagement, event.id) {
         if (event.kind == 1068) viewModel.eventRepo.getPollVoteCounts(event.id) else emptyMap()
     }
-    val pollTotalVotes = remember(pollVoteVersion, event.id) {
+    val pollTotalVotes = remember(viewModel, engagement, event.id) {
         if (event.kind == 1068) viewModel.eventRepo.getPollTotalVotes(event.id) else 0
     }
-    val userPollVotes = remember(pollVoteVersion, event.id) {
+    val userPollVotes = remember(viewModel, engagement, event.id, userPubkey) {
         if (event.kind == 1068) viewModel.eventRepo.getUserPollVotes(event.id) else emptyList()
     }
-    val zapPollSatsCounts = remember(pollVoteVersion, event.id) {
+    val zapPollSatsCounts = remember(viewModel, engagement, event.id) {
         if (event.kind == 6969) viewModel.eventRepo.getZapPollSatsCounts(event.id) else emptyMap()
     }
-    val zapPollTotalSats = remember(pollVoteVersion, event.id) {
+    val zapPollTotalSats = remember(viewModel, engagement, event.id) {
         if (event.kind == 6969) viewModel.eventRepo.getZapPollTotalSats(event.id) else 0L
     }
-    val userZapPollVote = remember(pollVoteVersion, event.id) {
+    val userZapPollVote = remember(viewModel, engagement, event.id, userPubkey) {
         if (event.kind == 6969) viewModel.eventRepo.getUserZapPollVote(event.id) else null
     }
+    val onFollowAuthorCb = { viewModel.toggleFollow(event.pubkey) }
+    val onBlockAuthorCb = { viewModel.blockUser(event.pubkey) }
+    val onMuteThreadCb = {
+        val rootId = Nip10.getRootId(event) ?: Nip10.getReplyTarget(event) ?: event.id
+        viewModel.muteThread(rootId)
+    }
+    val onTranslateCb = { viewModel.translateEvent(event.id, event.content) }
     if (isGalleryEvent(event)) {
         GalleryCard(
             event = event,
@@ -1441,8 +1460,8 @@ private fun FeedItem(
             zapDetails = zapDetails,
             repostDetails = repostPubkeys,
             onNavigateToProfileFromDetails = onNavigateToProfile,
-            onFollowAuthor = { viewModel.toggleFollow(event.pubkey) },
-            onBlockAuthor = { viewModel.blockUser(event.pubkey) },
+            onFollowAuthor = onFollowAuthorCb,
+            onBlockAuthor = onBlockAuthorCb,
             isFollowingAuthor = isFollowing,
             isOwnEvent = event.pubkey == userPubkey,
             onQuotedNoteClick = onQuotedNoteClick,
@@ -1488,12 +1507,9 @@ private fun FeedItem(
             repostDetails = repostPubkeys,
             onNavigateToProfileFromDetails = onNavigateToProfile,
             onRelayClick = onRelayClick,
-            onFollowAuthor = { viewModel.toggleFollow(event.pubkey) },
-            onBlockAuthor = { viewModel.blockUser(event.pubkey) },
-            onMuteThread = {
-                val rootId = Nip10.getRootId(event) ?: Nip10.getReplyTarget(event) ?: event.id
-                viewModel.muteThread(rootId)
-            },
+            onFollowAuthor = onFollowAuthorCb,
+            onBlockAuthor = onBlockAuthorCb,
+            onMuteThread = onMuteThreadCb,
             isFollowingAuthor = isFollowing,
             isOwnEvent = event.pubkey == userPubkey,
             nip05Repo = viewModel.nip05Repo,
@@ -1517,7 +1533,7 @@ private fun FeedItem(
             userZapPollVote = userZapPollVote,
             onZapPollVote = onZapPollVote,
             translationState = translationState,
-            onTranslate = { viewModel.translateEvent(event.id, event.content) },
+            onTranslate = onTranslateCb,
             autoTranslate = viewModel.interfacePrefs.isAutoTranslate()
         )
     }
@@ -1528,11 +1544,6 @@ private fun FeedArticleItem(
     event: NostrEvent,
     viewModel: FeedViewModel,
     userPubkey: String?,
-    profileVersion: Int,
-    reactionVersion: Int,
-    replyCountVersion: Int,
-    zapVersion: Int,
-    repostVersion: Int,
     isZapAnimating: Boolean,
     isZapInProgress: Boolean = false,
     isInList: Boolean = false,
@@ -1546,6 +1557,13 @@ private fun FeedArticleItem(
     onAddToList: () -> Unit = {},
     onOpenEmojiLibrary: (() -> Unit)? = null
 ) {
+    // Per-item invalidation — see FeedItem for the rationale.
+    val engagement by remember(viewModel, event.id) {
+        viewModel.eventRepo.engagementVersion(event.id)
+    }.collectAsState(initial = 0)
+    val profileVersion by remember(viewModel, event.pubkey) {
+        viewModel.eventRepo.profileVersionFor(event.pubkey)
+    }.collectAsState(initial = 0)
     val title = remember(event) { event.tags.firstOrNull { it.size >= 2 && it[0] == "title" }?.get(1) }
     val summary = remember(event) { event.tags.firstOrNull { it.size >= 2 && it[0] == "summary" }?.get(1) }
     val image = remember(event) { event.tags.firstOrNull { it.size >= 2 && it[0] == "image" }?.get(1) }
@@ -1553,21 +1571,21 @@ private fun FeedArticleItem(
     val publishedAt = remember(event) {
         event.tags.firstOrNull { it.size >= 2 && it[0] == "published_at" }?.get(1)?.toLongOrNull()
     }
-    val profileData = remember(profileVersion, event.pubkey) {
+    val profileData = remember(viewModel, profileVersion, event.pubkey) {
         viewModel.eventRepo.getProfileData(event.pubkey)
     }
-    val likeCount = remember(reactionVersion, event.id) { viewModel.eventRepo.getReactionCount(event.id) }
-    val replyCount = remember(replyCountVersion, event.id) { viewModel.eventRepo.getReplyCount(event.id) }
-    val zapSats = remember(zapVersion, event.id) { viewModel.eventRepo.getZapSats(event.id) }
-    val userEmojis = remember(reactionVersion, event.id, userPubkey) {
+    val likeCount = remember(viewModel, engagement, event.id) { viewModel.eventRepo.getReactionCount(event.id) }
+    val replyCount = remember(viewModel, engagement, event.id) { viewModel.eventRepo.getReplyCount(event.id) }
+    val zapSats = remember(viewModel, engagement, event.id) { viewModel.eventRepo.getZapSats(event.id) }
+    val userEmojis = remember(viewModel, engagement, event.id, userPubkey) {
         userPubkey?.let { viewModel.eventRepo.getUserReactionEmojis(event.id, it) } ?: emptySet()
     }
-    val repostCount = remember(repostVersion, event.id) { viewModel.eventRepo.getRepostCount(event.id) }
-    val hasUserReposted = remember(repostVersion, event.id) { viewModel.eventRepo.hasUserReposted(event.id) }
-    val hasUserZapped = remember(zapVersion, event.id) { viewModel.eventRepo.hasUserZapped(event.id) }
+    val repostCount = remember(viewModel, engagement, event.id) { viewModel.eventRepo.getRepostCount(event.id) }
+    val hasUserReposted = remember(viewModel, engagement, event.id, userPubkey) { viewModel.eventRepo.hasUserReposted(event.id) }
+    val hasUserZapped = remember(viewModel, engagement, event.id, userPubkey) { viewModel.eventRepo.hasUserZapped(event.id) }
     val resolvedEmojis by viewModel.customEmojiRepo.resolvedEmojis.collectAsState()
     val unicodeEmojis by viewModel.customEmojiRepo.sortedUnicodeEmojis.collectAsState()
-    val eventReactionEmojiUrls = remember(reactionVersion, event.id) {
+    val eventReactionEmojiUrls = remember(viewModel, engagement, event.id) {
         viewModel.eventRepo.getReactionEmojiUrls(event.id)
     }
 
@@ -2377,17 +2395,104 @@ private fun HashtagPickerDialog(
     }
 }
 
+/**
+ * Static post-card placeholders shown while the feed is loading. Intentionally not
+ * animated: the initial load is CPU/relay-bound, and a shimmer would add per-frame
+ * work exactly when the device is busiest.
+ */
+@Composable
+private fun FeedSkeleton(
+    cardCount: Int = 4
+) {
+    val boxColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.07f)
+    val wideColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
+    Column(modifier = Modifier.fillMaxSize()) {
+        repeat(cardCount) {
+            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(wideColor)
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Column {
+                        Box(
+                            modifier = Modifier
+                                .width(130.dp)
+                                .height(11.dp)
+                                .clip(RoundedCornerShape(3.dp))
+                                .background(wideColor)
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Box(
+                            modifier = Modifier
+                                .width(60.dp)
+                                .height(9.dp)
+                                .clip(RoundedCornerShape(3.dp))
+                                .background(boxColor)
+                        )
+                    }
+                }
+                Spacer(Modifier.height(14.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(11.dp)
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(boxColor)
+                )
+                Spacer(Modifier.height(8.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(0.85f)
+                        .height(11.dp)
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(boxColor)
+                )
+                Spacer(Modifier.height(8.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(0.45f)
+                        .height(11.dp)
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(boxColor)
+                )
+                Spacer(Modifier.height(16.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(28.dp)) {
+                    repeat(4) {
+                        Box(
+                            modifier = Modifier
+                                .width(36.dp)
+                                .height(10.dp)
+                                .clip(RoundedCornerShape(3.dp))
+                                .background(boxColor)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun NewNotesButton(
     visible: Boolean,
     count: Int,
-    isScrolling: Boolean = false,
+    listState: androidx.compose.foundation.lazy.LazyListState,
     onClick: () -> Unit,
     onHide: (permanent: Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var showMenu by remember { mutableStateOf(false) }
+    // Read scroll state inside this scope so start/stop recomposes only the button,
+    // not the LazyColumn content scope that contains it.
+    val isScrolling = listState.isScrollInProgress
+    val atTop by remember(listState) {
+        derivedStateOf { listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0 }
+    }
     val buttonAlpha by animateFloatAsState(
         targetValue = if (isScrolling) 0.3f else 1f,
         animationSpec = tween(durationMillis = if (isScrolling) 150 else 400),
@@ -2395,7 +2500,7 @@ private fun NewNotesButton(
     )
 
     androidx.compose.animation.AnimatedVisibility(
-        visible = visible,
+        visible = visible && !atTop,
         enter = slideInVertically { -it },
         exit = slideOutVertically { -it },
         modifier = modifier.graphicsLayer { alpha = buttonAlpha }

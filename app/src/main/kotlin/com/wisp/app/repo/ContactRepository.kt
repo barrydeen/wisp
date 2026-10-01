@@ -39,15 +39,15 @@ class ContactRepository(private val context: Context, pubkeyHex: String? = null)
 
     fun getFollowList(): List<Nip02.FollowEntry> = _followList.value
 
-    fun clear() {
+    fun clear(clearPersisted: Boolean = true) {
         _followList.value = emptyList()
         followSet = HashSet()
         lastUpdated = 0
-        prefs.edit().clear().apply()
+        if (clearPersisted) prefs.edit().clear().apply()
     }
 
     fun reload(pubkeyHex: String?) {
-        clear()
+        clear(clearPersisted = false)
         prefs = context.getSharedPreferences(prefsName(pubkeyHex), Context.MODE_PRIVATE)
         loadFromPrefs()
     }

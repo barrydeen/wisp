@@ -5,10 +5,13 @@ import com.google.mlkit.nl.translate.TranslateLanguage
 import com.google.mlkit.nl.translate.Translation
 import com.google.mlkit.nl.translate.TranslatorOptions
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import java.util.Locale
@@ -34,71 +37,81 @@ data class TranslationState(
 
 class TranslationRepository {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private val cache = ConcurrentHashMap<String, TranslationState>()
+    private val states = ConcurrentHashMap<String, TranslationState>()
+    private val observations = KeyedObservation<String, TranslationState>(this, ::getState)
 
+    /** Coarse global counter for screens (bookmarks, thread, search...) that re-snapshot
+     *  all visible translations at once. Feed screens use [stateFor] instead. */
     private val _version = MutableStateFlow(0)
     val version: StateFlow<Int> = _version
 
+    fun stateFor(eventId: String): Flow<TranslationState> =
+        observations.observe(eventId).distinctUntilChanged()
+
     fun getState(eventId: String): TranslationState =
-        cache[eventId] ?: TranslationState()
+        states[eventId] ?: TranslationState()
 
     fun translate(eventId: String, content: String) {
-        val current = cache[eventId]
-        if (current != null && current.status != TranslationStatus.ERROR) return
+        fun publish(state: TranslationState) = synchronized(this) {
+            states[eventId] = state
+            observations.publish(eventId)
+            _version.value++
+        }
+        synchronized(this) {
+            val current = getState(eventId)
+            if (current.status != TranslationStatus.IDLE && current.status != TranslationStatus.ERROR) return
+            publish(TranslationState(status = TranslationStatus.IDENTIFYING_LANGUAGE))
+        }
 
         val targetTag = TranslateLanguage.fromLanguageTag(Locale.getDefault().language)
         if (targetTag == null) {
-            cache[eventId] = TranslationState(
+            publish(TranslationState(
                 status = TranslationStatus.ERROR,
                 errorMessage = "Unsupported target language"
-            )
-            _version.value++
+            ))
             return
         }
-
-        cache[eventId] = TranslationState(status = TranslationStatus.IDENTIFYING_LANGUAGE)
-        _version.value++
 
         scope.launch {
             try {
                 val identifier = LanguageIdentification.getClient()
-                val detectedTag = identifier.identifyLanguage(content).await()
+                val detectedTag = try {
+                    identifier.identifyLanguage(content).await()
+                } finally {
+                    identifier.close()
+                }
 
                 if (detectedTag == "und") {
-                    cache[eventId] = TranslationState(
+                    publish(TranslationState(
                         status = TranslationStatus.ERROR,
                         errorMessage = "Could not detect language"
-                    )
-                    _version.value++
+                    ))
                     return@launch
                 }
 
                 val sourceTag = TranslateLanguage.fromLanguageTag(detectedTag)
                 if (sourceTag == null) {
-                    cache[eventId] = TranslationState(
+                    publish(TranslationState(
                         status = TranslationStatus.ERROR,
                         errorMessage = "Unsupported source language: $detectedTag"
-                    )
-                    _version.value++
+                    ))
                     return@launch
                 }
 
                 if (sourceTag == targetTag) {
-                    cache[eventId] = TranslationState(
+                    publish(TranslationState(
                         status = TranslationStatus.SAME_LANGUAGE,
                         sourceLanguage = displayName(detectedTag),
                         targetLanguage = displayName(Locale.getDefault().language)
-                    )
-                    _version.value++
+                    ))
                     return@launch
                 }
 
-                cache[eventId] = TranslationState(
+                publish(TranslationState(
                     status = TranslationStatus.DOWNLOADING_MODEL,
                     sourceLanguage = displayName(detectedTag),
                     targetLanguage = displayName(Locale.getDefault().language)
-                )
-                _version.value++
+                ))
 
                 val options = TranslatorOptions.Builder()
                     .setSourceLanguage(sourceTag)
@@ -106,26 +119,28 @@ class TranslationRepository {
                     .build()
                 val translator = Translation.getClient(options)
 
-                translator.downloadModelIfNeeded().await()
+                val result = try {
+                    translator.downloadModelIfNeeded().await()
+                    publish(getState(eventId).copy(status = TranslationStatus.TRANSLATING))
+                    translator.translate(content).await()
+                } finally {
+                    translator.close()
+                }
 
-                cache[eventId] = cache[eventId]!!.copy(status = TranslationStatus.TRANSLATING)
-                _version.value++
-
-                val result = translator.translate(content).await()
-
-                cache[eventId] = TranslationState(
+                publish(TranslationState(
                     status = TranslationStatus.DONE,
                     translatedText = result,
                     sourceLanguage = displayName(detectedTag),
                     targetLanguage = displayName(Locale.getDefault().language)
-                )
-                _version.value++
+                ))
+            } catch (e: CancellationException) {
+                publish(TranslationState())
+                throw e
             } catch (e: Exception) {
-                cache[eventId] = TranslationState(
+                publish(TranslationState(
                     status = TranslationStatus.ERROR,
                     errorMessage = e.message ?: "Translation failed"
-                )
-                _version.value++
+                ))
             }
         }
     }

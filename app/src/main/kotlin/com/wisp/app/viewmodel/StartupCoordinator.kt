@@ -4,6 +4,7 @@ import android.util.Log
 import com.wisp.app.nostr.Blossom
 import com.wisp.app.nostr.ClientMessage
 import com.wisp.app.nostr.Filter
+import com.wisp.app.nostr.Nip22
 import com.wisp.app.nostr.Nip30
 import com.wisp.app.nostr.Nip51
 import com.wisp.app.db.EventPersistence
@@ -100,7 +101,6 @@ class StartupCoordinator(
     private val feedSub: FeedSubscriptionManager,
     private val scope: CoroutineScope,
     private val processingContext: CoroutineContext,
-    private val pubkeyHex: String?,
     private val getUserPubkey: () -> String?,
     private val registerAuthSigner: () -> Unit,
     private val fetchEmojiSets: () -> Unit,
@@ -120,7 +120,7 @@ class StartupCoordinator(
     var relaysInitialized = false
         private set
 
-    fun resetForAccountSwitch() {
+    fun resetForAccountSwitch(clearPersisted: Boolean = false) {
         // Cancel all background jobs
         eventProcessingJob?.cancel()
         metadataSweepJob?.cancel()
@@ -143,10 +143,10 @@ class StartupCoordinator(
         metadataFetcher.clear()
         eventRepo.clearAll()
         customEmojiRepo.clear()
-        dmRepo.clear()
-        notifRepo.clear()
-        contactRepo.clear()
-        muteRepo.clear()
+        dmRepo.clear(clearPersisted)
+        notifRepo.clear(clearPersisted)
+        contactRepo.clear(clearPersisted)
+        muteRepo.clear(clearPersisted)
         bookmarkRepo.clear()
         bookmarkSetRepo.clear()
         relaySetRepo.clear()
@@ -155,10 +155,10 @@ class StartupCoordinator(
         blossomRepo.clear()
         interestRepo.clear()
         extendedNetworkRepo.clear()
-        relayScoreBoard.clear()
-        relayHintStore.clear()
-        healthTracker.clear()
-        relayListRepo.clear()
+        relayScoreBoard.clear(clearPersisted)
+        relayHintStore.flush()
+        healthTracker.onBadRelaysChanged = null
+        healthTracker.clear(clearPersisted)
         nip05Repo.clear()
         relayPool.clearSeenEvents()
         eventRouter.clearSelfDataTimestamps()
@@ -169,11 +169,11 @@ class StartupCoordinator(
 
     fun reloadForNewAccount() {
         val newPubkey = getUserPubkey()
+        feedSub.rekeyPubkey(newPubkey)
 
         // Clear stale data from previous account and re-key to new pubkey
         notifRepo.reload(newPubkey)
-        eventRepo.clearAll()
-        if (newPubkey != null) dmRepo.reload(newPubkey) else dmRepo.clear()
+        if (newPubkey != null) dmRepo.reload(newPubkey) else dmRepo.clear(clearPersisted = false)
 
         // Reload per-account prefs for new pubkey
         eventRepo.currentUserPubkey = newPubkey
@@ -464,11 +464,19 @@ class StartupCoordinator(
             // Seed eventCache from ObjectBox so the feed is populated immediately on warm
             // starts, before the relay response arrives. The relay subscription only needs
             // to top up with events newer than the saved since timestamp.
+            // Filtered to the current account's follow set so switching accounts never seeds
+            // the other account's posts; all query + cache rebuild runs off the main thread.
             eventPersistence?.let { persistence ->
-                val cached = withContext(processingContext) { persistence.seedCache(limit = 2000) }
+                val seedAuthors = (follows.toSet() + listOfNotNull(getUserPubkey()))
+                    .ifEmpty { null }
+                val cached = withContext(processingContext) {
+                    persistence.seedCache(limit = 2000, authors = seedAuthors)
+                }
                 if (cached.isNotEmpty()) {
-                    eventRepo.seedFromObjectBox(cached)
-                    eventRepo.rebuildFeedFromCache()
+                    withContext(processingContext) {
+                        eventRepo.seedFromObjectBox(cached)
+                        eventRepo.rebuildFeedFromCache()
+                    }
                     Log.d("StartupCoord", "Seeded ${cached.size} events from ObjectBox into feed cache")
                 }
             }
@@ -746,7 +754,7 @@ class StartupCoordinator(
         }
 
         val notifFilter = Filter(
-            kinds = listOf(1, 6, 7, 9735),
+            kinds = listOf(1, Nip22.KIND_COMMENT, 6, 7, 9735),
             pTags = listOf(myPubkey),
             limit = 300
         )
@@ -769,9 +777,9 @@ class StartupCoordinator(
         // engagement subscriptions start.
         val selfNotesSince = eventRepo.getLatestEventTimestamp(myPubkey, 1)
         val selfNotesFilter = if (selfNotesSince != null) {
-            Filter(kinds = listOf(1), authors = listOf(myPubkey), since = selfNotesSince)
+            Filter(kinds = listOf(1, Nip22.KIND_COMMENT), authors = listOf(myPubkey), since = selfNotesSince)
         } else {
-            Filter(kinds = listOf(1), authors = listOf(myPubkey), limit = 200)
+            Filter(kinds = listOf(1, Nip22.KIND_COMMENT), authors = listOf(myPubkey), limit = 200)
         }
         val selfNotesMsg = ClientMessage.req("self-notes", selfNotesFilter)
         relayPool.sendToWriteRelays(selfNotesMsg)
@@ -813,8 +821,8 @@ class StartupCoordinator(
      * Extracted so it can be re-called after publishing a note without
      * re-running the full DM/notification setup.
      */
-    fun refreshNotifRepliesEtag(myPubkey: String? = pubkeyHex) {
-        val pk = myPubkey ?: return
+    fun refreshNotifRepliesEtag(myPubkey: String? = null) {
+        val pk = myPubkey ?: getUserPubkey() ?: return
         val myEventIds = eventRepo.getRecentEventIdsByAuthor(pk, limit = 100)
         if (myEventIds.isEmpty()) return
         // Publish the set so EventRouter and NotificationRepository can verify direct
@@ -826,7 +834,7 @@ class StartupCoordinator(
 
         val since = notifRepo.getLatestNotifTimestamp()?.let { it - 5 * 60 }
         val filters = myEventIds.chunked(OutboxRouter.MAX_ETAGS_PER_FILTER).map { chunk ->
-            Filter(kinds = listOf(1), eTags = chunk, limit = 200, since = since)
+            Filter(kinds = listOf(1, Nip22.KIND_COMMENT), eTags = chunk, limit = 200, since = since)
         }
         // Subscribe on our inbox relays ONLY — replies land where our notes' readers publish.
         outboxRouter.subscribeToUserInboxStrict("notif-replies-etag", pk, filters)

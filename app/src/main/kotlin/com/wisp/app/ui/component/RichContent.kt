@@ -58,6 +58,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -122,6 +123,8 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.PlayArrow
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.Request
@@ -710,7 +713,11 @@ fun RichContent(
     modifier: Modifier = Modifier
 ) {
     val segments = remember(content, emojiMap, imetaMap, plainLinks) { parseContent(content.trimEnd('\n', '\r'), emojiMap, imetaMap, trimBlankLines = !plainLinks) }
-    val profileVer = eventRepo?.profileVersion?.collectAsState()?.value ?: 0
+    // Click handlers are read through updated-state refs so the memoized
+    // AnnotatedStrings below never need rebuilding when only handler identities change.
+    val curHashtagClick = rememberUpdatedState(onHashtagClick ?: noteActions?.onHashtagClick)
+    val curProfileClick = rememberUpdatedState(onProfileClick)
+    val curRelayClick = rememberUpdatedState(noteActions?.onRelayClick)
     var fullScreenPager by remember { mutableStateOf<Pair<List<MediaPagerItem>, Int>?>(null) }
     val mediaLayoutStyle = LocalMediaSettings.current.mediaLayoutStyle
     val galleryMode = mediaLayoutStyle == com.wisp.app.repo.InterfacePreferences.MediaLayoutStyle.GALLERY
@@ -815,8 +822,6 @@ fun RichContent(
     val effectiveLinkColor = if (linkColor == Color.Unspecified) defaultLinkColor else linkColor
     val linkDecoration = if (linkColor == Color.Unspecified) TextDecoration.None else TextDecoration.Underline
     val uriHandler = LocalUriHandler.current
-    val effectiveHashtagClick = onHashtagClick ?: noteActions?.onHashtagClick
-    val effectiveRelayClick = noteActions?.onRelayClick
 
     SelectionContainer {
     androidx.compose.runtime.CompositionLocalProvider(
@@ -845,25 +850,16 @@ fun RichContent(
                 val inlineSegments = group as List<ContentSegment>
 
                 // Build profile display names for this run
-                val profilePubkeys = inlineSegments
-                    .filterIsInstance<ContentSegment.NostrProfileSegment>()
-                    .map { it.pubkey }
-                val profileNames = remember(profilePubkeys, profileVer) {
-                    val names = mutableMapOf<String, String>()
-                    for (pubkey in profilePubkeys) {
-                        val profile = eventRepo?.getProfileData(pubkey)
-                        names[pubkey] = profile?.displayString
-                            ?: pubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
-                    }
-                    names
+                val profileMentions = remember(inlineSegments) {
+                    inlineSegments.filterIsInstance<ContentSegment.NostrProfileSegment>()
+                        .distinctBy { it.pubkey }
                 }
-                // Queue fetches for any missing profiles
-                LaunchedEffect(profilePubkeys) {
-                    for (seg in inlineSegments) {
-                        if (seg is ContentSegment.NostrProfileSegment) {
-                            eventRepo?.requestProfileIfMissing(seg.pubkey, seg.relayHints)
-                        }
-                    }
+                val profileNames = profileMentions.associate { mention ->
+                    val profile = rememberProfile(eventRepo, mention.pubkey, mention.relayHints)
+                    mention.pubkey to (profile?.displayString
+                        ?: remember(mention.pubkey) {
+                            mention.pubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
+                        })
                 }
 
                 // Check if run is only whitespace/empty text
@@ -875,105 +871,114 @@ fun RichContent(
                 }
                 if (!hasContent) continue
 
-                // Build inline content map for any custom emojis in this run
+                // Build inline content map for any custom emojis in this run.
+                // Memoized: InlineTextContent has no structural equals, so a fresh map
+                // would force the Text below to re-measure on every recomposition.
                 val emojiInlineContent: Map<String, InlineTextContent> =
-                    if (inlineSegments.any { it is ContentSegment.CustomEmojiSegment }) {
-                        val emojiSize = style.fontSize
-                        inlineSegments
-                            .filterIsInstance<ContentSegment.CustomEmojiSegment>()
-                            .distinctBy { it.shortcode }
-                            .associate { seg ->
-                                seg.shortcode to InlineTextContent(
-                                    placeholder = Placeholder(
-                                        width = emojiSize * 1.5f,
-                                        height = emojiSize * 1.3f,
-                                        placeholderVerticalAlign = PlaceholderVerticalAlign.Center
-                                    )
-                                ) {
-                                    AsyncImage(
-                                        model = seg.url,
-                                        contentDescription = seg.shortcode,
-                                        modifier = Modifier.fillMaxSize()
-                                    )
+                    remember(inlineSegments, style.fontSize) {
+                        if (inlineSegments.any { it is ContentSegment.CustomEmojiSegment }) {
+                            val emojiSize = style.fontSize
+                            inlineSegments
+                                .filterIsInstance<ContentSegment.CustomEmojiSegment>()
+                                .distinctBy { it.shortcode }
+                                .associate { seg ->
+                                    seg.shortcode to InlineTextContent(
+                                        placeholder = Placeholder(
+                                            width = emojiSize * 1.5f,
+                                            height = emojiSize * 1.3f,
+                                            placeholderVerticalAlign = PlaceholderVerticalAlign.Center
+                                        )
+                                    ) {
+                                        AsyncImage(
+                                            model = seg.url,
+                                            contentDescription = seg.shortcode,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    }
                                 }
-                            }
-                    } else emptyMap()
+                        } else emptyMap()
+                    }
 
-                val annotated = buildAnnotatedString {
-                    for (seg in inlineSegments) {
-                        when (seg) {
-                            is ContentSegment.TextSegment -> {
-                                withStyle(SpanStyle(color = color)) {
-                                    append(seg.text)
-                                }
-                            }
-                            is ContentSegment.CustomEmojiSegment -> {
-                                pushStringAnnotation(
-                                    tag = INLINE_CONTENT_TAG,
-                                    annotation = seg.shortcode
-                                )
-                                append(":${seg.shortcode}:")
-                                pop()
-                            }
-                            is ContentSegment.HashtagSegment -> {
-                                val tag = seg.tag
-                                withLink(
-                                    LinkAnnotation.Clickable("hashtag") {
-                                        effectiveHashtagClick?.invoke(tag)
-                                    }
-                                ) {
-                                    withStyle(SpanStyle(color = effectiveLinkColor, textDecoration = linkDecoration)) {
-                                        append("#${seg.tag}")
+                // Retain link annotations while dispatching to the latest handlers.
+                val annotated = remember(
+                    inlineSegments, profileNames, color, effectiveLinkColor, linkDecoration, uriHandler
+                ) {
+                    buildAnnotatedString {
+                        for (seg in inlineSegments) {
+                            when (seg) {
+                                is ContentSegment.TextSegment -> {
+                                    withStyle(SpanStyle(color = color)) {
+                                        append(seg.text)
                                     }
                                 }
-                            }
-                            is ContentSegment.NostrProfileSegment -> {
-                                val pubkey = seg.pubkey
-                                val displayName = profileNames[seg.pubkey] ?: seg.pubkey.toNpub().take(12)
-                                withLink(
-                                    LinkAnnotation.Clickable("profile") {
-                                        onProfileClick?.invoke(pubkey)
-                                    }
-                                ) {
-                                    withStyle(SpanStyle(color = effectiveLinkColor, textDecoration = linkDecoration)) {
-                                        append("@${displayName.trimEnd()}")
-                                    }
+                                is ContentSegment.CustomEmojiSegment -> {
+                                    pushStringAnnotation(
+                                        tag = INLINE_CONTENT_TAG,
+                                        annotation = seg.shortcode
+                                    )
+                                    append(":${seg.shortcode}:")
+                                    pop()
                                 }
-                            }
-                            is ContentSegment.LinkSegment -> {
-                                val linkUrl = seg.url
-                                val displayUrl = linkUrl.removePrefix("https://").removePrefix("http://")
-                                withLink(
-                                    LinkAnnotation.Clickable("url") {
-                                        uriHandler.openUri(linkUrl)
-                                    }
-                                ) {
-                                    withStyle(SpanStyle(color = effectiveLinkColor, textDecoration = linkDecoration)) {
-                                        append(displayUrl)
-                                    }
-                                }
-                            }
-                            is ContentSegment.InlineLinkSegment -> {
-                                val linkUrl = seg.url
-                                val isRelay = linkUrl.startsWith("wss://") || linkUrl.startsWith("ws://")
-                                val displayUrl = linkUrl
-                                    .removePrefix("https://")
-                                    .removePrefix("http://")
-                                withLink(
-                                    LinkAnnotation.Clickable("url") {
-                                        if (isRelay) {
-                                            effectiveRelayClick?.invoke(linkUrl)
-                                        } else {
-                                            uriHandler.openUri(linkUrl)
+                                is ContentSegment.HashtagSegment -> {
+                                    val tag = seg.tag
+                                    withLink(
+                                        LinkAnnotation.Clickable("hashtag") {
+                                            curHashtagClick.value?.invoke(tag)
+                                        }
+                                    ) {
+                                        withStyle(SpanStyle(color = effectiveLinkColor, textDecoration = linkDecoration)) {
+                                            append("#${seg.tag}")
                                         }
                                     }
-                                ) {
-                                    withStyle(SpanStyle(color = effectiveLinkColor, textDecoration = linkDecoration)) {
-                                        append(displayUrl)
+                                }
+                                is ContentSegment.NostrProfileSegment -> {
+                                    val pubkey = seg.pubkey
+                                    val displayName = profileNames[seg.pubkey] ?: seg.pubkey.toNpub().take(12)
+                                    withLink(
+                                        LinkAnnotation.Clickable("profile") {
+                                            curProfileClick.value?.invoke(pubkey)
+                                        }
+                                    ) {
+                                        withStyle(SpanStyle(color = effectiveLinkColor, textDecoration = linkDecoration)) {
+                                            append("@${displayName.trimEnd()}")
+                                        }
                                     }
                                 }
+                                is ContentSegment.LinkSegment -> {
+                                    val linkUrl = seg.url
+                                    val displayUrl = linkUrl.removePrefix("https://").removePrefix("http://")
+                                    withLink(
+                                        LinkAnnotation.Clickable("url") {
+                                            uriHandler.openUri(linkUrl)
+                                        }
+                                    ) {
+                                        withStyle(SpanStyle(color = effectiveLinkColor, textDecoration = linkDecoration)) {
+                                            append(displayUrl)
+                                        }
+                                    }
+                                }
+                                is ContentSegment.InlineLinkSegment -> {
+                                    val linkUrl = seg.url
+                                    val isRelay = linkUrl.startsWith("wss://") || linkUrl.startsWith("ws://")
+                                    val displayUrl = linkUrl
+                                        .removePrefix("https://")
+                                        .removePrefix("http://")
+                                    withLink(
+                                        LinkAnnotation.Clickable("url") {
+                                            if (isRelay) {
+                                                curRelayClick.value?.invoke(linkUrl)
+                                            } else {
+                                                uriHandler.openUri(linkUrl)
+                                            }
+                                        }
+                                    ) {
+                                        withStyle(SpanStyle(color = effectiveLinkColor, textDecoration = linkDecoration)) {
+                                            append(displayUrl)
+                                        }
+                                    }
+                                }
+                                else -> {}
                             }
-                            else -> {}
                         }
                     }
                 }
@@ -1154,16 +1159,12 @@ fun QuotedNote(
     noteActions: NoteActions? = null,
     quoteDepth: Int = 0
 ) {
-    // Observe versions so we recompose when data arrives from relays
-    val version by eventRepo.quotedEventVersion.collectAsState()
-    val event = remember(eventId, version) { eventRepo.getEvent(eventId) }
-    val profile = remember(event, version) { event?.let { eventRepo.getProfileData(it.pubkey) } }
+    val event = rememberObservedEvent(eventRepo, eventId)
+    val profile = rememberProfile(eventRepo, event?.pubkey)
 
     // Trigger on-demand fetch if the quoted event isn't cached
-    LaunchedEffect(eventId) {
-        if (eventRepo.getEvent(eventId) == null) {
-            eventRepo.requestQuotedEvent(eventId, relayHints)
-        }
+    LaunchedEffect(eventRepo, eventId, relayHints) {
+        eventRepo.requestQuotedEvent(eventId, relayHints)
     }
 
     // Cap nesting: depth >= 1 means we're already inside a quoted note,
@@ -1183,45 +1184,46 @@ fun QuotedNote(
 
     if (event != null && effectiveActions != null) {
         // Full rendering with all interactive features
-        val reactionVersion by eventRepo.reactionVersion.collectAsState()
-        val zapVersion by eventRepo.zapVersion.collectAsState()
-        val replyCountVersion by eventRepo.replyCountVersion.collectAsState()
-        val repostVersion by eventRepo.repostVersion.collectAsState()
-        val pollVoteVersion by eventRepo.pollVoteVersion.collectAsState()
+        val engagement by remember(eventRepo, eventId) {
+            eventRepo.engagementVersion(eventId)
+        }.collectAsState(initial = 0)
 
-        val likeCount = remember(reactionVersion, eventId) { eventRepo.getReactionCount(eventId) }
-        val replyCount = remember(replyCountVersion, eventId) { eventRepo.getReplyCount(eventId) }
-        val zapSats = remember(zapVersion, eventId) { eventRepo.getZapSats(eventId) }
-        val repostCount = remember(repostVersion, eventId) { eventRepo.getRepostCount(eventId) }
-        val repostPubkeys = remember(repostVersion, eventId) { eventRepo.getReposterPubkeys(eventId) }
-        val userEmojis = remember(reactionVersion, eventId, effectiveActions.userPubkey) {
+        val likeCount = remember(eventRepo, engagement, eventId) { eventRepo.getReactionCount(eventId) }
+        val replyCount = remember(eventRepo, engagement, eventId) { eventRepo.getReplyCount(eventId) }
+        val zapSats = remember(eventRepo, engagement, eventId) { eventRepo.getZapSats(eventId) }
+        val repostCount = remember(eventRepo, engagement, eventId) { eventRepo.getRepostCount(eventId) }
+        val repostPubkeys = remember(eventRepo, engagement, eventId) { eventRepo.getReposterPubkeys(eventId) }
+        val userEmojis = remember(eventRepo, engagement, eventId, effectiveActions.userPubkey) {
             effectiveActions.userPubkey?.let { eventRepo.getUserReactionEmojis(eventId, it) } ?: emptySet()
         }
-        val hasUserReposted = remember(repostVersion, eventId) { eventRepo.hasUserReposted(eventId) }
-        val hasUserZapped = remember(zapVersion, eventId) { eventRepo.hasUserZapped(eventId) }
-        val reactionDetails = remember(reactionVersion, eventId) { eventRepo.getReactionDetails(eventId) }
-        val zapDetails = remember(zapVersion, eventId) { eventRepo.getZapDetails(eventId) }
-        val reactionEmojiUrls = remember(reactionVersion, eventId) { eventRepo.getReactionEmojiUrls(eventId) }
+        val hasUserReposted = remember(eventRepo, engagement, eventId, effectiveActions.userPubkey) { eventRepo.hasUserReposted(eventId) }
+        val hasUserZapped = remember(eventRepo, engagement, eventId, effectiveActions.userPubkey) { eventRepo.hasUserZapped(eventId) }
+        // Sample revisions on keyed invalidation; reuse details while their category is unchanged.
+        val reactionRevision = remember(eventRepo, engagement, eventId) { eventRepo.reactionVersion.value }
+        val zapRevision = remember(eventRepo, engagement, eventId) { eventRepo.zapVersion.value }
+        val reactionDetails = remember(eventRepo, reactionRevision, eventId) { eventRepo.getReactionDetails(eventId) }
+        val zapDetails = remember(eventRepo, zapRevision, eventId) { eventRepo.getZapDetails(eventId) }
+        val reactionEmojiUrls = remember(eventRepo, reactionRevision, eventId) { eventRepo.getReactionEmojiUrls(eventId) }
 
         // Poll data for quoted polls
-        val pollVoteCounts = remember(pollVoteVersion, eventId) {
+        val pollVoteCounts = remember(eventRepo, engagement, eventId) {
             if (event.kind == com.wisp.app.nostr.Nip88.KIND_POLL) eventRepo.getPollVoteCounts(eventId) else emptyMap()
         }
-        val pollTotalVotes = remember(pollVoteVersion, eventId) {
+        val pollTotalVotes = remember(eventRepo, engagement, eventId) {
             if (event.kind == com.wisp.app.nostr.Nip88.KIND_POLL) eventRepo.getPollTotalVotes(eventId) else 0
         }
-        val userPollVotes = remember(pollVoteVersion, eventId) {
+        val userPollVotes = remember(eventRepo, engagement, eventId, effectiveActions.userPubkey) {
             if (event.kind == com.wisp.app.nostr.Nip88.KIND_POLL) eventRepo.getUserPollVotes(eventId) else emptyList()
         }
 
         // Zap poll data for quoted zap polls
-        val zapPollSatsCounts = remember(pollVoteVersion, eventId) {
+        val zapPollSatsCounts = remember(eventRepo, engagement, eventId) {
             if (event.kind == com.wisp.app.nostr.Nip69.KIND_ZAP_POLL) eventRepo.getZapPollSatsCounts(eventId) else emptyMap()
         }
-        val zapPollTotalSats = remember(pollVoteVersion, eventId) {
+        val zapPollTotalSats = remember(eventRepo, engagement, eventId) {
             if (event.kind == com.wisp.app.nostr.Nip69.KIND_ZAP_POLL) eventRepo.getZapPollTotalSats(eventId) else 0L
         }
-        val userZapPollVote = remember(pollVoteVersion, eventId) {
+        val userZapPollVote = remember(eventRepo, engagement, eventId, effectiveActions.userPubkey) {
             if (event.kind == com.wisp.app.nostr.Nip69.KIND_ZAP_POLL) eventRepo.getUserZapPollVote(eventId) else null
         }
 
@@ -1447,12 +1449,9 @@ private fun QuotedAddressableNote(
     quoteDepth: Int = 0,
     style: TextStyle
 ) {
-    val version by eventRepo.quotedEventVersion.collectAsState()
-    val event = remember(kind, author, dTag, version) {
-        eventRepo.findAddressableEvent(kind, author, dTag)
-    }
+    val event = rememberAddressableEvent(eventRepo, kind, author, dTag)
 
-    LaunchedEffect(kind, author, dTag) {
+    LaunchedEffect(eventRepo, kind, author, dTag, relayHints) {
         if (eventRepo.findAddressableEvent(kind, author, dTag) == null) {
             eventRepo.requestAddressableEvent(kind, author, dTag, relayHints)
         }
@@ -1526,13 +1525,10 @@ private fun ArticleCard(
     onArticleClick: ((Int, String, String) -> Unit)?,
     onProfileClick: ((String) -> Unit)?
 ) {
-    val version by eventRepo.quotedEventVersion.collectAsState()
-    val event = remember(author, dTag, version) {
-        eventRepo.findAddressableEvent(30023, author, dTag)
-    }
-    val profile = remember(author, version) { eventRepo.getProfileData(author) }
+    val event = rememberAddressableEvent(eventRepo, 30023, author, dTag)
+    val profile = rememberProfile(eventRepo, author)
 
-    LaunchedEffect(author, dTag) {
+    LaunchedEffect(eventRepo, author, dTag, relayHints) {
         if (eventRepo.findAddressableEvent(30023, author, dTag) == null) {
             eventRepo.requestAddressableEvent(30023, author, dTag, relayHints)
         }
@@ -1661,13 +1657,10 @@ private fun MusicTrackCard(
     onProfileClick: ((String) -> Unit)?
 ) {
     val context = LocalContext.current
-    val version by eventRepo.quotedEventVersion.collectAsState()
-    val event = remember(author, dTag, version) {
-        eventRepo.findAddressableEvent(36787, author, dTag)
-    }
-    val profile = remember(author, version) { eventRepo.getProfileData(author) }
+    val event = rememberAddressableEvent(eventRepo, 36787, author, dTag)
+    val profile = rememberProfile(eventRepo, author)
 
-    LaunchedEffect(author, dTag) {
+    LaunchedEffect(eventRepo, author, dTag, relayHints) {
         if (eventRepo.findAddressableEvent(36787, author, dTag) == null) {
             eventRepo.requestAddressableEvent(36787, author, dTag, relayHints)
         }
@@ -1681,7 +1674,9 @@ private fun MusicTrackCard(
         event?.tags?.firstOrNull { it.size >= 2 && it[0] == "duration" }?.get(1)?.toLongOrNull()
     }
 
-    val globalState by AudioPlayerController.state.collectAsState()
+    val globalState by remember(audioUrl) {
+        AudioPlayerController.state.forAudioItem(audioUrl)
+    }.collectAsState(initial = null)
     val isCurrent = audioUrl != null && globalState?.track?.url == audioUrl
     val isPlaying = isCurrent && globalState?.isPlaying == true
 
@@ -1878,13 +1873,10 @@ private fun LiveStreamCard(
     onLiveStreamClick: ((String, String, String?) -> Unit)? = null,
     segmentRelayHints: List<String> = emptyList()
 ) {
-    val version by eventRepo.quotedEventVersion.collectAsState()
-    val event = remember(author, dTag, version) {
-        eventRepo.findAddressableEvent(30311, author, dTag)
-    }
-    val profile = remember(author, version) { eventRepo.getProfileData(author) }
+    val event = rememberAddressableEvent(eventRepo, 30311, author, dTag)
+    val profile = rememberProfile(eventRepo, author)
 
-    LaunchedEffect(author, dTag) {
+    LaunchedEffect(eventRepo, author, dTag, relayHints) {
         if (eventRepo.findAddressableEvent(30311, author, dTag) == null) {
             eventRepo.requestAddressableEvent(30311, author, dTag, relayHints)
         }
@@ -2050,14 +2042,11 @@ private fun EmojiPackCard(
     onRemoveEmojiSet: ((String, String) -> Unit)?,
     isEmojiSetAdded: ((String, String) -> Boolean)?
 ) {
-    val version by eventRepo.quotedEventVersion.collectAsState()
-    val event = remember(author, dTag, version) {
-        eventRepo.findAddressableEvent(30030, author, dTag)
-    }
-    val profile = remember(author, version) { eventRepo.getProfileData(author) }
+    val event = rememberAddressableEvent(eventRepo, 30030, author, dTag)
+    val profile = rememberProfile(eventRepo, author)
 
     // Fetch if not cached; retry once after a delay if the first attempt got no result
-    LaunchedEffect(author, dTag) {
+    LaunchedEffect(eventRepo, author, dTag, relayHints) {
         if (eventRepo.findAddressableEvent(30030, author, dTag) == null) {
             eventRepo.requestAddressableEvent(30030, author, dTag, relayHints)
             delay(8_000)
@@ -2330,17 +2319,13 @@ private fun InlineAudioPlayer(
     val autoLoad = LocalMediaSettings.current.autoLoadMedia
     var loaded by remember { mutableStateOf(autoLoad) }
 
-    val globalState by AudioPlayerController.state.collectAsState()
+    val globalState by remember(url) {
+        AudioPlayerController.state.forAudioItem(url)
+    }.collectAsState(initial = null)
     val isCurrent = globalState?.track?.url == url
     val isPlaying = isCurrent && globalState?.isPlaying == true
 
-    val profileVer = eventRepo?.profileVersion?.collectAsState()?.value ?: 0
-    val profile = remember(authorPubkey, profileVer) {
-        authorPubkey?.let { eventRepo?.getProfileData(it) }
-    }
-    LaunchedEffect(authorPubkey) {
-        if (authorPubkey != null) eventRepo?.requestProfileIfMissing(authorPubkey, emptyList())
-    }
+    val profile = rememberProfile(eventRepo, authorPubkey)
 
     val title = profile?.displayString
         ?: url.substringAfterLast('/').substringBeforeLast('.').ifBlank { "Audio" }
@@ -3251,6 +3236,8 @@ private data class OgData(
 )
 
 private val ogCache = LruCache<String, OgData>(200)
+private val ogRetryAfter = LruCache<String, Long>(200)
+private const val OG_RETRY_DELAY_MS = 5 * 60 * 1000L
 
 private val httpClient
     get() = com.wisp.app.relay.HttpClientFactory.getShortTimeoutClient()
@@ -3293,6 +3280,8 @@ private suspend fun fetchYoutubeOembed(url: String): OgData? = withContext(Dispa
 
 private suspend fun fetchOgData(url: String): OgData? = withContext(Dispatchers.IO) {
     ogCache.get(url)?.let { return@withContext it }
+    val now = android.os.SystemClock.elapsedRealtime()
+    if ((ogRetryAfter.get(url) ?: 0L) > now) return@withContext null
     // YouTube blocks bot User-Agents; use their oEmbed API instead
     if (youtubeRegex.containsMatchIn(url)) {
         val yt = fetchYoutubeOembed(url)
@@ -3335,8 +3324,14 @@ private suspend fun fetchOgData(url: String): OgData? = withContext(Dispatchers.
                 ogData
             } else null
         }
+    } catch (e: CancellationException) {
+        throw e
     } catch (_: Exception) {
         null
+    } finally {
+        if (isActive && ogCache.get(url) == null) {
+            ogRetryAfter.put(url, android.os.SystemClock.elapsedRealtime() + OG_RETRY_DELAY_MS)
+        }
     }
 }
 
@@ -3430,17 +3425,22 @@ private fun LinkPreview(url: String) {
             }
         }
     } else {
-        // Show clickable link text while loading / if OG fetch fails
-        Text(
-            text = url,
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.primary,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+        // Loading and failure use the same compact link, without a collapsing spacer.
+        Box(
             modifier = Modifier
-                .padding(vertical = 2.dp)
-                .clickable { uriHandler.openUri(url) }
-        )
+                .fillMaxWidth()
+        ) {
+            Text(
+                text = url,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.primary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .padding(vertical = 2.dp)
+                    .clickable { uriHandler.openUri(url) }
+            )
+        }
     }
 }
 

@@ -117,6 +117,20 @@ class ThreadViewModel : ViewModel() {
         if (expandedIds.add(anchorId)) rebuildTree()
     }
 
+    /**
+     * Kind 1 notes replying to a 1111 comment sit outside the comment namespace —
+     * they are main-feed notes, not comment-thread replies, so they are hidden
+     * from the thread tree. Private gift-wrapped replies are exempt: private
+     * comment publishing is not implemented yet, so a reply-to-a-comment rumor
+     * is still kind 1.
+     */
+    private fun isIgnoredStrayKind1(event: NostrEvent): Boolean =
+        event.kind == 1 &&
+            eventRepoRef?.isPrivate(event.id) != true &&
+            Nip22.isStrayKind1OnComment(event) { id ->
+                (threadEvents[id] ?: eventRepoRef?.getEvent(id))?.kind
+            }
+
     fun collapseBranch(anchorId: String) {
         if (expandedIds.remove(anchorId)) rebuildTree()
     }
@@ -213,9 +227,6 @@ class ThreadViewModel : ViewModel() {
                     return@collect
                 }
 
-                // Admit NIP-22 comments (kind 1111). Clients increasingly reply with
-                // comments rather than kind 1, so a kind-1-only gate shows those
-                // threads as empty — every reply on some notes is a 1111.
                 if (event.kind != 1 && event.kind != Nip22.KIND_COMMENT) return@collect
 
                 // Silently drop events the user has already deleted on some other client/session.
@@ -227,23 +238,9 @@ class ThreadViewModel : ViewModel() {
                 if (Nip10.isStandaloneQuote(event)) return@collect
 
                 // Validate: event must reference the thread root (some relays ignore eTags filter).
-                //
-                // A NIP-22 comment scopes to its root with an UPPERCASE `E`; the
-                // lowercase `e` names its immediate parent. So a reply to a
-                // comment carries `e` = that comment and `E` = the root, and a
-                // lowercase-only check drops it — comment threads then render
-                // flat one level deep. Relays aren't the problem: `#e` filters
-                // are case-insensitive per NIP-01, so these do arrive.
-                //
-                // Uppercase `A`/`I` roots aren't checked here because their
-                // values are addressable coordinates and external identifiers
-                // rather than event ids, so they can never equal `rootId`.
-                // Threads rooted on those need coordinate comparison instead.
-                if (event.id != rootId &&
-                    event.tags.none {
-                        it.size >= 2 && it[1] == rootId &&
-                            (it[0] == "e" || (it[0] == "E" && Nip22.isComment(event)))
-                    }) {
+                // NIP-22 replies-to-comments point at the root only via uppercase E
+                // scope — lowercase e names the parent comment — so accept either.
+                if (event.id != rootId && !Nip22.referencesRoot(event, rootId)) {
                     return@collect
                 }
 
@@ -297,10 +294,18 @@ class ThreadViewModel : ViewModel() {
             // author's NIP-65 list (or hints) is unknown, we stay cache-only.
             val rootEvent = _rootEvent.value
             // Include kind 5 so deletions of the root (or any event tagging the root) come through.
-            val repliesFilter = Filter(kinds = listOf(1, 5, Nip22.KIND_COMMENT), eTags = listOf(rootId))
+            // Include kind 1111 (NIP-22 comments) — treated as replies.
+            // Two ORed filters: lowercase #e catches direct replies (kind 1 and
+            // top-level 1111s); uppercase #E catches nested NIP-22 comment replies
+            // whose lowercase e points at the parent comment, not the root.
+            // They must be separate filters — one object would AND the conditions.
+            val repliesFilters = listOf(
+                Filter(kinds = listOf(1, Nip22.KIND_COMMENT, 5), eTags = listOf(rootId)),
+                Filter(kinds = listOf(Nip22.KIND_COMMENT), bigETags = listOf(rootId))
+            )
             if (rootEvent != null) {
                 outboxRouter.subscribeToUserInboxStrict(
-                    "thread-replies", rootEvent.pubkey, listOf(repliesFilter)
+                    "thread-replies", rootEvent.pubkey, repliesFilters
                 )
             }
 
@@ -367,6 +372,7 @@ class ThreadViewModel : ViewModel() {
 
         for (event in threadEvents.values) {
             if (event.id == rootId) continue
+            if (isIgnoredStrayKind1(event)) continue
             val parentId = Nip10.getReplyTarget(event) ?: rootId
             eventRepo.addReplyCount(parentId, event.id)
         }
@@ -469,6 +475,7 @@ class ThreadViewModel : ViewModel() {
             if (muteRepo?.isBlocked(event.pubkey) == true) continue
             if (Nip10.isStandaloneQuote(event)) continue
             if (eventRepoRef?.isWotFiltered(event.pubkey, event.kind) == true) continue
+            if (isIgnoredStrayKind1(event)) continue
 
             if (spamEnabled && spamClassifier != null &&
                 event.pubkey != currentUserPubkey &&

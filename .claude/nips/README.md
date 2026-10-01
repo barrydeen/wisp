@@ -16,6 +16,7 @@ developer summary (not a full spec copy).
 | 11 | [11-relay-info.md](11-relay-info.md) | Not yet | Relay information document |
 | 17 | [17-private-dm.md](17-private-dm.md) | Not yet | Gift-wrapped DMs (replaces NIP-04) |
 | 19 | [19-bech32-encoding.md](19-bech32-encoding.md) | Implemented | Nip19.kt (npub/nsec/note) |
+| 22 | [22-comment.md](22-comment.md) | Implemented | Kind 1111 comments, consume-only |
 | 25 | [25-reactions.md](25-reactions.md) | Not yet | Kind 7 reactions |
 | 42 | [42-authentication.md](42-authentication.md) | Not yet | Relay authentication |
 | 44 | [44-versioned-encryption.md](44-versioned-encryption.md) | Not yet | NIP-44 encryption (for NIP-17) |
@@ -36,6 +37,7 @@ developer summary (not a full spec copy).
 | 13 | Seal | 17 | Regular | Encrypted signed rumor |
 | 14 | Chat Message | 17 | Regular | The actual DM (inside seal) |
 | 1059 | Gift Wrap | 17 | Regular | Outer wrapper with random key |
+| 1111 | Comment | 22 | Regular | Reply to any kind; never in feeds |
 | 9734 | Zap Request | 57 | Regular | Sent to LNURL server |
 | 9735 | Zap Receipt | 57 | Regular | Created by LNURL server |
 | 10000 | Mute List | 51 | Replaceable | Parameterized |

@@ -274,7 +274,7 @@ fun GalleryCard(
                 // Overlapping avatars
                 Box(modifier = Modifier.height(20.dp).width((displayPubkeys.size * 14 + 6 + 4).dp)) {
                     displayPubkeys.forEachIndexed { index, pubkey ->
-                        val avatarUrl = eventRepo?.getProfileData(pubkey)?.picture
+                        val avatarUrl = rememberProfile(eventRepo, pubkey)?.picture
                         Box(modifier = Modifier.offset(x = (index * 14).dp)) {
                             ProfilePicture(
                                 url = avatarUrl,
@@ -288,7 +288,7 @@ fun GalleryCard(
 
                 // Label text
                 val labelText = if (repostPubkeys.size == 1) {
-                    val name = eventRepo?.getProfileData(repostPubkeys.first())?.displayString
+                    val name = rememberProfile(eventRepo, repostPubkeys.first())?.displayString
                         ?: repostPubkeys.first().toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
                     "$name reposted"
                 } else if (overflow > 0) {
@@ -597,6 +597,11 @@ fun GalleryCard(
                 content = event.content,
                 eventRepo = eventRepo,
                 emojiMap = emojiMap,
+                onProfileClick = onNavigateToProfile,
+                onNoteClick = onQuotedNoteClick,
+                noteActions = noteActions,
+                quoteDepth = quoteDepth,
+                authorPubkey = event.pubkey,
                 modifier = Modifier,
                 style = MaterialTheme.typography.bodyMedium.copy(
                     color = MaterialTheme.colorScheme.onSurface
@@ -610,7 +615,7 @@ fun GalleryCard(
                 zapDetails.maxByOrNull { it.sats }
             }
             if (topZap != null) {
-                val zapperProfile = eventRepo?.getProfileData(topZap.pubkey)
+                val zapperProfile = rememberProfile(eventRepo, topZap.pubkey)
                 val zapperName = zapperProfile?.displayString
                     ?: topZap.pubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
                 TopZapperBanner(

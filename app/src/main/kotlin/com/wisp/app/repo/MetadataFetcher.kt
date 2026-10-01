@@ -3,6 +3,7 @@ package com.wisp.app.repo
 import com.wisp.app.nostr.ClientMessage
 import com.wisp.app.nostr.Filter
 import com.wisp.app.nostr.Nip19
+import com.wisp.app.nostr.Nip22
 import com.wisp.app.nostr.NostrUriData
 import com.wisp.app.relay.OutboxRouter
 import com.wisp.app.relay.RelayPool
@@ -396,7 +397,7 @@ class MetadataFetcher(
         val subId = "reply-count-${replyCountBatchCounter++}"
         val eventIds = pendingReplyCountIds.toList()
         pendingReplyCountIds.clear()
-        val filter = Filter(kinds = listOf(1), eTags = eventIds)
+        val filter = Filter(kinds = listOf(1, Nip22.KIND_COMMENT), eTags = eventIds)
         relayPool.sendToReadRelays(ClientMessage.req(subId, filter))
         scope.launch {
             subManager.awaitEoseWithTimeout(subId)

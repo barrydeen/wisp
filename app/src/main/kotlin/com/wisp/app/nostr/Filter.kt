@@ -18,6 +18,10 @@ data class Filter(
     val aTags: List<String>? = null,
     /** Uppercase P tags — used for zap receipt sender queries (#P). */
     val bigPTags: List<String>? = null,
+    /** Uppercase E tags — NIP-22 comment root scope (#E). Lowercase #e only
+     *  matches the immediate parent, so nested comment replies (e=parent,
+     *  E=root) are invisible to #e queries. */
+    val bigETags: List<String>? = null,
     val since: Long? = null,
     val until: Long? = null,
     val limit: Int? = null,
@@ -35,6 +39,7 @@ data class Filter(
         qTags?.let { put("#q", buildJsonArray { it.forEach { q -> add(JsonPrimitive(q)) } }) }
         aTags?.let { put("#a", buildJsonArray { it.forEach { a -> add(JsonPrimitive(a)) } }) }
         bigPTags?.let { put("#P", buildJsonArray { it.forEach { p -> add(JsonPrimitive(p)) } }) }
+        bigETags?.let { put("#E", buildJsonArray { it.forEach { e -> add(JsonPrimitive(e)) } }) }
         since?.let { put("since", JsonPrimitive(it)) }
         until?.let { put("until", JsonPrimitive(it)) }
         limit?.let { put("limit", JsonPrimitive(it)) }

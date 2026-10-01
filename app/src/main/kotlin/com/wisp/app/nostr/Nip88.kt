@@ -65,7 +65,6 @@ object Nip88 {
             ?.toLongOrNull()
     }
 
-    /** Extract relay URLs from a poll event's relay tags. */
     /**
      * How many of a poll's advertised relays to actually reach past the
      * persistent pool. A poll advertises as many relays as its author's client
@@ -75,6 +74,7 @@ object Nip88 {
      */
     const val MAX_POLL_RELAY_HINTS = 3
 
+    /** Extract relay URLs from a poll event's relay tags. */
     fun parsePollRelays(event: NostrEvent): List<String> {
         return event.tags
             .filter { it.size >= 2 && it[0] == "relay" }
