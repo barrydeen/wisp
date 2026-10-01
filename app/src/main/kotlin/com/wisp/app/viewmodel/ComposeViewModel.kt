@@ -124,6 +124,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     val explicit: StateFlow<Boolean> = _explicit
 
     fun toggleExplicit() {
+        editDuringPublication()
         _explicit.value = !_explicit.value
     }
 
@@ -136,6 +137,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     val privateReplyLocked: StateFlow<Boolean> = _privateReplyLocked
 
     fun togglePrivateReply() {
+        editDuringPublication()
         if (_privateReplyLocked.value) return
         _privateReply.value = !_privateReply.value
     }
@@ -156,6 +158,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     }
 
     fun togglePow(powPrefs: com.wisp.app.repo.PowPreferences) {
+        editDuringPublication()
         val newValue = !_powEnabled.value
         _powEnabled.value = newValue
         powPrefs.setNotePowEnabled(newValue)
@@ -182,6 +185,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     }
 
     fun toggleGalleryMode() {
+        editDuringPublication()
         _galleryMode.value = !_galleryMode.value
         if (_galleryMode.value) _pollEnabled.value = false
     }
@@ -214,20 +218,24 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     val scheduleTimestamp: StateFlow<Long?> = _scheduleTimestamp
 
     fun toggleSchedule() {
+        editDuringPublication()
         _scheduleEnabled.value = !_scheduleEnabled.value
         if (!_scheduleEnabled.value) _scheduleTimestamp.value = null
     }
 
     fun setScheduleTimestamp(epochSeconds: Long) {
+        editDuringPublication()
         _scheduleTimestamp.value = epochSeconds
     }
 
     fun togglePoll() {
+        editDuringPublication()
         _pollEnabled.value = !_pollEnabled.value
         if (_pollEnabled.value) _galleryMode.value = false
     }
 
     fun updatePollOption(index: Int, text: String) {
+        editDuringPublication()
         val options = _pollOptions.value.toMutableList()
         if (index in options.indices) {
             options[index] = text
@@ -236,32 +244,45 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     }
 
     fun addPollOption() {
+        editDuringPublication()
         if (_pollOptions.value.size < 10) {
             _pollOptions.value = _pollOptions.value + ""
         }
     }
 
     fun removePollOption(index: Int) {
+        editDuringPublication()
         if (_pollOptions.value.size > 2 && index in _pollOptions.value.indices) {
             _pollOptions.value = _pollOptions.value.toMutableList().apply { removeAt(index) }
         }
     }
 
     fun togglePollType() {
+        editDuringPublication()
         _pollType.value = if (_pollType.value == Nip88.PollType.SINGLECHOICE)
             Nip88.PollType.MULTIPLECHOICE else Nip88.PollType.SINGLECHOICE
     }
 
     fun toggleZapPoll() {
+        editDuringPublication()
         _isZapPoll.value = !_isZapPoll.value
         if (_isZapPoll.value) {
             _pollType.value = Nip88.PollType.SINGLECHOICE
         }
     }
 
-    fun setZapPollMinSats(value: Long?) { _zapPollMinSats.value = value }
-    fun setZapPollMaxSats(value: Long?) { _zapPollMaxSats.value = value }
-    fun setZapPollConsensus(value: Int?) { _zapPollConsensus.value = value?.coerceIn(0, 100) }
+    fun setZapPollMinSats(value: Long?) {
+        editDuringPublication()
+        _zapPollMinSats.value = value
+    }
+    fun setZapPollMaxSats(value: Long?) {
+        editDuringPublication()
+        _zapPollMaxSats.value = value
+    }
+    fun setZapPollConsensus(value: Int?) {
+        editDuringPublication()
+        _zapPollConsensus.value = value?.coerceIn(0, 100)
+    }
 
     private var mentionStartIndex: Int = -1
     private var countdownJob: Job? = null
@@ -337,6 +358,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
                     val dims = extractDimensionsFromBytes(bytes, mime)
                     val thumbhash = if (mime.startsWith("image/")) createThumbhash(bytes) else null
                     val url = blossomRepo.uploadMedia(bytes, mime, ext, signer)
+                    editDuringPublication()
                     _uploadedUrls.value = _uploadedUrls.value + url
                     _uploadedMediaMeta[url] = UploadedMediaMeta(
                         mimeType = mime,
@@ -363,6 +385,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     }
 
     fun removeMediaUrl(url: String) {
+        editDuringPublication()
         _uploadedUrls.value = _uploadedUrls.value - url
         _uploadedMediaMeta.remove(url)
         // Reset video flag if all media removed
@@ -379,6 +402,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         val prev = _content.value
         // Shift/drop tracked mention ranges based on the edit delta between prev and value.
         if (prev.text != value.text) {
+            editDuringPublication()
             val (editStart, oldEnd, newEnd) = diffRange(prev.text, value.text)
             if (editStart >= 0) {
                 val delta = (newEnd - editStart) - (oldEnd - editStart)
@@ -478,6 +502,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     }
 
     fun selectMention(candidate: MentionCandidate) {
+        editDuringPublication()
         val value = _content.value
         val text = value.text
         val cursor = value.selection.start
@@ -523,7 +548,26 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     }
 
 
+    private val editorSession = ComposerSession()
+    private fun editDuringPublication() {
+        if (_publishing.value) {
+            editorSession.revise()
+            cancelPublish()
+        }
+    }
+    fun beginEditor(): ComposerSession.Token {
+        cancelPublish()
+        return editorSession.begin()
+    }
+    fun endEditor(token: ComposerSession.Token) {
+        if (editorSession.owns(token)) {
+            editorSession.end(token)
+            cancelPublish()
+        }
+    }
+
     fun publish(
+        editor: ComposerSession.Token,
         relayPool: RelayPool,
         replyTo: NostrEvent? = null,
         quoteTo: NostrEvent? = null,
@@ -535,6 +579,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         powPrefs: com.wisp.app.repo.PowPreferences? = null,
         resolvedEmojis: Map<String, String> = emptyMap()
     ) {
+        if (!editorSession.owns(editor)) return
         val rawText = _content.value.text
         val (materialized, _) = materializeMentions(rawText, _mentions.value)
         val text = materialized.trim()
@@ -572,22 +617,28 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         val useTimer = interfacePrefs.isPostUndoTimerEnabled() && (!isReply || interfacePrefs.isPostUndoTimerForReplies())
         val timerSeconds = interfacePrefs.getPostUndoTimerSeconds()
 
+        val editorToken = editorSession.token()
         _publishing.value = true
         if (!useTimer || timerSeconds <= 0) {
             viewModelScope.launch {
                 try {
-                    val sentCount = publishNote(text, s, relayPool, replyTo, quoteTo, outboxRouter, powManager, powPrefs, resolvedEmojis)
+                    val sentCount = publishNote(text, s, relayPool, replyTo, quoteTo, outboxRouter, powManager, powPrefs, resolvedEmojis, editorToken)
                     if (sentCount == 0) return@launch
-                    onNotePublished?.invoke()
-                    onSuccess()
+                    editorSession.complete(editorToken) {
+                        onNotePublished?.invoke()
+                        onSuccess()
+                    }
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
                 } catch (e: Exception) {
+                    if (!editorSession.isCurrent(editorToken)) return@launch
                     _error.value = getApplication<Application>().getString(R.string.error_publish_failed, e.message ?: "Unknown error")
                     _publishing.value = false
                 }
             }
             return
         }
-        startCountdown(text, s, relayPool, replyTo, quoteTo, outboxRouter, onSuccess, onNotePublished, powManager, powPrefs, resolvedEmojis, timerSeconds)
+        startCountdown(text, s, relayPool, replyTo, quoteTo, outboxRouter, onSuccess, onNotePublished, powManager, powPrefs, resolvedEmojis, timerSeconds, editorToken)
     }
 
     private fun startCountdown(
@@ -602,17 +653,23 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         powManager: PowManager? = null,
         powPrefs: com.wisp.app.repo.PowPreferences? = null,
         resolvedEmojis: Map<String, String> = emptyMap(),
-        seconds: Int = 10
+        seconds: Int = 10,
+        editorToken: ComposerSession.Token
     ) {
         countdownJob?.cancel()
         pendingPublish = {
             viewModelScope.launch {
                 try {
-                    val sentCount = publishNote(content, signer, relayPool, replyTo, quoteTo, outboxRouter, powManager, powPrefs, resolvedEmojis)
+                    val sentCount = publishNote(content, signer, relayPool, replyTo, quoteTo, outboxRouter, powManager, powPrefs, resolvedEmojis, editorToken)
                     if (sentCount == 0) return@launch
-                    onNotePublished?.invoke()
-                    onSuccess()
+                    editorSession.complete(editorToken) {
+                        onNotePublished?.invoke()
+                        onSuccess()
+                    }
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
                 } catch (e: Exception) {
+                    if (!editorSession.isCurrent(editorToken)) return@launch
                     _error.value = getApplication<Application>().getString(R.string.error_publish_failed, e.message ?: "Unknown error")
                     _publishing.value = false
                 }
@@ -652,7 +709,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         pendingPublish = null
     }
 
-    /** Publishes a note and stores the event ID. Returns the number of relays sent to (0 = failure, -1 = handed to PowManager). */
+    /** Positive = saved public post or existing private/scheduled delivery, 0 = failure, -1 = PoW handoff. */
     private suspend fun publishNote(
         content: String,
         signer: NostrSigner,
@@ -662,7 +719,8 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         outboxRouter: OutboxRouter? = null,
         powManager: PowManager? = null,
         powPrefs: com.wisp.app.repo.PowPreferences? = null,
-        resolvedEmojis: Map<String, String> = emptyMap()
+        resolvedEmojis: Map<String, String> = emptyMap(),
+        editorToken: ComposerSession.Token
     ): Int {
         val tags = mutableListOf<List<String>>()
         if (_explicit.value) {
@@ -695,7 +753,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
             for (hashtag in _hashtags.value) tags.add(listOf("t", hashtag))
             tags.addAll(Nip30.buildEmojiTagsForContent(content, resolvedEmojis))
             if (interfacePrefs.isClientTagEnabled()) tags.add(listOf("client", "Wisp"))
-            return publishPrivateReply(content, replyTo, tags, signer, relayPool, powPrefs)
+            return publishPrivateReply(content, replyTo, tags, signer, relayPool, powPrefs, editorToken)
         }
 
         val finalContent = if (quoteTo != null) {
@@ -824,10 +882,12 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
                 if (relayPool.sendToRelayOrEphemeral(url, msg, skipBadCheck = true)) sentCount++
             }
             if (sentCount == 0) {
+                if (!editorSession.isCurrent(editorToken)) return 0
                 _error.value = getApplication<Application>().getString(R.string.error_scheduler_relay)
                 _publishing.value = false
                 return 0
             }
+            if (!editorSession.isCurrent(editorToken)) return sentCount
             deleteDraftOnPublish(relayPool, signer)
             _content.value = TextFieldValue()
             _mentions.value = emptyList()
@@ -851,7 +911,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
 
         // Hand off to PowManager for background mining if PoW enabled
         if (_powEnabled.value && powManager != null) {
-            powManager.submitNote(
+            val handedOff = powManager.submitNote(
                 signer = signer,
                 content = finalContent,
                 tags = tags,
@@ -867,6 +927,11 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
                     }
                 }
             )
+            if (!handedOff) {
+                if (editorSession.isCurrent(editorToken)) _publishing.value = false
+                return 0
+            }
+            if (!editorSession.isCurrent(editorToken)) return -1
             deleteDraftOnPublish(relayPool, signer)
             _content.value = TextFieldValue()
             _mentions.value = emptyList()
@@ -879,33 +944,10 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
             return -1
         }
 
+        val publisher = requireNotNull(eventRepo?.notePublisher) { "Publication storage unavailable" }
         val event = signer.signEvent(kind = eventKind, content = finalContent, tags = tags)
-        android.util.Log.d("GALLERY", "[ComposeVM] publishNote kind=$eventKind id=${event.id.take(12)} content='${finalContent.take(50)}' tags=${tags.size} galleryMode=${_galleryMode.value} uploadedUrls=${_uploadedUrls.value.size}")
-        val msg = ClientMessage.event(event)
-        var sentCount = if (outboxRouter != null && inboxPubkeys.isNotEmpty()) {
-            outboxRouter.publishToInbox(msg, inboxPubkeys)
-        } else {
-            relayPool.sendToWriteRelays(msg)
-        }
-        // If no relays were reachable, try reconnecting write relays and retry once
-        if (sentCount == 0) {
-            val reconnected = relayPool.ensureWriteRelaysConnected()
-            if (reconnected > 0) {
-                sentCount = if (outboxRouter != null && inboxPubkeys.isNotEmpty()) {
-                    outboxRouter.publishToInbox(msg, inboxPubkeys)
-                } else {
-                    relayPool.sendToWriteRelays(msg)
-                }
-            }
-        }
-        if (sentCount == 0) {
-            _error.value = getApplication<Application>().getString(R.string.error_no_relays_connected)
-            _publishing.value = false
-            return 0
-        }
-        relayPool.trackPublish(event.id, sentCount)
-        // Insert into feed so the note appears immediately without waiting for relay echo
-        eventRepo?.addEvent(event)
+        publisher.submit(event, inboxPubkeys)
+        if (!editorSession.isCurrent(editorToken)) return 1
         if (replyTo != null) {
             // Increment on direct parent so the PostCard showing replyTo updates
             eventRepo?.addReplyCount(replyTo.id, event.id)
@@ -922,7 +964,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         _uploadedMediaMeta.clear()
         _error.value = null
         _publishing.value = false
-        return sentCount
+        return 1
     }
 
     private suspend fun publishPrivateReply(
@@ -931,7 +973,8 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         replyTags: List<List<String>>,
         signer: NostrSigner,
         relayPool: RelayPool,
-        powPrefs: com.wisp.app.repo.PowPreferences? = null
+        powPrefs: com.wisp.app.repo.PowPreferences? = null,
+        editorToken: ComposerSession.Token
     ): Int {
         val dmRepoLocal = dmRepo
         if (dmRepoLocal == null) {
@@ -954,18 +997,23 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
                 baseTags = replyTags,
                 targetDifficulty = difficulty
             )
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
+            if (!editorSession.isCurrent(editorToken)) return 0
             _error.value = getApplication<Application>().getString(R.string.error_publish_failed, e.message ?: "wrap failed")
             _publishing.value = false
             return 0
         }
 
         if (result.sentCount == 0) {
+            if (!editorSession.isCurrent(editorToken)) return 0
             _error.value = getApplication<Application>().getString(R.string.error_no_relays_connected)
             _publishing.value = false
             return 0
         }
 
+        if (!editorSession.isCurrent(editorToken)) return result.sentCount
         deleteDraftOnPublish(relayPool, signer)
         _content.value = TextFieldValue()
         _mentions.value = emptyList()
@@ -1114,6 +1162,8 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     }
 
     fun loadDraft(draft: Nip37.Draft) {
+        editorSession.revise()
+        cancelPublish()
         currentDraftId = draft.dTag
         val text = draft.content
         _content.value = TextFieldValue(text, TextRange(text.length))
@@ -1186,6 +1236,8 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     }
 
     fun clear() {
+        editorSession.revise()
+        cancelPublish()
         currentDraftId = null
         _content.value = TextFieldValue()
         _mentions.value = emptyList()

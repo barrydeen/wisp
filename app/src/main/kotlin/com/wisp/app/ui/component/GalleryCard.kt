@@ -410,6 +410,7 @@ fun GalleryCard(
                         }
                     )
                     if (isOwnEvent) {
+                        NotePublicationMenuItem(event, eventRepo) { menuExpanded = false }
                         DropdownMenuItem(
                             text = { Text(if (isPinned) stringResource(R.string.btn_unpin_from_profile) else stringResource(R.string.btn_pin_to_profile)) },
                             onClick = {
@@ -663,6 +664,7 @@ fun GalleryCard(
                     .clickable { expandedDetails = !expandedDetails }
             )
         }
+        if (isOwnEvent) NotePublicationStatus(event, eventRepo)
         AnimatedVisibility(
             visible = expandedDetails,
             enter = expandVertically() + fadeIn(),

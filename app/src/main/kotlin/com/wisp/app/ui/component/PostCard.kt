@@ -466,6 +466,7 @@ fun PostCard(
                         }
                     )
                     if (isOwnEvent) {
+                        if (!isPrivate) NotePublicationMenuItem(event, eventRepo) { menuExpanded = false }
                         DropdownMenuItem(
                             text = { Text(if (isPinned) stringResource(R.string.btn_unpin_from_profile) else stringResource(R.string.btn_pin_to_profile)) },
                             onClick = {
@@ -866,6 +867,7 @@ fun PostCard(
                 )
             }
         }
+        if (isOwnEvent && !isPrivate) NotePublicationStatus(event, eventRepo)
         AnimatedVisibility(
             visible = expandedDetails,
             enter = expandVertically() + fadeIn(),

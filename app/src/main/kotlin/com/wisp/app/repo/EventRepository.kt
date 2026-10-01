@@ -34,11 +34,16 @@ data class ZapDetail(
     val receiptEventId: String? = null
 )
 
-class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: MuteRepository? = null, val relayHintStore: RelayHintStore? = null) {
+class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: MuteRepository? = null, val relayHintStore: RelayHintStore? = null, val relayProvenance: RelayEventProvenance = RelayEventProvenance()) {
     var metadataFetcher: MetadataFetcher? = null
     var deletedEventsRepo: DeletedEventsRepository? = null
     var currentUserPubkey: String? = null
     var eventPersistence: EventPersistence? = null
+    private val _notePublisher = MutableStateFlow<NotePublisher?>(null)
+    val notePublisherState: StateFlow<NotePublisher?> = _notePublisher
+    var notePublisher: NotePublisher?
+        get() = _notePublisher.value
+        set(value) { _notePublisher.value = value }
     var contactRepo: ContactRepository? = null
     var safetyPrefs: SafetyPreferences? = null
     var extendedNetworkRepo: ExtendedNetworkRepository? = null
@@ -148,7 +153,6 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     val zapVersion: StateFlow<Int> = _zapVersion
 
     // Relay provenance tracking: eventId -> set of relay URLs
-    private val eventRelays = LruCache<String, MutableSet<String>>(15000)
     private val _relaySourceVersion = MutableStateFlow(0)
     val relaySourceVersion: StateFlow<Int> = _relaySourceVersion
 
@@ -791,6 +795,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     }
 
     fun removeEvent(eventId: String) {
+        relayProvenance.remove(eventId)
         eventCache.remove(eventId)
         synchronized(feedList) {
             if (feedIds.remove(eventId)) {
@@ -1106,19 +1111,14 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     }
 
     fun addEventRelay(eventId: String, relayUrl: String) {
-        // Thread-safe set: relay IO threads mutate this via addEventRelay while UI coroutines
-        // iterate the live set returned by getEventRelays. A plain LinkedHashSet (mutableSetOf)
-        // throws ConcurrentModificationException here; newKeySet has a weakly-consistent iterator.
-        val relays = eventRelays.get(eventId) ?: ConcurrentHashMap.newKeySet<String>().also {
-            eventRelays.put(eventId, it)
-        }
-        if (relays.add(relayUrl)) {
+        if (relayProvenance.add(eventId, relayUrl)) {
             relaySourceDirtyFlag = true
             markVersionDirty()
         }
     }
 
-    fun getEventRelays(eventId: String): Set<String> = eventRelays.get(eventId) ?: emptySet()
+    fun getEventRelays(eventId: String): Set<String> = relayProvenance.seen(eventId)
+    fun getVerifiedEventRelays(event: NostrEvent): Set<String> = relayProvenance.verifiedRelays(event)
 
     fun getRelayHintsForEvents(eventIds: Set<String>): Map<String, String> {
         val result = mutableMapOf<String, String>()
@@ -1531,7 +1531,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         clearRelayFeed()
         replyCounts.evictAll()
         zapSats.evictAll()
-        eventRelays.evictAll()
+        relayProvenance.clear()
         repostAuthors.evictAll()
         reactionCounts.evictAll()
         userReactions.evictAll()

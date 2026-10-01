@@ -3144,7 +3144,7 @@ fun BroadcastStatusBar(
                     is PowStatus.Idle -> {
                         // Show broadcast state
                         val state = broadcastState ?: return@Row
-                        if (state.accepted < state.sent) {
+                        if (!state.finished) {
                             CircularProgressIndicator(
                                 modifier = Modifier.size(14.dp),
                                 strokeWidth = 1.5.dp,
@@ -3153,11 +3153,16 @@ fun BroadcastStatusBar(
                             Spacer(Modifier.width(8.dp))
                         }
                         Text(
-                            text = if (state.accepted < state.sent) {
+                            text = if (!state.finished) {
                                 stringResource(R.string.broadcast_broadcasting, state.accepted, state.sent)
+                            } else if (state.accepted == 0) {
+                                when {
+                                    state.sent == 0 -> stringResource(R.string.publication_no_relays)
+                                    state.rejected == state.sent -> stringResource(R.string.publication_rejected)
+                                    else -> stringResource(R.string.publication_unconfirmed)
+                                }
                             } else {
-                                if (state.accepted != 1) stringResource(R.string.broadcast_published_plural, state.accepted)
-                                else stringResource(R.string.broadcast_published, state.accepted)
+                                stringResource(R.string.publication_confirmed, state.accepted, state.sent)
                             },
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant

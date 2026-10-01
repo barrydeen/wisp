@@ -29,9 +29,12 @@ import com.wisp.app.repo.RelayListRepository
 import com.wisp.app.relay.SubscriptionManager
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -126,6 +129,7 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
 
     private var targetPubkey: String = ""
     private var eventRepoRef: EventRepository? = null
+    private var localPublicationJob: Job? = null
     private var relayPoolRef: RelayPool? = null
     private var outboxRouterRef: OutboxRouter? = null
     private var subManagerRef: SubscriptionManager? = null
@@ -194,6 +198,33 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
         _profile.value = eventRepo.getProfileData(pubkey)
         _relayHints.value = relayHintStore?.getHints(pubkey) ?: emptySet()
         _isFollowing.value = contactRepo.isFollowing(pubkey)
+        localPublicationJob?.cancel()
+        localPublicationJob = viewModelScope.launch {
+            var localIds = emptySet<String>()
+            eventRepo.notePublisherState.collectLatest { publisher ->
+                _rootNotes.value = _rootNotes.value.filter { it.id !in localIds }
+                _replies.value = _replies.value.filter { it.id !in localIds }
+                _galleryPosts.value = _galleryPosts.value.filter { it.id !in localIds }
+                localIds = emptySet()
+                if (publisher == null) return@collectLatest
+                publisher.publications.map { publications ->
+                    publications.values.filter { it.acceptedCount == 0 }.map { it.event }.filter {
+                        it.pubkey == pubkey && eventRepo.deletedEventsRepo?.isEventDeleted(it) != true
+                    }
+                }.distinctUntilChanged().collect { local ->
+                    localIds = local.map { it.id }.toSet()
+                    // Recover posts that no relay can return, including after an app restart.
+                    val (replies, roots) = local.partition {
+                        it.kind == Nip22.KIND_COMMENT || (it.kind == 1 && Nip10.getReplyTarget(it) != null)
+                    }
+                    _rootNotes.value = (_rootNotes.value + roots).distinctBy { it.id }
+                        .sortedByDescending { _repostSortTime[it.id] ?: it.created_at }
+                    _replies.value = (_replies.value + replies).distinctBy { it.id }.sortedByDescending { it.created_at }
+                    _galleryPosts.value = (_galleryPosts.value + local.filter { it.kind in setOf(20, 21, 22) })
+                        .distinctBy { it.id }.sortedByDescending { it.created_at }
+                }
+            }
+        }
         extendedNetworkRepoRef = extendedNetworkRepo
         _followedBy.value = extendedNetworkRepo?.getFollowedBy(pubkey)?.toList() ?: emptyList()
         Log.d("UserProfileVM", "loadProfile: followedBy=${_followedBy.value.size} for $pubkey, discoveryState=${extendedNetworkRepo?.discoveryState?.value}")
@@ -301,6 +332,9 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
                     relayListRepo?.updateFromEvent(event)
                 }
                 if (event.pubkey == pubkey) {
+                    if (event.kind in setOf(1, Nip22.KIND_COMMENT, 20, 21, 22, 1068, 6969)) {
+                        eventRepo.addEventRelay(event.id, relayUrl)
+                    }
                     when (event.kind) {
                         0 -> {
                             if (event.created_at > latestProfileTimestamp) {
