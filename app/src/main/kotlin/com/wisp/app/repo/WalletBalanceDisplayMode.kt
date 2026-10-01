@@ -36,9 +36,18 @@ enum class WalletBalanceDisplayMode {
 
     companion object {
         private const val KEY_PREFIX = "walletBalanceDisplay_"
+        private const val RESTORE_KEY_PREFIX = "walletBalanceDisplayRestore_"
         private const val LEGACY_HIDDEN_KEY = "balance_hidden"
 
         fun storageKey(pubkey: String): String = "$KEY_PREFIX$pubkey"
+
+        /**
+         * Key holding the mode to restore when the drawer mini-wallet's
+         * hide toggle un-hides the balance. Same prefix as wisp-ios #474
+         * so cross-platform agents stay in lockstep: without it, unhiding
+         * from the drawer would reset a FIAT dashboard back to SATS.
+         */
+        fun restoreStorageKey(pubkey: String): String = "$RESTORE_KEY_PREFIX$pubkey"
 
         /**
          * Read the persisted mode for [pubkey]. Falls back to legacy

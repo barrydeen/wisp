@@ -9,6 +9,7 @@
 
     <!-- Drawer Menu -->
     <string name="drawer_my_profile">My Profile</string>
+    <string name="drawer_set_up_wallet">Set up wallet</string>
     <string name="drawer_feeds">Feeds</string>
     <string name="drawer_lists">Lists</string>
     <string name="drawer_drafts">Drafts &amp; Scheduled</string>
@@ -449,6 +450,8 @@
     <string name="cd_invoice_qr_code">Invoice QR Code</string>
     <string name="cd_lightning_address_qr_code">Lightning Address QR Code</string>
     <string name="cd_refresh_balance">Refresh balance</string>
+    <string name="cd_show_balance">Show balance</string>
+    <string name="cd_hide_balance">Hide balance</string>
     <string name="cd_transaction_history">Transaction History</string>
     <string name="cd_spark">Spark</string>
     <string name="cd_breez">Breez</string>

@@ -195,6 +195,12 @@ fun FeedScreen(
     fetchGroupPreview: (suspend (String, String) -> com.wisp.app.repo.GroupPreview?)? = null,
     scrollToTopTrigger: Int = 0,
     onScanResult: (String) -> Unit = {},
+    // Mini-wallet widget (wisp-ios #474 port). The drawer observes the
+    // shared WalletViewModel's state via these; onWalletRefresh is the
+    // startIfConfigured analog fired each time the drawer opens.
+    walletConfigured: Boolean = false,
+    walletBalanceMsats: Long? = null,
+    onWalletRefresh: () -> Unit = {},
 ) {
     val feed by viewModel.feed.collectAsState()
     val feedType by viewModel.feedType.collectAsState()
@@ -279,6 +285,24 @@ fun FeedScreen(
     }.collectAsState(initial = 0)
     val userProfile = remember(viewModel, myProfileVersion, userPubkey) {
         userPubkey?.let { viewModel.eventRepo.getProfileData(it) }
+    }
+
+    // Watch-only accounts can't run a wallet — hide the mini-wallet widget
+    // and skip its refresh, mirroring wisp-ios #474.
+    val isWatchOnly = remember(userPubkey) { viewModel.keyRepo.isReadOnly() }
+
+    // Bring the configured wallet up (and refresh its balance) when the
+    // drawer opens, so the mini-wallet's figure is live rather than only
+    // as fresh as the last wallet-tab visit. Keyed off targetValue, which
+    // flips as soon as the drawer starts opening. refreshState() is
+    // idempotent — an already-connected wallet just gets a balance refresh,
+    // and a wallet the user never opens never spins up its connection at
+    // app launch.
+    val drawerOpening by remember {
+        derivedStateOf { drawerState.targetValue == DrawerValue.Open }
+    }
+    LaunchedEffect(drawerOpening) {
+        if (drawerOpening && !isWatchOnly) onWalletRefresh()
     }
 
     val newNoteCount by viewModel.newNoteCount.collectAsState()
@@ -734,6 +758,9 @@ fun FeedScreen(
                     onLogout()
                 },
                 hasEmbeddedWallet = hasEmbeddedWallet,
+                walletConfigured = walletConfigured,
+                walletBalanceMsats = walletBalanceMsats,
+                isWatchOnly = isWatchOnly,
                 userStatus = statusVersion.let { userPubkey?.let { viewModel.eventRepo.getUserStatus(it) } },
                 onUpdateStatus = { status ->
                     viewModel.publishUserStatus(status)
