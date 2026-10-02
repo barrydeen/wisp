@@ -298,7 +298,10 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         }
 
     val zapSender = ZapSender(keyRepo, { activeWalletProvider }, relayPool, relayListRepo, HttpClientFactory.createRelayClient(), interfacePrefs)
-    val powManager = PowManager(powPrefs, relayPool, outboxRouter, eventRepo, accountScope)
+    val powManager = PowManager(
+        powPrefs, relayPool, outboxRouter, eventRepo,
+        ComposeDraftStore.from(getApplication()), accountScope
+    )
 
     // -- Manager classes --
     val feedSub: FeedSubscriptionManager = FeedSubscriptionManager(

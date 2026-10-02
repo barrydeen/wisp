@@ -120,12 +120,14 @@ import com.wisp.app.viewmodel.TrendingTimeframe
 import com.wisp.app.viewmodel.buildTrendingRelayUrl
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.lazy.itemsIndexed
 import com.wisp.app.ui.theme.WispThemeColors
 import androidx.compose.material.icons.automirrored.outlined.Reply
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.automirrored.outlined.Article
 import androidx.compose.material.icons.outlined.CurrencyBitcoin
 import androidx.compose.material.icons.outlined.Dashboard
@@ -3211,6 +3213,8 @@ fun BroadcastStatusBar(
     broadcastState: BroadcastState?,
     powStatus: PowStatus = PowStatus.Idle,
     onCancelMining: (() -> Unit)? = null,
+    onRetryMining: (() -> Unit)? = null,
+    onDismissStatus: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val showPow = powStatus !is PowStatus.Idle
@@ -3266,12 +3270,56 @@ fun BroadcastStatusBar(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    is PowStatus.Failed -> {
+                    is PowStatus.Failed, is PowStatus.Stopped -> {
+                        if (powStatus is PowStatus.Stopped) {
+                            Icon(
+                                Icons.Default.Pause,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp),
+                                tint = MiningStoppedColor
+                            )
+                            Spacer(Modifier.width(8.dp))
+                        }
                         Text(
-                            text = powStatus.message,
+                            text = if (powStatus is PowStatus.Failed) powStatus.message
+                            else stringResource(R.string.pow_status_stopped),
                             style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.error
+                            color = if (powStatus is PowStatus.Failed) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MiningStoppedColor
+                            },
+                            // Error copy is longer than the progress labels and
+                            // wraps rather than truncating — "…accepted the
+                            // post" cut off mid-sentence reads like the pill is
+                            // broken, not like the post failed.
+                            maxLines = 2,
+                            modifier = Modifier.weight(1f, fill = false)
                         )
+                        if (onRetryMining != null) {
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = stringResource(R.string.pow_status_retry),
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier
+                                    .clickable { onRetryMining() }
+                                    .padding(horizontal = 4.dp, vertical = 2.dp)
+                            )
+                        }
+                        if (onDismissStatus != null) {
+                            IconButton(
+                                onClick = onDismissStatus,
+                                modifier = Modifier.size(20.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = stringResource(R.string.pow_status_dismiss),
+                                    modifier = Modifier.size(14.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
                     }
                     is PowStatus.Idle -> {
                         // Show broadcast state
@@ -3300,6 +3348,10 @@ fun BroadcastStatusBar(
         }
     }
 }
+
+// Stopping mining is the user's own doing, not an error — amber keeps it
+// visually distinct from a rejected post while still reading as unfinished.
+private val MiningStoppedColor = Color(0xFFF59E0B)
 
 private fun formatFeedArticleTimestamp(epoch: Long): String {
     val now = System.currentTimeMillis() / 1000
