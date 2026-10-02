@@ -535,6 +535,9 @@
     <string name="new_notes_hide_forever">Hide forever</string>
     <string name="broadcast_mining">Mining PoW (%dk)…</string>
     <string name="broadcast_cancel_mining">Cancel mining</string>
+    <string name="pow_status_retry">Retry</string>
+    <string name="pow_status_dismiss">Dismiss status</string>
+    <string name="pow_status_stopped">Mining stopped. Draft saved.</string>
     <string name="broadcast_broadcasting">Broadcasting (%d/%d)</string>
     <string name="broadcast_published">Published to %d relay</string>
     <string name="broadcast_published_plural">Published to %d relays</string>
