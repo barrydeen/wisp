@@ -1,4 +1,4 @@
-package com.wisp.app.ui.component
+package com.wisp.app.nostr
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -148,5 +148,56 @@ class ImetaTest {
         assertEquals(2, map.size)
         assertEquals("first", map["https://h/1.jpg"]?.alt)
         assertEquals("second", map["https://h/2.jpg"]?.alt)
+    }
+
+    // --- Draft save → reopen → publish (regression: restored drafts used to
+    //     restore alt texts but no attachment entries, so publishing a
+    //     reopened draft silently dropped the descriptions) ---
+
+    private val draftUrl = "https://example.blossom.band/img1.jpg"
+    private val staleUrl = "https://example.blossom.band/gone.jpg"
+
+    private fun draftTags() = listOf(
+        listOf("imeta", "url $draftUrl", "m image/jpeg", "dim 1080x2340", "alt A red bicycle"),
+        listOf("imeta", "url $staleUrl", "alt Deleted from the text before saving")
+    )
+
+    @Test
+    fun `restored draft media keeps urls meta and alts still present in the content`() {
+        val restored = restoredDraftMedia(draftTags(), "look at this\n$draftUrl")
+
+        assertEquals(listOf(draftUrl), restored.urls)
+        assertEquals("image/jpeg", restored.meta[draftUrl]?.mime)
+        assertEquals("1080x2340", restored.meta[draftUrl]?.dimension)
+        assertEquals("A red bicycle", restored.alts[draftUrl])
+    }
+
+    @Test
+    fun `restored draft media drops images removed from the content`() {
+        val restored = restoredDraftMedia(draftTags(), "no media here")
+        assertTrue(restored.urls.isEmpty())
+        assertTrue(restored.alts.isEmpty())
+    }
+
+    @Test
+    fun `reopened draft publishes the alt text it was saved with`() {
+        // save side: the draft's imeta inner tags; reopen side: the composer
+        // state rebuilt above; publish side: the picture tags the composer
+        // emits — alt must survive the whole loop.
+        val restored = restoredDraftMedia(draftTags(), "look at this\n$draftUrl")
+        val entries = restored.urls.map { url ->
+            val meta = restored.meta[url]!!
+            Nip68.ImetaEntry(
+                url = url,
+                mimeType = meta.mime,
+                dim = meta.dimension,
+                thumbhash = meta.thumbhash,
+                alt = restored.alts[url]
+            )
+        }
+        val published = Nip68.buildPictureTags(title = null, media = entries)
+
+        assertEquals("A red bicycle", parseImetaTags(published)[draftUrl]?.alt)
+        assertEquals("image/jpeg", parseImetaTags(published)[draftUrl]?.mime)
     }
 }

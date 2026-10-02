@@ -1,4 +1,4 @@
-package com.wisp.app.ui.component
+package com.wisp.app.nostr
 
 /**
  * NIP-92 `imeta` parsing, kept in its own Android-free file so the JVM unit
@@ -67,6 +67,35 @@ fun parseImetaTags(tags: List<List<String>>): Map<String, MediaMeta> {
         }
     }
     return map
+}
+
+/**
+ * Composer attachment state rebuilt from a saved draft's imeta inner tags:
+ * which media URLs the draft still carries, their metadata, and their alt
+ * texts. `urls`/`meta` repopulate the composer's attachment collections so a
+ * reopened draft publishes the same imeta it was saved with — without them
+ * the URL lines survive in the text but their descriptions silently drop,
+ * because publish only emits imeta for URLs present in both collections.
+ */
+data class RestoredDraftMedia(
+    val urls: List<String>,
+    val meta: Map<String, MediaMeta>,
+    val alts: Map<String, String>
+)
+
+/**
+ * Rebuild [RestoredDraftMedia] from a draft's imeta inner tags, keeping only
+ * URLs still present in the draft content — descriptions for images the user
+ * deleted from the text before saving must not resurrect as attachments.
+ */
+fun restoredDraftMedia(tags: List<List<String>>, content: String): RestoredDraftMedia {
+    val parsed = parseImetaTags(tags)
+    val present = parsed.values.filter { it.url in content }
+    return RestoredDraftMedia(
+        urls = present.map { it.url },
+        meta = present.associate { it.url to it },
+        alts = present.mapNotNull { m -> m.alt?.let { m.url to it } }.toMap()
+    )
 }
 
 /** Authoring cap shared by the composer's alt editor. */

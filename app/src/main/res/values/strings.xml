@@ -953,6 +953,7 @@
     <string name="alt_chip_add">+ALT</string>
     <string name="alt_chip_saved">✓ALT</string>
     <string name="cd_add_alt_text">Add alt text</string>
+    <string name="cd_edit_alt_text">Alt text added. Edit description</string>
     <string name="cd_remove_image">Remove image</string>
     <string name="alt_editor_explainer">A short description makes your photo accessible to screen reader users — and gives everyone context if the image doesn\'t load.</string>
     <string name="alt_editor_hint">Describe this image…</string>

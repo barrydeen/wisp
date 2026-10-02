@@ -100,6 +100,7 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.wisp.app.nostr.MediaMeta
 
 private val GALLERY_KINDS = setOf(20, 21, 22)
 
