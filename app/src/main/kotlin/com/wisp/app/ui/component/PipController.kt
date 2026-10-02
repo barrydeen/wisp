@@ -162,10 +162,14 @@ fun FloatingVideoPlayer(
                 val listener = object : Player.Listener {
                     override fun onIsPlayingChanged(playing: Boolean) {
                         isPlaying = playing
+                        context.updateKeepScreenOn(playing)
                     }
                 }
                 pipState.player.addListener(listener)
-                onDispose { pipState.player.removeListener(listener) }
+                onDispose {
+                    pipState.player.removeListener(listener)
+                    context.updateKeepScreenOn(false)
+                }
             }
 
             AndroidView(

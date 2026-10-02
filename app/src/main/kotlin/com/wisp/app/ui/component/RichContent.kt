@@ -2655,6 +2655,7 @@ internal fun InlineVideoPlayerWithFullscreen(meta: MediaMeta, onFullScreen: (pos
             }
             override fun onIsPlayingChanged(playing: Boolean) {
                 isPlaying = playing
+                context.updateKeepScreenOn(playing)
                 if (!playing && player.playbackState == Player.STATE_READY) {
                     userPaused = true
                 }
@@ -2676,6 +2677,7 @@ internal fun InlineVideoPlayerWithFullscreen(meta: MediaMeta, onFullScreen: (pos
             resumePositionMs = player.currentPosition
             isPlaying = false
             isBuffering = false
+            context.updateKeepScreenOn(false)
             exoPlayer = null
             // Only release if not handed off to PiP
             if (PipController.pipState.value?.url != url) {
@@ -3013,6 +3015,7 @@ private fun InlineVideoPlayer(url: String, modifier: Modifier = Modifier) {
             }
             override fun onIsPlayingChanged(playing: Boolean) {
                 isPlaying = playing
+                context.updateKeepScreenOn(playing)
                 if (!playing && player.playbackState == Player.STATE_READY) {
                     userPaused = true
                 }
@@ -3034,6 +3037,7 @@ private fun InlineVideoPlayer(url: String, modifier: Modifier = Modifier) {
             resumePositionMs = player.currentPosition
             isPlaying = false
             isBuffering = false
+            context.updateKeepScreenOn(false)
             exoPlayer = null
             if (PipController.pipState.value?.url != url) {
                 player.release()
