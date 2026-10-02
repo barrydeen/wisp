@@ -54,7 +54,6 @@ import com.wisp.app.nostr.Nip30
 import com.wisp.app.nostr.toNpub
 import com.wisp.app.ui.component.Nip05Badge
 import com.wisp.app.ui.component.RichContent
-import com.wisp.app.ui.component.parseImetaTags
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -116,7 +115,6 @@ import com.wisp.app.ui.component.GalleryCard
 import com.wisp.app.ui.component.isGalleryEvent
 import com.wisp.app.ui.component.PostCard
 import com.wisp.app.ui.component.parseContent
-import com.wisp.app.ui.component.parseImetaTags
 import com.wisp.app.ui.component.ProfileQrSheet
 import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.ui.component.RichContent
@@ -133,6 +131,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import com.wisp.app.nostr.parseImetaTags
 
 private sealed class ProfileZapStatus {
     object Idle : ProfileZapStatus()

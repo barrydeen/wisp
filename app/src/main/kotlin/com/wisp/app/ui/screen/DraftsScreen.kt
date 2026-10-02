@@ -53,12 +53,12 @@ import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.ProfileData
 import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.ui.component.RichContent
-import com.wisp.app.ui.component.parseImetaTags
 import com.wisp.app.R
 import com.wisp.app.viewmodel.DraftsViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.wisp.app.nostr.parseImetaTags
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

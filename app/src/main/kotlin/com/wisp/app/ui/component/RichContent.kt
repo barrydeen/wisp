@@ -130,6 +130,8 @@ import kotlinx.coroutines.withContext
 import okhttp3.Request
 import org.json.JSONObject
 import java.net.URLEncoder
+import com.wisp.app.nostr.parseImetaTags
+import com.wisp.app.nostr.MediaMeta
 
 // Tag used by Compose's InlineTextContent system to identify inline content placeholders
 private const val INLINE_CONTENT_TAG = "androidx.compose.foundation.text.inlineContent"

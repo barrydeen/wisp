@@ -15,6 +15,10 @@ import androidx.lifecycle.viewModelScope
 import com.madebyevan.thumbhash.ThumbHash
 import com.wisp.app.nostr.ClientMessage
 import com.wisp.app.nostr.Keys
+import com.wisp.app.nostr.parseImetaTags
+import com.wisp.app.nostr.restoredDraftMedia
+import com.wisp.app.nostr.normalizeAltBreaks
+import com.wisp.app.nostr.sanitizeAltText
 import com.wisp.app.nostr.Nip10
 import com.wisp.app.nostr.Nip30
 import com.wisp.app.nostr.Nip18
@@ -188,7 +192,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
      * later emitted.
      */
     fun setAltText(url: String, rawAlt: String) {
-        val sanitized = com.wisp.app.ui.component.sanitizeAltText(rawAlt)
+        val sanitized = sanitizeAltText(rawAlt)
         _altTexts.value = if (sanitized == null) _altTexts.value - url else _altTexts.value + (url to sanitized)
     }
 
@@ -1150,12 +1154,26 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         val text = draft.content
         _content.value = TextFieldValue(text, TextRange(text.length))
         savedStateHandle["draft_content"] = text
-        // Re-apply descriptions saved with the draft (imeta inner tags keyed
-        // by URL). Entries for URLs the user re-attaches resurface on the
-        // chips; undescribed uploads are unaffected.
-        _altTexts.value = com.wisp.app.ui.component.parseImetaTags(draft.tags)
-            .mapNotNull { (url, meta) -> meta.alt?.let { url to it } }
-            .toMap()
+        // Re-apply the media the draft was saved with (imeta inner tags keyed
+        // by URL): attachments as well as descriptions. Restoring only the
+        // alt texts would strand them — the publish path emits imeta solely
+        // for URLs present in both _uploadedUrls and _uploadedMediaMeta, so a
+        // reopened draft would keep the image lines in its text but silently
+        // drop their descriptions, and the composer's alt chips would have
+        // nothing to attach to. Stale entries (images removed from the text
+        // before saving) are filtered out by [restoredDraftMedia].
+        val restored = restoredDraftMedia(draft.tags, text)
+        _uploadedUrls.value = restored.urls
+        _uploadedMediaMeta.clear()
+        for ((url, meta) in restored.meta) {
+            val dims = meta.dimension?.split('x')?.mapNotNull { it.toIntOrNull() }
+            _uploadedMediaMeta[url] = UploadedMediaMeta(
+                mimeType = meta.mime ?: "image/jpeg",
+                dimensions = if (dims != null && dims.size == 2) dims[0] to dims[1] else null,
+                thumbhash = meta.thumbhash
+            )
+        }
+        _altTexts.value = restored.alts
     }
 
     fun saveDraft(
@@ -1185,12 +1203,13 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
                 // so a restored draft can re-apply the descriptions. Only
                 // described images get a tag.
                 for ((draftAltUrl, draftAlt) in _altTexts.value) {
-                    val normalizedAlt = com.wisp.app.ui.component.normalizeAltBreaks(draftAlt)
+                    val normalizedAlt = normalizeAltBreaks(draftAlt)
                     if (normalizedAlt.isNotEmpty()) {
                         innerTags.add(listOf("imeta", "url $draftAltUrl", "alt $normalizedAlt"))
                     }
                 }
-                val innerKind = if (replyTo?.kind == Nip22.KIND_COMMENT) Nip22.KIND_COMMENT else 1                val innerJson = Nip37.serializeDraftContent(
+                val innerKind = if (replyTo?.kind == Nip22.KIND_COMMENT) Nip22.KIND_COMMENT else 1
+                val innerJson = Nip37.serializeDraftContent(
                     pubkeyHex = signer.pubkeyHex,
                     innerKind = innerKind,
                     content = text,

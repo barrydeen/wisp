@@ -27,6 +27,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.wisp.app.R
+import com.wisp.app.nostr.ALT_TEXT_MAX_CHARS
 
 /**
  * The composer's alt-text editor: image preview, a one-line explainer, and a

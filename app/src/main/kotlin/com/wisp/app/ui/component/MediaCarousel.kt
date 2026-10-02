@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import com.wisp.app.nostr.MediaMeta
 
 /**
  * Inline carousel for posts containing two or more media items. Mirrors the

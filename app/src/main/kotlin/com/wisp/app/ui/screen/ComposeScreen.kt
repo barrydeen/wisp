@@ -117,6 +117,8 @@ import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -1700,14 +1702,22 @@ private fun AltChip(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val cdText = stringResource(R.string.cd_add_alt_text)
+    // Announce the saved state, not just the action — otherwise TalkBack
+    // reads "Add alt text" on a described image too, and the checkmark in
+    // "✓ALT" is not spoken.
+    val cdText = stringResource(
+        if (saved) R.string.cd_edit_alt_text else R.string.cd_add_alt_text
+    )
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(6.dp))
             .background(if (saved) MaterialTheme.colorScheme.primary else Color.Black.copy(alpha = 0.6f))
             .clickable(onClick = onClick)
             .padding(horizontal = 6.dp, vertical = 3.dp)
-            .semantics { contentDescription = cdText }
+            .semantics {
+                role = Role.Button
+                contentDescription = cdText
+            }
     ) {
         Text(
             text = if (saved) stringResource(R.string.alt_chip_saved) else stringResource(R.string.alt_chip_add),
