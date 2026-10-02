@@ -100,6 +100,8 @@ import com.wisp.app.ui.util.LocalCanSign
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.wisp.app.nostr.parseImetaTags
+import com.wisp.app.nostr.MediaMeta
 
 private val mediaExtensions = setOf("mp4", "mov", "webm", "mp3", "wav", "ogg", "m4a", "flac", "aac", "jpg", "jpeg", "png", "gif", "webp")
 private val mediaMimePrefixes = listOf("video/", "audio/", "image/")

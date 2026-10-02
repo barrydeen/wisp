@@ -95,11 +95,11 @@ import com.wisp.app.repo.MentionCandidate
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.ui.component.EmojiReactionPopup
 import com.wisp.app.ui.component.InlineVideoPlayerWithFullscreen
-import com.wisp.app.ui.component.MediaMeta
 import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.ui.component.RichContent
 import com.wisp.app.viewmodel.LiveStreamViewModel
 import kotlinx.coroutines.launch
+import com.wisp.app.nostr.MediaMeta
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
