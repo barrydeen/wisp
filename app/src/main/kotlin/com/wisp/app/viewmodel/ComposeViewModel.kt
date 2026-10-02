@@ -76,6 +76,7 @@ private fun restoreMentionsFromState(state: SavedStateHandle): List<Mention> {
 class ComposeViewModel(app: Application, private val savedStateHandle: SavedStateHandle) : AndroidViewModel(app) {
     private val keyRepo = KeyRepository(app)
     private val interfacePrefs = InterfacePreferences(app)
+    private val draftStore = ComposeDraftStore.from(app)
     val blossomRepo = BlossomRepository(app, keyRepo.getPubkeyHex())
 
     fun reloadBlossomRepo() {
@@ -851,6 +852,13 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
 
         // Hand off to PowManager for background mining if PoW enabled
         if (_powEnabled.value && powManager != null) {
+            // Snapshot what this composer holds so a rejected or stopped publish
+            // can put it back. The composer clears its state right after this —
+            // without the snapshot the text the user typed is gone the moment
+            // mining starts.
+            val restoreKey = keyRepo.getPubkeyHex()?.let { pk ->
+                draftStore.keyFor(pk, replyTo?.id, quoteTo?.id)
+            }
             powManager.submitNote(
                 signer = signer,
                 content = finalContent,
@@ -865,7 +873,9 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
                             eventRepo?.addReplyCount(rootId, "pow-pending")
                         }
                     }
-                }
+                },
+                draftRestoreKey = restoreKey,
+                draftRestorePayload = draftSnapshot()
             )
             deleteDraftOnPublish(relayPool, signer)
             _content.value = TextFieldValue()
@@ -1111,6 +1121,80 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
             sampleSize *= 2
         }
         return sampleSize
+    }
+
+    /**
+     * Snapshot of the composer handed to PowManager at publish time. If the
+     * post is rejected by every relay — or the user stops mining — the text the
+     * composer cleared on hand-off comes back the next time this composer slot
+     * opens ([hydrateRestoredDraft]).
+     *
+     * A draft-backed composer already has its NIP-37 draft on relays (deleted
+     * only on success), and a private reply must never touch disk in
+     * cleartext — neither hands over a snapshot. Gallery and poll structure
+     * aren't part of the snapshot; those ride on the status pill's Retry,
+     * which replays the prepared event rather than the composer state.
+     */
+    private fun draftSnapshot(): DraftPayload? {
+        if (currentDraftId != null) return null
+        if (_privateReply.value) return null
+        val raw = _content.value.text
+        val urls = _uploadedUrls.value
+        if (raw.isBlank() && urls.isEmpty()) return null
+        val mentions = _mentions.value.map { DraftMention(it.start, it.end, it.pubkey) }
+        val attachments = urls.map { url ->
+            val meta = _uploadedMediaMeta[url]
+            DraftAttachment(
+                url = url,
+                mimeType = meta?.mimeType ?: "image/jpeg",
+                width = meta?.dimensions?.first,
+                height = meta?.dimensions?.second,
+                thumbhash = meta?.thumbhash
+            )
+        }
+        return DraftPayload(
+            content = raw,
+            explicit = _explicit.value,
+            powEnabled = _powEnabled.value,
+            mentions = mentions,
+            attachments = attachments
+        )
+    }
+
+    /**
+     * Reopen this composer slot with the draft a failed / stopped publish left
+     * behind. The key is per-pubkey and per-parent, so a failed reply reappears
+     * in that thread's reply box rather than in the new-post composer.
+     *
+     * Skipped when the composer already holds text or attachments — e.g. a
+     * saved-state restore of this very slot — so a restore never stomps newer
+     * input.
+     */
+    fun hydrateRestoredDraft(replyToId: String?, quoteToId: String?) {
+        val pubkey = keyRepo.getPubkeyHex() ?: return
+        val payload = draftStore.take(draftStore.keyFor(pubkey, replyToId, quoteToId)) ?: return
+        if (_content.value.text.isNotBlank() || _uploadedUrls.value.isNotEmpty()) return
+        _content.value = TextFieldValue(payload.content, TextRange(payload.content.length))
+        val mentions = payload.mentions
+            .filter { it.start in 0..it.end && it.end <= payload.content.length }
+            .map { Mention(it.start, it.end, it.pubkey) }
+        _mentions.value = mentions
+        _explicit.value = payload.explicit
+        _powEnabled.value = payload.powEnabled
+        if (payload.attachments.isNotEmpty()) {
+            _uploadedUrls.value = payload.attachments.map { it.url }
+            _uploadedMediaMeta.clear()
+            for (a in payload.attachments) {
+                _uploadedMediaMeta[a.url] = UploadedMediaMeta(
+                    mimeType = a.mimeType,
+                    dimensions = if (a.width != null && a.height != null) a.width to a.height else null,
+                    thumbhash = a.thumbhash
+                )
+            }
+        }
+        savedStateHandle["draft_content"] = payload.content
+        savedStateHandle["draft_mentions"] =
+            mentions.map { "${it.start},${it.end},${it.pubkey}" }.toTypedArray()
     }
 
     fun loadDraft(draft: Nip37.Draft) {

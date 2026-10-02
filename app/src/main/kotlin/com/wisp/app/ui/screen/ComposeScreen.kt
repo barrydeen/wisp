@@ -194,8 +194,12 @@ fun ComposeScreen(
     val privateReply by viewModel.privateReply.collectAsState()
     val privateReplyLocked by viewModel.privateReplyLocked.collectAsState()
 
-    LaunchedEffect(replyTo) {
+    LaunchedEffect(replyTo, quoteTo) {
         viewModel.configureForReply(replyTo)
+        // Consume any draft a failed / stopped publish left in this slot —
+        // keys are per-pubkey and per-parent, so a failed reply restores only
+        // in its own thread's reply box.
+        viewModel.hydrateRestoredDraft(replyTo?.id, quoteTo?.id)
     }
     val powStatus = powManager?.status?.collectAsState()?.value ?: PowStatus.Idle
     val isMiningBusy = powStatus is PowStatus.Mining
