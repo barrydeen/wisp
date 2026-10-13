@@ -7,6 +7,8 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.longOrNull
 import java.security.SecureRandom
 
 object Nip17 {
@@ -120,40 +122,31 @@ object Nip17 {
      * Unwrap a received gift wrap (kind 1059) to extract the inner rumor.
      */
     fun unwrapGiftWrap(recipientPrivkey: ByteArray, giftWrap: NostrEvent): Rumor? {
-        if (giftWrap.kind != 1059) return null
+        if (giftWrap.kind != 1059 || !giftWrap.verifySignature()) return null
 
         return try {
             // Decrypt gift wrap → seal JSON
             val throwawayPubkey = giftWrap.pubkey.hexToByteArray()
             val throwawayKey = Nip44.getConversationKey(recipientPrivkey, throwawayPubkey)
-            val sealJson = Nip44.decrypt(giftWrap.content, throwawayKey)
+            val sealJson = try {
+                Nip44.decrypt(giftWrap.content, throwawayKey)
+            } finally {
+                throwawayKey.wipe()
+            }
 
-            // Parse seal
-            val seal = NostrEvent.fromJson(sealJson)
-            if (seal.kind != 13) return null
+            // The wrapper authenticates its throwaway key, not the message author.
+            val seal = parseVerifiedSeal(sealJson) ?: return null
 
             // Decrypt seal → rumor JSON
             val sealPubkey = seal.pubkey.hexToByteArray()
             val sealKey = Nip44.getConversationKey(recipientPrivkey, sealPubkey)
-            val rumorJson = Nip44.decrypt(seal.content, sealKey)
+            val rumorJson = try {
+                Nip44.decrypt(seal.content, sealKey)
+            } finally {
+                sealKey.wipe()
+            }
 
-            // Parse rumor
-            val rumorObj = json.parseToJsonElement(rumorJson).jsonObject
-            val kind = rumorObj["kind"]?.jsonPrimitive?.content?.toIntOrNull()
-            if (kind != 14 && kind != 7 && kind != 15 && kind != 1) return null
-
-            val tags = rumorObj["tags"]?.jsonArray?.map { tagArr ->
-                tagArr.jsonArray.map { it.jsonPrimitive.content }
-            } ?: emptyList()
-
-            Rumor(
-                pubkey = rumorObj["pubkey"]?.jsonPrimitive?.content ?: seal.pubkey,
-                createdAt = rumorObj["created_at"]?.jsonPrimitive?.content?.toLongOrNull()
-                    ?: seal.created_at,
-                kind = kind,
-                content = rumorObj["content"]?.jsonPrimitive?.content ?: "",
-                tags = tags
-            )
+            parseVerifiedRumor(rumorJson, seal.pubkey)
         } catch (_: Exception) {
             null
         }
@@ -253,39 +246,50 @@ object Nip17 {
      * Uses signer.nip44Decrypt for both decrypt layers.
      */
     suspend fun unwrapGiftWrapRemote(signer: NostrSigner, giftWrap: NostrEvent): Rumor? {
-        if (giftWrap.kind != 1059) return null
+        if (giftWrap.kind != 1059 || !giftWrap.verifySignature()) return null
 
         return try {
             // Decrypt gift wrap → seal JSON
             val sealJson = signer.nip44Decrypt(giftWrap.content, giftWrap.pubkey)
 
-            // Parse seal
-            val seal = NostrEvent.fromJson(sealJson)
-            if (seal.kind != 13) return null
+            val seal = parseVerifiedSeal(sealJson) ?: return null
 
             // Decrypt seal → rumor JSON
             val rumorJson = signer.nip44Decrypt(seal.content, seal.pubkey)
 
-            // Parse rumor
-            val rumorObj = json.parseToJsonElement(rumorJson).jsonObject
-            val kind = rumorObj["kind"]?.jsonPrimitive?.content?.toIntOrNull()
-            if (kind != 14 && kind != 7 && kind != 15 && kind != 1) return null
-
-            val tags = rumorObj["tags"]?.jsonArray?.map { tagArr ->
-                tagArr.jsonArray.map { it.jsonPrimitive.content }
-            } ?: emptyList()
-
-            Rumor(
-                pubkey = rumorObj["pubkey"]?.jsonPrimitive?.content ?: seal.pubkey,
-                createdAt = rumorObj["created_at"]?.jsonPrimitive?.content?.toLongOrNull()
-                    ?: seal.created_at,
-                kind = kind,
-                content = rumorObj["content"]?.jsonPrimitive?.content ?: "",
-                tags = tags
-            )
+            parseVerifiedRumor(rumorJson, seal.pubkey)
         } catch (_: Exception) {
             null
         }
+    }
+
+    private fun parseVerifiedSeal(sealJson: String): NostrEvent? {
+        val seal = NostrEvent.fromJson(sealJson)
+        return seal.takeIf { it.kind == 13 && it.tags.isEmpty() && it.verifySignature() }
+    }
+
+    /** Bind the unsigned rumor to the authenticated seal before callers route it. */
+    private fun parseVerifiedRumor(rumorJson: String, sealPubkey: String): Rumor? {
+        val rumorObj = json.parseToJsonElement(rumorJson).jsonObject
+        // Some clients serialize unsigned events with an empty sig rather than omitting it.
+        val signature = rumorObj["sig"]
+        if (signature != null &&
+            (signature !is JsonPrimitive || !signature.isString || signature.content.isNotEmpty())) {
+            return null
+        }
+
+        val pubkey = rumorObj["pubkey"]?.jsonPrimitive?.takeIf { it.isString }?.content ?: return null
+        if (pubkey != sealPubkey) return null
+        val createdAt = rumorObj["created_at"]?.jsonPrimitive?.longOrNull ?: return null
+        val kind = rumorObj["kind"]?.jsonPrimitive?.intOrNull ?: return null
+        if (kind != 14 && kind != 7 && kind != 15 && kind != 1) return null
+        val content = rumorObj["content"]?.jsonPrimitive?.takeIf { it.isString }?.content ?: return null
+        val tags = rumorObj["tags"]?.jsonArray?.map { tagArr ->
+            tagArr.jsonArray.map { it.jsonPrimitive.takeIf { value -> value.isString }?.content ?: return null }
+        } ?: return null
+        val rumor = Rumor(pubkey, createdAt, kind, content, tags)
+        val id = rumorObj["id"]?.jsonPrimitive?.takeIf { it.isString }?.content ?: return null
+        return rumor.takeIf { id == computeRumorId(it) }
     }
 
     /**
