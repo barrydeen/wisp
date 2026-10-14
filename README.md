@@ -280,6 +280,34 @@ cd wisp
 
 Release builds use R8 minification; keep rules live in `app/proguard-rules.pro` and cover kotlinx.serialization, secp256k1 JNI, Bouncy Castle, OkHttp, Coil, Security Crypto, Media3, and ZXing.
 
+### Build analytics
+
+The checked-in `gradlew` and `gradlew.bat` launchers set
+`OBX_DISABLE_ANALYTICS=true` before starting Gradle. This disables the ObjectBox
+plugin's build analytics, including when CI invokes either launcher.
+
+Android Studio sync and builds started directly through the Gradle Tooling API
+can bypass the launchers. Set `OBX_DISABLE_ANALYTICS` to the literal value `true`
+in the environment of the IDE process before opening the project, and restart
+the IDE and any existing Gradle daemons after changing it. For example, on a
+POSIX shell, export it before launching Android Studio:
+
+```sh
+export OBX_DISABLE_ANALYTICS=true
+```
+
+For CI jobs or other launchers that invoke Gradle directly, set the same variable
+in the job/process environment before Gradle starts. A GitHub Actions job can
+use:
+
+```yaml
+env:
+  OBX_DISABLE_ANALYTICS: 'true'
+```
+
+This is an environment variable, not a `gradle.properties` setting or a JVM
+system property. Recheck the supported opt-out when upgrading ObjectBox.
+
 ---
 
 ## Contributing
