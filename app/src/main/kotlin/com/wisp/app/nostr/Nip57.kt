@@ -14,14 +14,68 @@ import java.security.MessageDigest
 
 object Nip57 {
     const val KIND_PRIVATE_ZAP_EVENT = 9733
+    const val KIND_ZAP_REQUEST = 9734
+    const val KIND_ZAP_RECEIPT = 9735
     private const val ANON_TAG = "anon"
     private const val PZAP_HRP = "pzap"
     private const val IV_HRP = "iv"
 
-    private val bolt11AmountRegex = Regex("""lnbc(\d+)([munp]?)1""")
     private val json = Json { ignoreUnknownKeys = true }
 
     data class DecryptedPrivateZap(val senderPubkey: String, val message: String)
+
+    private fun tagValue(event: NostrEvent, name: String): String? =
+        event.tags.firstOrNull { it.size >= 2 && it[0] == name }?.get(1)
+
+    /** SHA-256 of the raw description string, hex-encoded — the invoice's `h` field commits to this. */
+    private fun descriptionHashHex(description: String): String =
+        MessageDigest.getInstance("SHA-256").digest(description.toByteArray(Charsets.UTF_8)).toHex()
+
+    /**
+     * Parse the receipt's embedded kind-9734 zap request with NIP-57 client-side
+     * validation. A receipt is an ordinary relay event anyone can author; without
+     * these checks the embedded request's pubkey would present as the zap sender —
+     * the same spoof class as unauthenticated NIP-17 rumor authors.
+     *
+     * Requires: signature-valid request, request addressing the same recipient
+     * (and, when both carry one, the same event) as the receipt, and an invoice
+     * whose description hash commits to the exact request string in the receipt's
+     * description tag. The hash binding is what stops a genuine request from being
+     * replayed into a receipt for different tags.
+     */
+    fun parseValidatedZapRequest(receipt: NostrEvent): NostrEvent? {
+        if (receipt.kind != KIND_ZAP_RECEIPT) return null
+        val description = tagValue(receipt, "description") ?: return null
+        val request = parseEmbeddedRequest(receipt) ?: return null
+        if (request.kind != KIND_ZAP_REQUEST) return null
+        if (!request.verifySignature()) return null
+        if (receiptInconsistency(receipt, request, description) != null) return null
+        return request
+    }
+
+    /**
+     * Signature-independent consistency checks between a receipt and its embedded
+     * request. Split from [parseValidatedZapRequest] so the tag/invoice logic is
+     * testable on the JVM classpath, where secp256k1 JNI is unavailable.
+     * Returns null when consistent, or the reason for rejection.
+     */
+    internal fun receiptInconsistency(receipt: NostrEvent, request: NostrEvent, description: String): String? {
+        val requestP = tagValue(request, "p") ?: return "request has no p tag"
+        val receiptP = tagValue(receipt, "p") ?: return "receipt has no p tag"
+        if (!requestP.equals(receiptP, ignoreCase = true)) return "p tag mismatch"
+        val requestE = tagValue(request, "e")
+        val receiptE = tagValue(receipt, "e")
+        if (requestE != null && receiptE != null && !requestE.equals(receiptE, ignoreCase = true)) {
+            return "e tag mismatch"
+        }
+        val bolt11 = tagValue(receipt, "bolt11") ?: return "receipt has no bolt11"
+        val invoice = Bolt11.decode(bolt11) ?: return "bolt11 undecodable"
+        val invoiceHash = invoice.descriptionHash ?: return "invoice has no description hash"
+        if (!invoiceHash.equals(descriptionHashHex(description), ignoreCase = true)) {
+            return "description hash mismatch"
+        }
+        return null
+    }
 
     fun getZappedEventId(event: NostrEvent): String? {
         return event.tags.firstOrNull { it.size >= 2 && it[0] == "e" }?.get(1)
@@ -29,57 +83,37 @@ object Nip57 {
 
     /**
      * Extract the zapper's pubkey from a kind 9735 zap receipt.
-     * The description tag contains the serialized kind 9734 zap request whose pubkey is the sender.
+     * Returns null unless the receipt passes [parseValidatedZapRequest].
      */
     fun getZapperPubkey(event: NostrEvent): String? {
-        val description = event.tags.firstOrNull { it.size >= 2 && it[0] == "description" }?.get(1)
-            ?: return null
-        return try {
-            val zapRequest = NostrEvent.fromJson(description)
-            zapRequest.pubkey.takeIf { it.isNotBlank() }
-        } catch (_: Exception) {
-            null
-        }
+        val zapRequest = parseValidatedZapRequest(event) ?: return null
+        return zapRequest.pubkey.takeIf { it.isNotBlank() }
     }
 
     fun getZapMessage(event: NostrEvent): String {
-        val description = event.tags.firstOrNull { it.size >= 2 && it[0] == "description" }?.get(1)
-            ?: return ""
-        return try {
-            val zapRequest = NostrEvent.fromJson(description)
-            zapRequest.content
-        } catch (_: Exception) {
-            ""
-        }
+        return parseValidatedZapRequest(event)?.content ?: ""
     }
 
     /** Extract the relay URLs from the embedded 9734 zap request's "relays" tag. */
     fun getZapRequestRelays(event: NostrEvent): List<String> {
-        val description = event.tags.firstOrNull { it.size >= 2 && it[0] == "description" }?.get(1)
-            ?: return emptyList()
-        return try {
-            val zapRequest = NostrEvent.fromJson(description)
-            zapRequest.tags.firstOrNull { it.size >= 2 && it[0] == "relays" }?.drop(1) ?: emptyList()
-        } catch (_: Exception) {
-            emptyList()
-        }
+        return parseValidatedZapRequest(event)
+            ?.tags?.firstOrNull { it.size >= 2 && it[0] == "relays" }?.drop(1)
+            ?: emptyList()
     }
 
+    /**
+     * Zap amount in sats from the receipt's bolt11, counting only validated
+     * receipts. When the signed request carries an amount tag (msat), the
+     * invoice must match it — otherwise a receipt author could re-mint the
+     * invoice with an inflated amount while keeping the genuine request.
+     */
     fun getZapAmountSats(event: NostrEvent): Long {
-        val bolt11 = event.tags.firstOrNull { it.size >= 2 && it[0] == "bolt11" }?.get(1)
-            ?: return 0
-        val match = bolt11AmountRegex.find(bolt11.lowercase()) ?: return 0
-        val amount = match.groupValues[1].toLongOrNull() ?: return 0
-        val multiplier = match.groupValues[2]
-        // Base unit is BTC, convert to sats (1 BTC = 100,000,000 sats)
-        return when (multiplier) {
-            "m" -> amount * 100_000        // milli-BTC
-            "u" -> amount * 100            // micro-BTC
-            "n" -> amount / 10             // nano-BTC (0.1 sat per nano)
-            "p" -> amount / 10_000         // pico-BTC
-            "" -> amount * 100_000_000     // whole BTC
-            else -> 0
-        }
+        val bolt11 = tagValue(event, "bolt11") ?: return 0
+        val amountMsat = Bolt11.decodeAmountMsat(bolt11) ?: return 0
+        val request = parseValidatedZapRequest(event) ?: return 0
+        val requestedMsat = tagValue(request, "amount")?.toLongOrNull()
+        if (requestedMsat != null && requestedMsat != amountMsat) return 0
+        return amountMsat / 1000
     }
 
     data class LnurlPayInfo(
@@ -232,20 +266,20 @@ object Nip57 {
         )
     }
 
-    /** True if the receipt's embedded zap request carries a DIP-03 `anon` tag. */
+    /** True if the receipt's validated embedded zap request carries a DIP-03 `anon` tag. */
     fun isPrivateZap(receipt: NostrEvent): Boolean {
-        val request = parseEmbeddedRequest(receipt) ?: return false
+        val request = parseValidatedZapRequest(receipt) ?: return false
         return request.tags.any { it.size >= 2 && it[0] == ANON_TAG }
     }
 
     /**
      * Decrypt a DIP-03 private zap addressed to us (we are the recipient).
-     * Returns null unless the `anon` envelope decodes, AES-decrypts, and the
-     * inner kind 9733's Schnorr signature checks out — the anon tag is
-     * otherwise unauthenticated, so signature verification is mandatory.
+     * The embedded request must pass NIP-57 validation first; the `anon` envelope
+     * is otherwise unauthenticated, so the inner kind-9733 signature verification
+     * in [decryptAnonTag] is mandatory.
      */
     fun decryptPrivateZap(receipt: NostrEvent, myPrivkey: ByteArray): DecryptedPrivateZap? {
-        val request = parseEmbeddedRequest(receipt) ?: return null
+        val request = parseValidatedZapRequest(receipt) ?: return null
         val anon = request.tags.firstOrNull { it.size >= 2 && it[0] == ANON_TAG }?.get(1)
             ?: return null
         val shared = runCatching {
@@ -266,7 +300,7 @@ object Nip57 {
         myPrivkey: ByteArray,
         target: NostrEvent
     ): DecryptedPrivateZap? {
-        val request = parseEmbeddedRequest(receipt) ?: return null
+        val request = parseValidatedZapRequest(receipt) ?: return null
         val anon = request.tags.firstOrNull { it.size >= 2 && it[0] == ANON_TAG }?.get(1)
             ?: return null
         val ephPriv = deriveEphemeralPrivkey(myPrivkey, target.id, target.created_at)

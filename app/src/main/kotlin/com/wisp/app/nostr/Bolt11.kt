@@ -8,6 +8,7 @@ object Bolt11 {
         val amountSats: Long?,
         val paymentHash: String?,
         val description: String?,
+        val descriptionHash: String?,
         val expiry: Long,
         val timestamp: Long
     ) {
@@ -52,6 +53,7 @@ object Bolt11 {
         var offset = 7
         var paymentHash: String? = null
         var description: String? = null
+        var descriptionHash: String? = null
         var expiry = 3600L // default 1 hour
 
         while (offset < sigStart) {
@@ -74,6 +76,11 @@ object Bolt11 {
                         description = String(bytes, Charsets.UTF_8)
                     }
                 }
+                23 -> { // description hash (h): 52 x 5-bit = 260 bits = 32 bytes + 4 padding bits
+                    if (dataLength == 52) {
+                        descriptionHash = convert5to8(data5, offset, dataLength)?.toHex()
+                    }
+                }
                 6 -> { // expiry: variable length integer
                     var exp = 0L
                     for (i in 0 until dataLength) {
@@ -89,6 +96,7 @@ object Bolt11 {
             amountSats = amountSats,
             paymentHash = paymentHash,
             description = description,
+            descriptionHash = descriptionHash,
             expiry = expiry,
             timestamp = timestamp
         )
@@ -104,6 +112,27 @@ object Bolt11 {
             "n" -> amount / 10
             "p" -> amount / 10_000
             "" -> amount * 100_000_000
+            else -> null
+        }
+    }
+
+    /**
+     * Exact millisatoshi amount from the human-readable part.
+     * Multipliers in msat: BTC=10^11, m=10^8, u=10^5, n=10^2, p=10^-1.
+     * Sub-millisecond 'p' amounts floor to whole msat, matching how zaps are denominated.
+     */
+    internal fun decodeAmountMsat(invoice: String): Long? {
+        val lower = invoice.lowercase().removePrefix("lightning:")
+        val pos = lower.lastIndexOf('1')
+        if (pos < 1) return null
+        val match = hrpAmountRegex.find(lower.substring(0, pos)) ?: return null
+        val amount = match.groupValues[1].toLongOrNull() ?: return null
+        return when (match.groupValues[2]) {
+            "m" -> amount * 100_000_000
+            "u" -> amount * 100_000
+            "n" -> amount * 100
+            "p" -> amount / 10
+            "" -> amount * 100_000_000_000
             else -> null
         }
     }

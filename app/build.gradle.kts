@@ -114,6 +114,9 @@ dependencies {
     androidTestImplementation(libs.junit)
     androidTestImplementation(libs.androidx.test.runner)
 
+    androidTestImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.test.runner)
+
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
     implementation(libs.compose.ui.graphics)

@@ -99,20 +99,15 @@ object Nip69 {
     /**
      * Extract the poll_option index from a kind 9735 zap receipt.
      * The description tag contains the serialized kind 9734 zap request
-     * which may include a ["poll_option", "<index>"] tag.
+     * which may include a ["poll_option", "<index>"] tag. The receipt must
+     * pass NIP-57 validation (authenticated request, matching tags, invoice
+     * description hash) before its vote is counted.
      */
     fun getZapPollOptionFromZapReceipt(zapReceipt: NostrEvent): Int? {
-        val description = zapReceipt.tags
-            .firstOrNull { it.size >= 2 && it[0] == "description" }
-            ?.get(1) ?: return null
-        return try {
-            val zapRequest = NostrEvent.fromJson(description)
-            zapRequest.tags
-                .firstOrNull { it.size >= 2 && it[0] == "poll_option" }
-                ?.get(1)
-                ?.toIntOrNull()
-        } catch (_: Exception) {
-            null
-        }
+        val zapRequest = Nip57.parseValidatedZapRequest(zapReceipt) ?: return null
+        return zapRequest.tags
+            .firstOrNull { it.size >= 2 && it[0] == "poll_option" }
+            ?.get(1)
+            ?.toIntOrNull()
     }
 }
