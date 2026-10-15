@@ -141,8 +141,8 @@ class Nip57AuthenticationTest {
         tags.add(listOf("description", description))
         tags.add(listOf("p", pOverride ?: (request.tags.firstOrNull { it[0] == "p" }?.get(1)
             ?: recipient.pubkey.toHex())))
-        val requestE = request.tags.firstOrNull { it[0] == "e" }?.get(1)
-        if (requestE != null) tags.add(listOf("e", eOverride ?: requestE))
+        val requestE = eOverride ?: request.tags.firstOrNull { it[0] == "e" }?.get(1)
+        if (requestE != null) tags.add(listOf("e", requestE))
         tags.addAll(extraTags)
         return NostrEvent.create(wallet.privkey, wallet.pubkey, Nip57.KIND_ZAP_RECEIPT, "", tags)
     }
@@ -276,6 +276,41 @@ class Nip57AuthenticationTest {
             sender.privkey, sender.pubkey, 1, "just a note"
         )
         val receipt = buildReceipt(notAZapRequest, zapInvoice(notAZapRequest.toJson(), amountMsat))
+        assertNull(Nip57.getZapperPubkey(receipt))
+    }
+
+    @Test
+    fun profileZapRequestCannotBeRetargetedOntoAnEvent() {
+        // Genuine profile-zap request (no e tag); a receipt that adds e would
+        // redirect V's profile zap onto an arbitrary note.
+        val request = buildZapRequest(sender, event = null)
+        val receipt = buildReceipt(
+            request, zapInvoice(request.toJson(), amountMsat),
+            eOverride = eventId
+        )
+        assertNull(Nip57.getZapperPubkey(receipt))
+        assertNull(Nip57.parseValidatedZapRequest(receipt))
+    }
+
+    @Test
+    fun profileZapReceiptWithoutETagsValidates() {
+        val request = buildZapRequest(sender, event = null)
+        val receipt = buildReceipt(request, zapInvoice(request.toJson(), amountMsat))
+        assertEquals(sender.pubkey.toHex(), Nip57.getZapperPubkey(receipt))
+        assertEquals(amountMsat / 1000, Nip57.getZapAmountSats(receipt))
+    }
+
+    @Test
+    fun receiptPTagMismatchIsRejected() {
+        val request = buildZapRequest(sender)
+        val description = request.toJson()
+        val receipt = NostrEvent.create(wallet.privkey, wallet.pubkey, Nip57.KIND_ZAP_RECEIPT, "", listOf(
+            listOf("bolt11", zapInvoice(description, amountMsat)),
+            listOf("description", description),
+            listOf("p", recipient.pubkey.toHex()),
+            listOf("e", eventId),
+            listOf("P", attacker.pubkey.toHex())
+        ))
         assertNull(Nip57.getZapperPubkey(receipt))
     }
 
