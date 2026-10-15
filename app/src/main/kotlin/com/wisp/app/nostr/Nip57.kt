@@ -38,10 +38,11 @@ object Nip57 {
      * the same spoof class as unauthenticated NIP-17 rumor authors.
      *
      * Requires: signature-valid request, request addressing the same recipient
-     * (and, when both carry one, the same event) as the receipt, and an invoice
-     * whose description hash commits to the exact request string in the receipt's
-     * description tag. The hash binding is what stops a genuine request from being
-     * replayed into a receipt for different tags.
+     * as the receipt, matching e-tag presence (a genuine receipt mirrors the
+     * request's tags, so a request without one cannot be redirected onto an
+     * event by adding `e` to the receipt), a `P` sender mirror matching the
+     * request author when present, and an invoice whose description hash
+     * commits to the exact request string in the receipt's description tag.
      */
     fun parseValidatedZapRequest(receipt: NostrEvent): NostrEvent? {
         if (receipt.kind != KIND_ZAP_RECEIPT) return null
@@ -65,8 +66,17 @@ object Nip57 {
         if (!requestP.equals(receiptP, ignoreCase = true)) return "p tag mismatch"
         val requestE = tagValue(request, "e")
         val receiptE = tagValue(receipt, "e")
-        if (requestE != null && receiptE != null && !requestE.equals(receiptE, ignoreCase = true)) {
+        if ((requestE == null) != (receiptE == null)) {
+            // Genuine receipts mirror the request's tags; asymmetric presence
+            // means the receipt retargeted a request into another zap context.
+            return "e tag presence mismatch"
+        }
+        if (requestE != null && !requestE.equals(receiptE, ignoreCase = true)) {
             return "e tag mismatch"
+        }
+        val receiptSenderMirror = tagValue(receipt, "P")
+        if (receiptSenderMirror != null && !receiptSenderMirror.equals(request.pubkey, ignoreCase = true)) {
+            return "P tag mismatch"
         }
         val bolt11 = tagValue(receipt, "bolt11") ?: return "receipt has no bolt11"
         val invoice = Bolt11.decode(bolt11) ?: return "bolt11 undecodable"

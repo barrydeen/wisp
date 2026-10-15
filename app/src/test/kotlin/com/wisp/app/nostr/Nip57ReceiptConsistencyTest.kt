@@ -122,6 +122,74 @@ class Nip57ReceiptConsistencyTest {
     }
 
     @Test
+    fun `receipt e tag on a request without one is inconsistent`() {
+        // A genuine profile-zap request carries no e tag; adding e to the
+        // receipt would retarget it onto an event.
+        val description = requestJson(listOf(listOf("p", recipient)))
+        val r = receipt(description, listOf(listOf("p", recipient), listOf("e", eventId)))
+        val request = NostrEvent.fromJson(description)
+        assertEquals(
+            "e tag presence mismatch",
+            Nip57.receiptInconsistency(r, request, description)
+        )
+    }
+
+    @Test
+    fun `request e tag without a receipt e tag is inconsistent`() {
+        val description = requestJson(listOf(listOf("p", recipient), listOf("e", eventId)))
+        val r = receipt(description, listOf(listOf("p", recipient)))
+        val request = NostrEvent.fromJson(description)
+        assertEquals(
+            "e tag presence mismatch",
+            Nip57.receiptInconsistency(r, request, description)
+        )
+    }
+
+    @Test
+    fun `symmetric e tag absence is consistent`() {
+        val description = requestJson(listOf(listOf("p", recipient)))
+        val r = receipt(description, listOf(listOf("p", recipient)))
+        val request = NostrEvent.fromJson(description)
+        assertNull(Nip57.receiptInconsistency(r, request, description))
+    }
+
+    @Test
+    fun `receipt P tag must match the request author`() {
+        val description = requestJson(listOf(listOf("p", recipient), listOf("e", eventId)))
+        val r = NostrEvent.createUnsigned(
+            sender, Nip57.KIND_ZAP_RECEIPT, "",
+            listOf(
+                listOf("bolt11", invoice(100_000L, listOf(23 to sha256Bytes(description)))),
+                listOf("description", description),
+                listOf("p", recipient),
+                listOf("e", eventId),
+                listOf("P", "44".repeat(32))
+            ),
+            1_700_000_200L
+        )
+        val request = NostrEvent.fromJson(description)
+        assertEquals("P tag mismatch", Nip57.receiptInconsistency(r, request, description))
+    }
+
+    @Test
+    fun `receipt P tag matching the request author is consistent`() {
+        val description = requestJson(listOf(listOf("p", recipient), listOf("e", eventId)))
+        val r = NostrEvent.createUnsigned(
+            sender, Nip57.KIND_ZAP_RECEIPT, "",
+            listOf(
+                listOf("bolt11", invoice(100_000L, listOf(23 to sha256Bytes(description)))),
+                listOf("description", description),
+                listOf("p", recipient),
+                listOf("e", eventId),
+                listOf("P", sender.uppercase())
+            ),
+            1_700_000_200L
+        )
+        val request = NostrEvent.fromJson(description)
+        assertNull(Nip57.receiptInconsistency(r, request, description))
+    }
+
+    @Test
     fun `request e tag must match receipt e tag`() {
         val description = requestJson(listOf(listOf("p", recipient), listOf("e", "bb".repeat(32))))
         val r = receipt(description, listOf(listOf("p", recipient), listOf("e", eventId)))
@@ -154,7 +222,7 @@ class Nip57ReceiptConsistencyTest {
 
     @Test
     fun `receipt without bolt11 is inconsistent`() {
-        val description = requestJson(listOf(listOf("p", recipient), listOf("e", eventId)))
+        val description = requestJson(listOf(listOf("p", recipient)))
         val r = NostrEvent.createUnsigned(
             sender, Nip57.KIND_ZAP_RECEIPT, "",
             listOf(
