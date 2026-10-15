@@ -155,7 +155,7 @@ class Nip57AuthenticationTest {
     // ─── Validation ─────────────────────────────────────────────────────────
 
     @Test
-    fun `valid receipt exposes sender message amount and relays`() {
+    fun validReceiptExposesSenderMessageAmountAndRelays() {
         val receipt = validReceipt()
         assertEquals(sender.pubkey.toHex(), Nip57.getZapperPubkey(receipt))
         assertEquals("nice post", Nip57.getZapMessage(receipt))
@@ -165,7 +165,7 @@ class Nip57AuthenticationTest {
     }
 
     @Test
-    fun `receipt with forged sender request is rejected`() {
+    fun receiptWithForgedSenderRequestIsRejected() {
         // Attacker signs their own request that claims V's pubkey as the author.
         val forged = NostrEvent.create(
             attacker.privkey, attacker.pubkey, Nip57.KIND_ZAP_REQUEST, "steal credit",
@@ -184,7 +184,7 @@ class Nip57AuthenticationTest {
     }
 
     @Test
-    fun `unsigned embedded request is rejected`() {
+    fun unsignedEmbeddedRequestIsRejected() {
         val unsigned = NostrEvent.createUnsigned(
             sender.pubkey.toHex(), Nip57.KIND_ZAP_REQUEST, "hi",
             listOf(
@@ -198,7 +198,7 @@ class Nip57AuthenticationTest {
     }
 
     @Test
-    fun `invoice amount must match the signed request amount tag`() {
+    fun invoiceAmountMustMatchTheSignedRequestAmountTag() {
         val request = buildZapRequest(sender, msat = amountMsat)
         val inflated = zapInvoice(request.toJson(), 1_000_000L)
         val receipt = buildReceipt(request, inflated)
@@ -209,7 +209,7 @@ class Nip57AuthenticationTest {
     }
 
     @Test
-    fun `receipt without amount-tagged request accepts invoice amount`() {
+    fun receiptWithoutAmountTaggedRequestAcceptsInvoiceAmount() {
         val request = NostrEvent.create(
             sender.privkey, sender.pubkey, Nip57.KIND_ZAP_REQUEST, "no amount tag",
             listOf(
@@ -222,7 +222,7 @@ class Nip57AuthenticationTest {
     }
 
     @Test
-    fun `receipt p tag must match the request`() {
+    fun receiptPTagMustMatchTheRequest() {
         val request = buildZapRequest(sender)
         val receipt = buildReceipt(
             request, zapInvoice(request.toJson(), amountMsat),
@@ -232,7 +232,7 @@ class Nip57AuthenticationTest {
     }
 
     @Test
-    fun `receipt e tag must match the request`() {
+    fun receiptETagMustMatchTheRequest() {
         val request = buildZapRequest(sender)
         val otherEvent = NostrEvent.create(
             recipient.privkey, recipient.pubkey, 1, "different note"
@@ -246,7 +246,7 @@ class Nip57AuthenticationTest {
     }
 
     @Test
-    fun `receipt without bolt11 is rejected`() {
+    fun receiptWithoutBolt11IsRejected() {
         val request = buildZapRequest(sender)
         val receipt = buildReceipt(request, zapInvoice(request.toJson(), amountMsat), dropBolt11 = true)
         assertNull(Nip57.getZapperPubkey(receipt))
@@ -254,7 +254,7 @@ class Nip57AuthenticationTest {
     }
 
     @Test
-    fun `invoice without description hash is rejected`() {
+    fun invoiceWithoutDescriptionHashIsRejected() {
         val request = buildZapRequest(sender)
         val noHashInvoice = buildInvoice(amountMsat, listOf(1 to sha256Bytes("payment preimage")))
         val receipt = buildReceipt(request, noHashInvoice)
@@ -262,7 +262,7 @@ class Nip57AuthenticationTest {
     }
 
     @Test
-    fun `description hash must commit to the embedded request`() {
+    fun descriptionHashMustCommitToTheEmbeddedRequest() {
         val request = buildZapRequest(sender)
         // Invoice hashes a different string than the receipt's description tag.
         val wrongHash = buildInvoice(amountMsat, listOf(23 to sha256Bytes("unrelated")))
@@ -271,7 +271,7 @@ class Nip57AuthenticationTest {
     }
 
     @Test
-    fun `non-zap-kind embedded request is rejected`() {
+    fun nonZapKindEmbeddedRequestIsRejected() {
         val notAZapRequest = NostrEvent.create(
             sender.privkey, sender.pubkey, 1, "just a note"
         )
@@ -280,7 +280,7 @@ class Nip57AuthenticationTest {
     }
 
     @Test
-    fun `replayed genuine request with intact binding still validates`() {
+    fun replayedGenuineRequestWithIntactBindingStillValidates() {
         // NIP-57 cannot distinguish a re-announced (request, invoice) pair from
         // a genuine receipt: the signature, tags and hash all match. The replay
         // can only ever restate V's real historical zap for the same target.
@@ -295,7 +295,7 @@ class Nip57AuthenticationTest {
     // ─── Private zap round trip ─────────────────────────────────────────────
 
     @Test
-    fun `private zap round trip passes validation and decrypts sender`() {
+    fun privateZapRoundTripPassesValidationAndDecryptsSender() {
         val request = Nip57.buildPrivateZapRequest(
             senderPrivkey = sender.privkey,
             senderPubkey = sender.pubkey,
@@ -318,7 +318,7 @@ class Nip57AuthenticationTest {
     }
 
     @Test
-    fun `private zap from attacker cannot spoof the inner sender`() {
+    fun privateZapFromAttackerCannotSpoofTheInnerSender() {
         // Attacker encrypts an inner event that claims V as sender; the inner
         // signature check must reject it after the anon envelope decrypts.
         val spoofedInner = NostrEvent.create(
@@ -347,7 +347,7 @@ class Nip57AuthenticationTest {
     // ─── Polls ──────────────────────────────────────────────────────────────
 
     @Test
-    fun `poll option is extracted from a validated receipt`() {
+    fun pollOptionIsExtractedFromAValidatedReceipt() {
         val request = Nip57.buildZapRequest(
             senderPrivkey = sender.privkey,
             senderPubkey = sender.pubkey,
@@ -364,7 +364,7 @@ class Nip57AuthenticationTest {
     }
 
     @Test
-    fun `poll option from a forged receipt is rejected`() {
+    fun pollOptionFromAForgedReceiptIsRejected() {
         val forged = NostrEvent.create(
             attacker.privkey, attacker.pubkey, Nip57.KIND_ZAP_RECEIPT, "",
             listOf(
@@ -383,7 +383,7 @@ class Nip57AuthenticationTest {
     // ─── Invoice amount decoding ────────────────────────────────────────────
 
     @Test
-    fun `bolt11 amounts decode exactly in every unit`() {
+    fun bolt11AmountsDecodeExactlyInEveryUnit() {
         for (msat in listOf(100L, 1_000L, 100_000L, 10_000_000L, 100_000_000_000L)) {
             val request = buildZapRequest(sender, msat = msat)
             val receipt = buildReceipt(request, zapInvoice(request.toJson(), msat))
@@ -392,7 +392,7 @@ class Nip57AuthenticationTest {
     }
 
     @Test
-    fun `non-zap events are ignored by the validator`() {
+    fun nonZapEventsAreIgnoredByTheValidator() {
         assertNull(Nip57.parseValidatedZapRequest(validReceipt().copy(kind = 1)))
     }
 }
