@@ -27,6 +27,9 @@ object Nip57 {
     private fun tagValue(event: NostrEvent, name: String): String? =
         event.tags.firstOrNull { it.size >= 2 && it[0] == name }?.get(1)
 
+    private fun tagCount(event: NostrEvent, name: String): Int =
+        event.tags.count { it.size >= 2 && it[0] == name }
+
     /** SHA-256 of the raw description string, hex-encoded — the invoice's `h` field commits to this. */
     private fun descriptionHashHex(description: String): String =
         MessageDigest.getInstance("SHA-256").digest(description.toByteArray(Charsets.UTF_8)).toHex()
@@ -46,6 +49,10 @@ object Nip57 {
      */
     fun parseValidatedZapRequest(receipt: NostrEvent): NostrEvent? {
         if (receipt.kind != KIND_ZAP_RECEIPT) return null
+        // Fail closed on the receipt itself. The relay pool authenticates every
+        // event it emits, but this function is public and must not depend on
+        // callers having used that path (standalone relay connections exist).
+        if (!receipt.verifySignature()) return null
         val description = tagValue(receipt, "description") ?: return null
         val request = parseEmbeddedRequest(receipt) ?: return null
         if (request.kind != KIND_ZAP_REQUEST) return null
@@ -61,6 +68,14 @@ object Nip57 {
      * Returns null when consistent, or the reason for rejection.
      */
     internal fun receiptInconsistency(receipt: NostrEvent, request: NostrEvent, description: String): String? {
+        // Ambiguous security-relevant tags: reject rather than let first-match
+        // lookup pick a winner that other consumers might not agree on.
+        for (name in listOf("p", "e", "description", "bolt11")) {
+            if (tagCount(receipt, name) > 1) return "duplicate $name tag in receipt"
+        }
+        for (name in listOf("p", "e", "amount")) {
+            if (tagCount(request, name) > 1) return "duplicate $name tag in request"
+        }
         val requestP = tagValue(request, "p") ?: return "request has no p tag"
         val receiptP = tagValue(receipt, "p") ?: return "receipt has no p tag"
         if (!requestP.equals(receiptP, ignoreCase = true)) return "p tag mismatch"
@@ -113,16 +128,21 @@ object Nip57 {
 
     /**
      * Zap amount in sats from the receipt's bolt11, counting only validated
-     * receipts. When the signed request carries an amount tag (msat), the
-     * invoice must match it — otherwise a receipt author could re-mint the
-     * invoice with an inflated amount while keeping the genuine request.
+     * receipts. A request that legitimately omits the amount tag leaves the
+     * invoice in charge; a present but malformed, negative or duplicated one
+     * makes the request unusable as a cross-check and rejects the amount
+     * instead of falling through.
      */
     fun getZapAmountSats(event: NostrEvent): Long {
         val bolt11 = tagValue(event, "bolt11") ?: return 0
         val amountMsat = Bolt11.decodeAmountMsat(bolt11) ?: return 0
         val request = parseValidatedZapRequest(event) ?: return 0
-        val requestedMsat = tagValue(request, "amount")?.toLongOrNull()
-        if (requestedMsat != null && requestedMsat != amountMsat) return 0
+        val amountTags = request.tags.filter { it.size >= 2 && it[0] == "amount" }
+        if (amountTags.isEmpty()) return amountMsat / 1000
+        if (amountTags.size > 1) return 0
+        val requestedMsat = amountTags[0].getOrNull(1)?.toLongOrNull()
+        if (requestedMsat == null || requestedMsat <= 0) return 0
+        if (requestedMsat != amountMsat) return 0
         return amountMsat / 1000
     }
 

@@ -3,6 +3,7 @@ package com.wisp.app.nostr
 object Bolt11 {
     private val bech32Charset = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
     private val hrpAmountRegex = Regex("""ln\w+?(\d+)([munp]?)$""")
+    private val zapHrpAmountRegex = Regex("""lnbc(\d+)([munp]?)$""")
 
     data class DecodedInvoice(
         val amountSats: Long?,
@@ -117,23 +118,29 @@ object Bolt11 {
     }
 
     /**
-     * Exact millisatoshi amount from the human-readable part.
-     * Multipliers in msat: BTC=10^11, m=10^8, u=10^5, n=10^2, p=10^-1.
-     * Sub-millisecond 'p' amounts floor to whole msat, matching how zaps are denominated.
+     * Exact millisatoshi amount from the human-readable part of a zap invoice.
+     * Mainnet prefixes only (`lnbc`), matching NIP-57 zaps; overflow is rejected
+     * rather than wrapped; and pico amounts that are not a whole number of
+     * millisatoshis are rejected instead of floored.
      */
     internal fun decodeAmountMsat(invoice: String): Long? {
         val lower = invoice.lowercase().removePrefix("lightning:")
         val pos = lower.lastIndexOf('1')
         if (pos < 1) return null
-        val match = hrpAmountRegex.find(lower.substring(0, pos)) ?: return null
+        val match = zapHrpAmountRegex.find(lower.substring(0, pos)) ?: return null
         val amount = match.groupValues[1].toLongOrNull() ?: return null
-        return when (match.groupValues[2]) {
-            "m" -> amount * 100_000_000
-            "u" -> amount * 100_000
-            "n" -> amount * 100
-            "p" -> amount / 10
-            "" -> amount * 100_000_000_000
-            else -> null
+        if (amount <= 0) return null
+        return try {
+            when (match.groupValues[2]) {
+                "m" -> Math.multiplyExact(amount, 100_000_000L)
+                "u" -> Math.multiplyExact(amount, 100_000L)
+                "n" -> Math.multiplyExact(amount, 100L)
+                "p" -> if (amount % 10 != 0L) null else amount / 10
+                "" -> Math.multiplyExact(amount, 100_000_000_000L)
+                else -> null
+            }
+        } catch (_: ArithmeticException) {
+            null
         }
     }
 

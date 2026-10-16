@@ -315,6 +315,62 @@ class Nip57AuthenticationTest {
     }
 
     @Test
+    fun malformedRequestAmountTagRejectsTheAmount() {
+        val request = NostrEvent.create(
+            sender.privkey, sender.pubkey, Nip57.KIND_ZAP_REQUEST, "malformed amount",
+            listOf(
+                listOf("p", recipient.pubkey.toHex()),
+                listOf("e", eventId),
+                listOf("amount", "abc")
+            )
+        )
+        val receipt = buildReceipt(request, zapInvoice(request.toJson(), amountMsat))
+        // Sender identity still resolves; only the amount is refused.
+        assertEquals(sender.pubkey.toHex(), Nip57.getZapperPubkey(receipt))
+        assertEquals(0, Nip57.getZapAmountSats(receipt))
+    }
+
+    @Test
+    fun negativeOrZeroRequestAmountTagRejectsTheAmount() {
+        for (bad in listOf("-5", "0")) {
+            val request = NostrEvent.create(
+                sender.privkey, sender.pubkey, Nip57.KIND_ZAP_REQUEST, "bad amount",
+                listOf(
+                    listOf("p", recipient.pubkey.toHex()),
+                    listOf("e", eventId),
+                    listOf("amount", bad)
+                )
+            )
+            val receipt = buildReceipt(request, zapInvoice(request.toJson(), amountMsat))
+            assertEquals(0, Nip57.getZapAmountSats(receipt))
+        }
+    }
+
+    @Test
+    fun duplicateRequestAmountTagsRejectTheReceipt() {
+        val request = NostrEvent.create(
+            sender.privkey, sender.pubkey, Nip57.KIND_ZAP_REQUEST, "two amounts",
+            listOf(
+                listOf("p", recipient.pubkey.toHex()),
+                listOf("e", eventId),
+                listOf("amount", amountMsat.toString()),
+                listOf("amount", (amountMsat * 2).toString())
+            )
+        )
+        val receipt = buildReceipt(request, zapInvoice(request.toJson(), amountMsat))
+        assertNull(Nip57.getZapperPubkey(receipt))
+        assertEquals(0, Nip57.getZapAmountSats(receipt))
+    }
+
+    @Test
+    fun tamperedReceiptFailsOuterAuthentication() {
+        val receipt = validReceipt()
+        assertNull(Nip57.parseValidatedZapRequest(receipt.copy(id = "00".repeat(32))))
+        assertNull(Nip57.parseValidatedZapRequest(receipt.copy(sig = "f".repeat(128))))
+        assertNull(Nip57.parseValidatedZapRequest(receipt.copy(content = "tampered")))
+    }
+
+    @Test
     fun replayedGenuineRequestWithIntactBindingStillValidates() {
         // NIP-57 cannot distinguish a re-announced (request, invoice) pair from
         // a genuine receipt: the signature, tags and hash all match. The replay
