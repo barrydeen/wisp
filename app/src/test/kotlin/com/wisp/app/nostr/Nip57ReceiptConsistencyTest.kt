@@ -190,6 +190,42 @@ class Nip57ReceiptConsistencyTest {
     }
 
     @Test
+    fun `duplicate receipt tags are inconsistent`() {
+        val description = requestJson(listOf(listOf("p", recipient), listOf("e", eventId)))
+        for (dup in listOf(
+            listOf("p", recipient),
+            listOf("e", eventId),
+            listOf("description", description),
+            listOf("bolt11", invoice(100_000L, listOf(23 to sha256Bytes(description))))
+        )) {
+            val r = NostrEvent.createUnsigned(
+                sender, Nip57.KIND_ZAP_RECEIPT, "",
+                listOf(
+                    listOf("bolt11", invoice(100_000L, listOf(23 to sha256Bytes(description)))),
+                    listOf("description", description),
+                    listOf("p", recipient),
+                    listOf("e", eventId),
+                    dup
+                ),
+                1_700_000_200L
+            )
+            val request = NostrEvent.fromJson(description)
+            assertEquals(
+                "duplicate ${dup[0]} tag in receipt",
+                Nip57.receiptInconsistency(r, request, description)
+            )
+        }
+    }
+
+    @Test
+    fun `duplicate request amount tag is inconsistent`() {
+        val description = requestJson(listOf(listOf("p", recipient), listOf("e", eventId), listOf("amount", "100000"), listOf("amount", "200000")))
+        val r = receipt(description, listOf(listOf("p", recipient), listOf("e", eventId)))
+        val request = NostrEvent.fromJson(description)
+        assertEquals("duplicate amount tag in request", Nip57.receiptInconsistency(r, request, description))
+    }
+
+    @Test
     fun `request e tag must match receipt e tag`() {
         val description = requestJson(listOf(listOf("p", recipient), listOf("e", "bb".repeat(32))))
         val r = receipt(description, listOf(listOf("p", recipient), listOf("e", eventId)))

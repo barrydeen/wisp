@@ -122,6 +122,43 @@ class Bolt11Test {
     }
 
     @Test
+    fun `overflowing amounts are rejected instead of wrapping`() {
+        // 92_233_720_369 whole BTC x 10^11 wraps Long and previously produced a
+        // small positive value; it must be rejected outright.
+        assertNull(Bolt11.decodeAmountMsat("lnbc92233720369@@@@@"))
+        assertNull(Bolt11.decodeAmountMsat("lnbc99999999999m@@@@@"))
+        assertNull(Bolt11.decodeAmountMsat("lnbc99999999999999999999n1@@@@@"))
+    }
+
+    @Test
+    fun `maximum representable amount still parses`() {
+        // 92_233_720 whole BTC x 10^11 is the largest whole-BTC amount below Long.MAX;
+        // one more digit overflows and must be rejected.
+        assertEquals(9_223_372_000_000_000_000L, Bolt11.decodeAmountMsat("lnbc922337201@@@@@"))
+        assertNull(Bolt11.decodeAmountMsat("lnbc922337203681@@@@@"))
+    }
+
+    @Test
+    fun `zero amounts are rejected`() {
+        assertNull(Bolt11.decodeAmountMsat("lnbc0n1@@@@@"))
+        assertNull(Bolt11.decodeAmountMsat("lnbc0@@@@@"))
+    }
+
+    @Test
+    fun `pico amounts below one millisatoshi are rejected`() {
+        assertNull(Bolt11.decodeAmountMsat("lnbc5p1@@@@@"))
+        assertEquals(100L, Bolt11.decodeAmountMsat("lnbc1000p1@@@@@"))
+    }
+
+    @Test
+    fun `non-mainnet currency prefixes are rejected for zaps`() {
+        assertNull(Bolt11.decodeAmountMsat("lntb1u1@@@@@"))
+        assertNull(Bolt11.decodeAmountMsat("lnbcrt1u1@@@@@"))
+        assertNull(Bolt11.decodeAmountMsat("lnsb1u1@@@@@"))
+        assertEquals(100_000L, Bolt11.decodeAmountMsat("lnbc1u1@@@@@"))
+    }
+
+    @Test
     fun `lightning prefix is stripped for amount decoding`() {
         assertEquals(100_000L, Bolt11.decodeAmountMsat("lightning:lnbc1u1@@@@@"))
         assertEquals(100_000_000_000L, Bolt11.decodeAmountMsat("LIGHTNING:lnbc11@@@@@"))
