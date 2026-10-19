@@ -274,6 +274,43 @@ object Nip47 {
     }
 
     /**
+     * Authenticate an NWC response event for [connection]. Returns null when the
+     * event is a signature-valid kind-23195 response authored by the connection's
+     * wallet service and addressing this client; otherwise the rejection reason.
+     *
+     * NWC traffic runs over a dedicated relay connection that bypasses
+     * RelayPool's signature gate, so this is the authentication boundary for
+     * everything that can complete a pending wallet request.
+     */
+    fun responseFailureReason(connection: NwcConnection, event: NostrEvent): String? {
+        if (event.kind != 23195) return "not a response event"
+        if (!event.verifySignature()) return "invalid signature"
+        if (!event.pubkey.equals(connection.walletServicePubkey.toHex(), ignoreCase = true)) {
+            return "unexpected author"
+        }
+        val recipient = event.tags.firstOrNull { it.size >= 2 && it[0] == "p" }?.get(1)
+            ?: return "missing recipient tag"
+        if (!recipient.equals(connection.clientPubkey.toHex(), ignoreCase = true)) {
+            return "recipient mismatch"
+        }
+        return null
+    }
+
+    /**
+     * Authenticate the wallet service's kind-13194 info event. The relay-side
+     * `authors` filter is not trusted: a hostile relay could otherwise serve a
+     * fake info event and steer the connection into its preferred encryption.
+     */
+    fun infoFailureReason(connection: NwcConnection, event: NostrEvent): String? {
+        if (event.kind != 13194) return "not an info event"
+        if (!event.verifySignature()) return "invalid signature"
+        if (!event.pubkey.equals(connection.walletServicePubkey.toHex(), ignoreCase = true)) {
+            return "unexpected author"
+        }
+        return null
+    }
+
+    /**
      * Auto-detect encryption format and decrypt.
      * NIP-04 content contains "?iv=", NIP-44 is a plain base64 blob.
      * Tries the connection's negotiated encryption first, falls back to the other.

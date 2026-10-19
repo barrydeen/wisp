@@ -152,9 +152,7 @@ class NwcRepository(private val context: Context, private val relayPool: RelayPo
             r.messages.collect { message ->
                 when (message) {
                     is RelayMessage.EventMsg -> {
-                        // This standalone relay bypasses RelayPool's signature gate,
-                        // so verify here before routing to request completion.
-                        if (message.event.kind == 23195 && message.event.verifySignature()) {
+                        if (message.event.kind == 23195) {
                             handleResponse(message.event)
                         }
                     }
@@ -261,12 +259,8 @@ class NwcRepository(private val context: Context, private val relayPool: RelayPo
             relay.messages.first { msg ->
                 when (msg) {
                     is RelayMessage.EventMsg -> {
-                        // The authors filter is relay-enforced only; a hostile relay
-                        // could otherwise serve a fake info event and steer the
-                        // connection into its preferred encryption scheme.
-                        if (msg.subscriptionId == "nwc-info" && msg.event.kind == 13194 &&
-                            msg.event.pubkey.equals(wsPubkeyHex, ignoreCase = true) &&
-                            msg.event.verifySignature()
+                        if (msg.subscriptionId == "nwc-info" &&
+                            Nip47.infoFailureReason(conn, msg.event) == null
                         ) {
                             result = Nip47.parseInfoEncryption(msg.event)
                             true
@@ -289,17 +283,11 @@ class NwcRepository(private val context: Context, private val relayPool: RelayPo
 
     private fun handleResponse(event: com.wisp.app.nostr.NostrEvent) {
         val conn = connection ?: return
-        // A valid response is authored by the wallet service this connection
-        // targets and addresses this client. Without the author/p binding,
-        // matching by e-tag alone would let anyone impersonate the wallet's
-        // answers if decryption ever succeeded for attacker-controlled keys.
-        if (!event.pubkey.equals(conn.walletServicePubkey.toHex(), ignoreCase = true)) {
-            Log.w(TAG, "NWC response from unexpected author")
-            return
-        }
-        val recipientTag = event.tags.firstOrNull { it.size >= 2 && it[0] == "p" }?.get(1)
-        if (recipientTag == null || !recipientTag.equals(conn.clientPubkey.toHex(), ignoreCase = true)) {
-            Log.w(TAG, "NWC response does not address this client")
+        // Single authentication boundary before anything can complete a pending
+        // request: signature, wallet-service author, and client recipient.
+        val failure = Nip47.responseFailureReason(conn, event)
+        if (failure != null) {
+            Log.w(TAG, "NWC response rejected: $failure")
             return
         }
         try {
