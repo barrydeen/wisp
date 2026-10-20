@@ -31,6 +31,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -71,6 +72,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import kotlinx.coroutines.flow.MutableStateFlow
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -1754,6 +1756,32 @@ private fun RelayPickerDialog(
     var newSetName by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
     val couldntConnectError = stringResource(R.string.error_couldnt_connect_relay)
+    var probeJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+
+    fun startProbe() {
+        val input = urlInput.trim().removeSuffix("/")
+        val domain = input
+            .removePrefix("wss://")
+            .removePrefix("ws://")
+        if (domain.isBlank()) return
+        probeJob?.cancel()
+        isProbing = true
+        probeError = null
+        probeJob = scope.launch {
+            // If the user specified a protocol, try only that
+            val result = when {
+                input.startsWith("ws://") || input.startsWith("wss://") ->
+                    onProbe(input)
+                else -> onProbe(domain)
+            }
+            isProbing = false
+            if (result != null) {
+                onSelect(result)
+            } else {
+                probeError = couldntConnectError
+            }
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1767,41 +1795,28 @@ private fun RelayPickerDialog(
                     onValueChange = {
                         urlInput = it
                         probeError = null
+                        // Editing while a connection attempt is running cancels it,
+                        // so a typo can be fixed without waiting for the probe to fail.
+                        if (isProbing) {
+                            probeJob?.cancel()
+                            isProbing = false
+                        }
                     },
                     placeholder = { Text(stringResource(R.string.placeholder_relay_example)) },
                     singleLine = true,
                     // Relay addresses: no autocorrect, no auto-space after "."
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, autoCorrectEnabled = false),
-                    enabled = !isProbing,
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Uri,
+                        autoCorrectEnabled = false,
+                        imeAction = ImeAction.Go
+                    ),
+                    keyboardActions = KeyboardActions(onGo = { startProbe() }),
                     trailingIcon = {
                         if (isProbing) {
                             CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                         } else {
                             IconButton(
-                                onClick = {
-                                    val input = urlInput.trim().removeSuffix("/")
-                                    val domain = input
-                                        .removePrefix("wss://")
-                                        .removePrefix("ws://")
-                                    if (domain.isNotBlank()) {
-                                        isProbing = true
-                                        probeError = null
-                                        scope.launch {
-                                            // If the user specified a protocol, try only that
-                                            val result = when {
-                                                input.startsWith("ws://") || input.startsWith("wss://") ->
-                                                    onProbe(input)
-                                                else -> onProbe(domain)
-                                            }
-                                            isProbing = false
-                                            if (result != null) {
-                                                onSelect(result)
-                                            } else {
-                                                probeError = couldntConnectError
-                                            }
-                                        }
-                                    }
-                                },
+                                onClick = { startProbe() },
                                 enabled = urlInput.isNotBlank()
                             ) {
                                 Text(stringResource(R.string.btn_go), style = MaterialTheme.typography.labelMedium)
