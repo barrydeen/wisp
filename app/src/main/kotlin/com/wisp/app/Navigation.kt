@@ -259,7 +259,9 @@ fun WispNavHost(
 
     var replyTarget by remember { mutableStateOf<NostrEvent?>(null) }
     var quoteTarget by remember { mutableStateOf<NostrEvent?>(null) }
-    var scrollToTopTrigger by remember { mutableStateOf(0) }
+    // One counter per tab, so re-tapping Notifications doesn't scroll the feed when you return to it.
+    var feedScrollToTopTrigger by remember { mutableStateOf(0) }
+    var notifScrollToTopTrigger by remember { mutableStateOf(0) }
     var addToListEventId by remember { mutableStateOf<String?>(null) }
 
     // Multi-account state
@@ -615,7 +617,10 @@ fun WispNavHost(
                         isReadOnly = signingMode == SigningMode.READ_ONLY,
                         onTabSelected = { tab ->
                             if (currentRoute == tab.route) {
-                                scrollToTopTrigger++
+                                when (tab.route) {
+                                    Routes.FEED -> feedScrollToTopTrigger++
+                                    Routes.NOTIFICATIONS -> notifScrollToTopTrigger++
+                                }
                             } else {
                                 if (tab == BottomTab.WALLET) walletViewModel.navigateHome()
                                 navController.navigate(tab.route) {
@@ -832,7 +837,7 @@ fun WispNavHost(
                 viewModel = feedViewModel,
                 isDarkTheme = isDarkTheme,
                 onToggleTheme = onToggleTheme,
-                scrollToTopTrigger = scrollToTopTrigger,
+                scrollToTopTrigger = feedScrollToTopTrigger,
                 onCompose = if (signingMode == SigningMode.READ_ONLY) null else {
                     {
                         replyTarget = null
@@ -3267,7 +3272,7 @@ fun WispNavHost(
 
             NotificationsScreen(
                 viewModel = notificationsViewModel,
-                scrollToTopTrigger = scrollToTopTrigger,
+                scrollToTopTrigger = notifScrollToTopTrigger,
                 userPubkey = feedViewModel.getUserPubkey(),
                 notifSoundEnabled = notifSoundEnabled,
                 onToggleNotifSound = {

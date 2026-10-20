@@ -220,7 +220,12 @@ fun FeedScreen(
     LaunchedEffect(scrollToTopTrigger) {
         if (scrollToTopTrigger != handledScrollTrigger) {
             handledScrollTrigger = scrollToTopTrigger
-            listState.scrollToItem(0)
+            // Re-tapping Home scrolls to the top; tapping it again once there refreshes.
+            if (listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0) {
+                viewModel.refreshFeed()
+            } else {
+                listState.scrollToItem(0)
+            }
         }
     }
     val userPubkey = viewModel.getUserPubkey()

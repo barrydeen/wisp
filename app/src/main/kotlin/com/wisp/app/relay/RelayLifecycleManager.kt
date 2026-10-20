@@ -24,13 +24,14 @@ class RelayLifecycleManager(
     private val context: Context,
     private val relayPool: RelayPool,
     private val scope: CoroutineScope,
-    private val onReconnected: (force: Boolean) -> Unit
+    private val onReconnected: (force: Boolean, refreshFeed: Boolean) -> Unit
 ) {
     private var connectivityJob: Job? = null
     private var reconnectJob: Job? = null
     @Volatile private var started = false
     @Volatile private var lastReconnectMs = 0L
     @Volatile private var lastReconnectForce = false
+    @Volatile private var lastReconnectRefresh = false
 
     /** Suppress network-change reconnects until this time (prevents double reconnect after resume). */
     @Volatile private var resumeReconnectUntilMs = 0L
@@ -38,6 +39,8 @@ class RelayLifecycleManager(
     companion object {
         private const val TAG = "RelayLifecycleMgr"
         private const val FORCE_THRESHOLD_MS = 30_000L
+        /** Away at least this long and the feed is refetched on resume; shorter trips keep it as is. */
+        private const val FEED_STALE_MS = 10 * 60_000L
         private const val DEBOUNCE_MS = 5_000L
         /** How long after a resume to suppress network-change-triggered reconnects. */
         private const val RESUME_SUPPRESSION_MS = 10_000L
@@ -110,11 +113,12 @@ class RelayLifecycleManager(
     fun onAppResume(pausedMs: Long) {
         if (!started) return
         val force = pausedMs >= FORCE_THRESHOLD_MS
+        val refreshFeed = pausedMs >= FEED_STALE_MS
         Log.d("RLC", "[Lifecycle] onAppResume — paused ${pausedMs/1000}s, force=$force, connectedCount=${relayPool.connectedCount.value}")
         // Set suppression window to prevent network-change reconnects from
         // firing shortly after this resume and causing a double reconnect.
         resumeReconnectUntilMs = System.currentTimeMillis() + RESUME_SUPPRESSION_MS
-        reconnect(force = force)
+        reconnect(force = force, refreshFeed = refreshFeed)
     }
 
     /**
@@ -125,14 +129,14 @@ class RelayLifecycleManager(
      * Owns appIsActive lifecycle: sets false before reconnect, restores true
      * in finally block to guarantee it's restored even on cancellation.
      */
-    private fun reconnect(force: Boolean) {
+    private fun reconnect(force: Boolean, refreshFeed: Boolean = false) {
         if (!started) return
         val now = System.currentTimeMillis()
         if (now - lastReconnectMs < DEBOUNCE_MS) {
             // Allow force to upgrade a debounced non-force reconnect.
             // If the in-flight reconnect was non-force and this one is force,
             // cancel it and proceed with force. Otherwise, drop as before.
-            if (force && !lastReconnectForce) {
+            if ((force && !lastReconnectForce) || (refreshFeed && !lastReconnectRefresh)) {
                 Log.d("RLC", "[Lifecycle] upgrading debounced reconnect to force")
                 reconnectJob?.cancel()
             } else {
@@ -142,6 +146,7 @@ class RelayLifecycleManager(
         }
         lastReconnectMs = now
         lastReconnectForce = force
+        lastReconnectRefresh = refreshFeed
 
         reconnectJob?.cancel()
         reconnectJob = scope.launch {
@@ -171,7 +176,7 @@ class RelayLifecycleManager(
             currentCoroutineContext().ensureActive()
             if (!started) return@launch
             Log.d("RLC", "[Lifecycle] → onReconnected(force=$force)")
-            onReconnected(force)
+            onReconnected(force, refreshFeed)
             Log.d("RLC", "[Lifecycle] onReconnected complete, connectedCount=${relayPool.connectedCount.value}")
         }
     }
@@ -186,6 +191,7 @@ class RelayLifecycleManager(
         relayPool.appIsActive = false
         lastReconnectMs = 0L
         lastReconnectForce = false
+        lastReconnectRefresh = false
         resumeReconnectUntilMs = 0L
     }
 
