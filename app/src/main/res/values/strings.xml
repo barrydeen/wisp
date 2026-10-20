@@ -550,7 +550,7 @@
     <string name="settings_media_layout_gallery">Gallery</string>
     <string name="settings_media_layout_stack">Stack</string>
     <string name="settings_hide_live_streams">Hide live streams</string>
-    <string name="settings_hide_live_streams_description">Hide the live streams row from the top of your feed</string>
+    <string name="settings_hide_live_streams_description">Hide the live streams row from your feed and stop live stream discovery. When on, no live content loads or plays</string>
     <string name="settings_client_tag">Client Tag</string>
     <string name="settings_tag_notes">Tag notes with Wisp</string>
     <string name="settings_tag_notes_description">Include a tag identifying Wisp as the client. This is visible to others.</string>
