@@ -3,6 +3,7 @@ package com.wisp.app.nostr
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
@@ -60,6 +61,46 @@ object Nip05 {
                 }
             } catch (_: Exception) {
                 Nip05Result.ERROR
+            }
+        }
+
+    data class Resolved(val pubkey: String, val relays: List<String>)
+
+    /**
+     * Look up the pubkey (and any relay hints) registered for a NIP-05 identifier.
+     * An empty local part (`@domain`) resolves as the root `_@domain`.
+     * Returns null when the name isn't registered or the server can't be reached.
+     */
+    suspend fun resolve(identifier: String, httpClient: OkHttpClient): Resolved? =
+        withContext(Dispatchers.IO) {
+            try {
+                val parts = identifier.split("@", limit = 2)
+                if (parts.size != 2) return@withContext null
+                val local = parts[0].ifEmpty { "_" }
+                val domain = parts[1].ifEmpty { return@withContext null }
+
+                val url = "https://$domain/.well-known/nostr.json?name=$local"
+                val request = Request.Builder().url(url).build()
+                httpClient.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) return@withContext null
+                    val body = response.body?.string() ?: return@withContext null
+                    val root = json.parseToJsonElement(body).jsonObject
+                    val names = root["names"]?.jsonObject ?: return@withContext null
+                    val pubkey = (names[local] ?: names.entries.firstOrNull { entry ->
+                        entry.key.equals(local, ignoreCase = true)
+                    }?.value)?.jsonPrimitive?.content?.lowercase()
+                        ?: return@withContext null
+                    if (pubkey.length != 64) return@withContext null
+                    val relays = try {
+                        root["relays"]?.jsonObject?.get(pubkey)?.jsonArray
+                            ?.map { it.jsonPrimitive.content } ?: emptyList()
+                    } catch (_: Exception) {
+                        emptyList()
+                    }
+                    Resolved(pubkey, relays)
+                }
+            } catch (_: Exception) {
+                null
             }
         }
 
