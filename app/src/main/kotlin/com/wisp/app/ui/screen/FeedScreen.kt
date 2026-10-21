@@ -99,6 +99,8 @@ import com.wisp.app.ui.component.isGalleryEvent
 import com.wisp.app.ui.component.PostCard
 import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.ui.component.RelayIcon
+import com.wisp.app.ui.util.relayMatchesQuery
+import com.wisp.app.ui.util.relaySearchQuery
 import com.wisp.app.ui.component.WispDrawerContent
 import com.wisp.app.ui.component.ZapDialog
 import com.wisp.app.repo.RelayInfoRepository
@@ -1783,6 +1785,14 @@ private fun RelayPickerDialog(
         }
     }
 
+    // The URL bar also filters the lists below it
+    val query = relaySearchQuery(urlInput)
+    val shownFavorites = favoriteRelays.filter { relayMatchesQuery(it, query) }
+    val shownScored = scoredRelays.filter { relayMatchesQuery(it.url, query) }
+    val shownSets = if (query.isEmpty()) relaySets else relaySets.filter { set ->
+        set.name.lowercase().contains(query) || set.relays.any { relayMatchesQuery(it, query) }
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = MaterialTheme.colorScheme.surface,
@@ -1838,7 +1848,7 @@ private fun RelayPickerDialog(
 
                 LazyColumn(modifier = Modifier.heightIn(max = 400.dp)) {
                     // Favorites section
-                    if (favoriteRelays.isNotEmpty()) {
+                    if (shownFavorites.isNotEmpty()) {
                         item {
                             Text(
                                 stringResource(R.string.tab_favorites),
@@ -1848,7 +1858,7 @@ private fun RelayPickerDialog(
                                 modifier = Modifier.padding(bottom = 4.dp)
                             )
                         }
-                        items(favoriteRelays) { url ->
+                        items(shownFavorites) { url ->
                             Surface(
                                 onClick = { onSelect(url) },
                                 shape = RoundedCornerShape(8.dp),
@@ -1875,8 +1885,9 @@ private fun RelayPickerDialog(
                         item { Spacer(Modifier.height(8.dp)) }
                     }
 
-                    // Relay Sets section — always shown so user can create their first set
-                    item {
+                    // Relay Sets section — always shown so user can create their first set,
+                    // unless a search hides every set
+                    if (query.isEmpty() || shownSets.isNotEmpty()) item {
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
@@ -1940,7 +1951,11 @@ private fun RelayPickerDialog(
                             }
                         }
                     }
-                    for (relaySet in relaySets) {
+                    for (relaySet in shownSets) {
+                        // While searching, sets open on their matching relays
+                        val matchingRelays = relaySet.relays.filter { relayMatchesQuery(it, query) }
+                        val searchExpanded = query.isNotEmpty() && matchingRelays.isNotEmpty()
+                        val isExpanded = searchExpanded || expandedSetDTag == relaySet.dTag
                         item(key = "set-${relaySet.dTag}") {
                             Surface(
                                 onClick = { expandedSetDTag = if (expandedSetDTag == relaySet.dTag) null else relaySet.dTag },
@@ -1970,7 +1985,7 @@ private fun RelayPickerDialog(
                                 }
                             }
                         }
-                        if (expandedSetDTag == relaySet.dTag) {
+                        if (isExpanded) {
                             // Combined feed button
                             item(key = "set-combined-${relaySet.dTag}") {
                                 Surface(
@@ -1989,7 +2004,10 @@ private fun RelayPickerDialog(
                                 }
                             }
                             // Individual relays in the set
-                            items(relaySet.relays.toList(), key = { "set-relay-${relaySet.dTag}-$it" }) { url ->
+                            items(
+                                if (searchExpanded) matchingRelays else relaySet.relays.toList(),
+                                key = { "set-relay-${relaySet.dTag}-$it" }
+                            ) { url ->
                                 Surface(
                                     onClick = { onSelect(url) },
                                     shape = RoundedCornerShape(8.dp),
@@ -2014,12 +2032,12 @@ private fun RelayPickerDialog(
                             }
                         }
                     }
-                    if (relaySets.isNotEmpty() || showCreateSet) {
+                    if (shownSets.isNotEmpty() || showCreateSet) {
                         item { Spacer(Modifier.height(8.dp)) }
                     }
 
                     // All Relays section
-                    if (scoredRelays.isNotEmpty()) {
+                    if (shownScored.isNotEmpty()) {
                         item {
                             Text(
                                 stringResource(R.string.tab_all_relays),
@@ -2029,7 +2047,7 @@ private fun RelayPickerDialog(
                                 modifier = Modifier.padding(bottom = 4.dp)
                             )
                         }
-                        items(scoredRelays) { scored ->
+                        items(shownScored) { scored ->
                             Surface(
                                 onClick = { onSelect(scored.url) },
                                 shape = RoundedCornerShape(8.dp),
@@ -2051,6 +2069,14 @@ private fun RelayPickerDialog(
                                     )
                                 }
                             }
+                        }
+                    } else if (query.isNotEmpty()) {
+                        if (shownFavorites.isEmpty() && shownSets.isEmpty()) item {
+                            Text(
+                                stringResource(R.string.relay_search_no_match),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodySmall
+                            )
                         }
                     } else if (favoriteRelays.isEmpty() && relaySets.isEmpty()) {
                         item {

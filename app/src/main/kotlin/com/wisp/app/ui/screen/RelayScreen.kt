@@ -40,6 +40,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.wisp.app.relay.RelayConfig
+import com.wisp.app.ui.util.relayMatchesQuery
+import com.wisp.app.ui.util.relaySearchQuery
 import com.wisp.app.relay.RelayPool
 import com.wisp.app.relay.RelaySetType
 import com.wisp.app.R
@@ -142,11 +144,26 @@ fun RelayScreen(
 
                 Spacer(Modifier.height(16.dp))
 
+                // The add field also filters the list below it
+                val query = relaySearchQuery(newRelayUrl)
+                val shown = when (selectedTab) {
+                    RelaySetType.GENERAL -> relays.map { it.url }
+                    RelaySetType.DM -> dmRelays
+                    RelaySetType.SEARCH -> searchRelays
+                    RelaySetType.BLOCKED -> blockedRelays
+                }
+                if (query.isNotEmpty() && shown.none { relayMatchesQuery(it, query) }) {
+                    Text(
+                        stringResource(R.string.relay_list_no_match),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 when (selectedTab) {
-                    RelaySetType.GENERAL -> GeneralRelayList(relays, viewModel)
-                    RelaySetType.DM -> SimpleRelayList(dmRelays, viewModel)
-                    RelaySetType.SEARCH -> SimpleRelayList(searchRelays, viewModel)
-                    RelaySetType.BLOCKED -> SimpleRelayList(blockedRelays, viewModel)
+                    RelaySetType.GENERAL -> GeneralRelayList(relays.filter { relayMatchesQuery(it.url, query) }, viewModel)
+                    RelaySetType.DM -> SimpleRelayList(dmRelays.filter { relayMatchesQuery(it, query) }, viewModel)
+                    RelaySetType.SEARCH -> SimpleRelayList(searchRelays.filter { relayMatchesQuery(it, query) }, viewModel)
+                    RelaySetType.BLOCKED -> SimpleRelayList(blockedRelays.filter { relayMatchesQuery(it, query) }, viewModel)
                 }
             }
         }
