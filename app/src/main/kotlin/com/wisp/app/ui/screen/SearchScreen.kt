@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Clear
@@ -30,6 +31,8 @@ import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.DropdownMenuItem
@@ -38,6 +41,7 @@ import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedTextField
@@ -63,10 +67,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.wisp.app.nostr.Nip02
 import com.wisp.app.nostr.Nip05
+import com.wisp.app.nostr.toNpub
 import com.wisp.app.nostr.Nip69
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.ProfileData
@@ -82,6 +88,8 @@ import com.wisp.app.ui.component.NoteActions
 import com.wisp.app.ui.component.NsecPasteGuard
 import com.wisp.app.ui.component.PostCard
 import com.wisp.app.ui.component.ProfilePicture
+import com.wisp.app.viewmodel.DirectMatch
+import com.wisp.app.viewmodel.DirectTarget
 import com.wisp.app.viewmodel.RelayOption
 import com.wisp.app.viewmodel.SearchFilter
 import com.wisp.app.viewmodel.SearchViewModel
@@ -119,7 +127,8 @@ fun SearchScreen(
     onAddEmojiSet: ((String, String) -> Unit)? = null,
     onRemoveEmojiSet: ((String, String) -> Unit)? = null,
     isEmojiSetAdded: ((String, String) -> Boolean)? = null,
-    nip05Repo: com.wisp.app.repo.Nip05Repository? = null
+    nip05Repo: com.wisp.app.repo.Nip05Repository? = null,
+    onOpenRoute: (String) -> Unit = {}
 ) {
     val query by viewModel.query.collectAsState()
     val filter by viewModel.filter.collectAsState()
@@ -132,6 +141,9 @@ fun SearchScreen(
     val authorFilter by viewModel.authorFilter.collectAsState()
     val authorSearchResults by viewModel.authorSearchResults.collectAsState()
     val isAuthorSearching by viewModel.isAuthorSearching.collectAsState()
+    val directMatch by viewModel.directMatch.collectAsState()
+    val searchedQuery by viewModel.searchedQuery.collectAsState()
+    val filtersActive = selectedRelayOption != RelayOption.DEFAULT || authorFilter != null
 
     val reactionVersion by eventRepo.reactionVersion.collectAsState()
     val repostVersion by eventRepo.repostVersion.collectAsState()
@@ -215,7 +227,7 @@ fun SearchScreen(
                             },
                             trailingIcon = {
                                 if (query.isNotEmpty()) {
-                                    IconButton(onClick = { viewModel.clear() }) {
+                                    IconButton(onClick = { viewModel.clearQuery() }) {
                                         Icon(Icons.Default.Clear, contentDescription = stringResource(R.string.btn_clear), modifier = Modifier.size(18.dp))
                                     }
                                 }
@@ -229,19 +241,26 @@ fun SearchScreen(
                             shape = RoundedCornerShape(50),
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                             keyboardActions = KeyboardActions(
-                                onSearch = { viewModel.search(query, relayPool, eventRepo, muteRepo) }
+                                onSearch = {
+                                    // Enter on a pasted identifier opens it; otherwise run the text search.
+                                    val route = directMatch?.route
+                                    if (route != null) onOpenRoute(route)
+                                    else viewModel.search(query, relayPool, eventRepo, muteRepo)
+                                }
                             ),
                             modifier = Modifier
                                 .weight(1f)
                                 .focusRequester(focusRequester)
                         )
                         IconButton(onClick = { advancedExpanded = !advancedExpanded }) {
-                            Icon(
-                                Icons.Default.Tune,
-                                contentDescription = null,
-                                tint = if (advancedExpanded) MaterialTheme.colorScheme.primary
-                                       else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            BadgedBox(badge = { if (filtersActive && !advancedExpanded) Badge() }) {
+                                Icon(
+                                    Icons.Default.Tune,
+                                    contentDescription = stringResource(R.string.cd_search_filters),
+                                    tint = if (advancedExpanded || filtersActive) MaterialTheme.colorScheme.primary
+                                           else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
                     }
                 }
@@ -281,8 +300,9 @@ fun SearchScreen(
             }
 
             // Results
+            val hasResults = users.isNotEmpty() || notes.isNotEmpty() || directMatch != null
             when {
-                isSearching -> {
+                !hasResults && isSearching -> {
                     Box(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
@@ -291,7 +311,7 @@ fun SearchScreen(
                     }
                 }
 
-                users.isEmpty() && notes.isEmpty() && query.isNotEmpty() && !isSearching -> {
+                !hasResults && query.isNotBlank() && searchedQuery == query.trim() -> {
                     Box(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
@@ -303,14 +323,18 @@ fun SearchScreen(
                     }
                 }
 
-                users.isEmpty() && notes.isEmpty() -> {
+                !hasResults -> {
                     Box(
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 32.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            stringResource(R.string.error_search_hint),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            stringResource(R.string.search_hint_direct),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodyMedium,
+                            textAlign = TextAlign.Center
                         )
                     }
                 }
@@ -322,80 +346,203 @@ fun SearchScreen(
                     val sortedUsers = remember(users) {
                         users.sortedByDescending { contactRepo?.isFollowing(it.pubkey) == true }
                     }
-                    LazyColumn(modifier = Modifier.fillMaxSize()) {
-                        if (filter == SearchFilter.PEOPLE) {
-                            items(sortedUsers, key = { it.pubkey }, contentType = { "user" }) { profile ->
-                                UserResultItem(
-                                    profile = profile,
-                                    isFollowing = followList.any { it.pubkey == profile.pubkey },
-                                    onClick = { onProfileClick(profile.pubkey) },
-                                    onToggleFollow = { onToggleFollow(profile.pubkey) }
-                                )
+                    val noteResult: @Composable (NostrEvent) -> Unit = { event ->
+                        val translationState = remember(translationVersion, event.id) {
+                            translationRepo?.getState(event.id) ?: TranslationState()
+                        }
+                        val pollVoteCounts = remember(pollVoteVersion, event.id) {
+                            if (event.kind == 1068) eventRepo.getPollVoteCounts(event.id) else emptyMap()
+                        }
+                        val pollTotalVotes = remember(pollVoteVersion, event.id) {
+                            if (event.kind == 1068) eventRepo.getPollTotalVotes(event.id) else 0
+                        }
+                        val userPollVotes = remember(pollVoteVersion, event.id) {
+                            if (event.kind == 1068) eventRepo.getUserPollVotes(event.id) else emptyList()
+                        }
+                        val zapPollSatsCounts = remember(pollVoteVersion, event.id) {
+                            if (event.kind == 6969) eventRepo.getZapPollSatsCounts(event.id) else emptyMap()
+                        }
+                        val zapPollTotalSats = remember(pollVoteVersion, event.id) {
+                            if (event.kind == 6969) eventRepo.getZapPollTotalSats(event.id) else 0L
+                        }
+                        val userZapPollVote = remember(pollVoteVersion, event.id) {
+                            if (event.kind == 6969) eventRepo.getUserZapPollVote(event.id) else null
+                        }
+                        SearchNoteItem(
+                            event = event,
+                            eventRepo = eventRepo,
+                            reactionVersion = reactionVersion,
+                            repostVersion = repostVersion,
+                            zapVersion = zapVersion,
+                            isZapAnimating = event.id in zapAnimatingIds,
+                            isZapInProgress = event.id in zapInProgress,
+                            followList = followList,
+                            contactRepo = contactRepo,
+                            userPubkey = userPubkey,
+                            isOwnEvent = event.pubkey == userPubkey,
+                            noteActions = noteActions,
+                            onReply = { onReply(event) },
+                            onProfileClick = { onProfileClick(event.pubkey) },
+                            onNoteClick = { onNoteClick(event) },
+                            onQuotedNoteClick = onQuotedNoteClick,
+                            onReact = { emoji -> onReact(event, emoji) },
+                            onRepost = { onRepost(event) },
+                            onQuote = { onQuote(event) },
+                            onZap = { onZap(event) },
+                            onFollowAuthor = { onToggleFollow(event.pubkey) },
+                            onBlockAuthor = { onBlockUser(event.pubkey) },
+                            onAddToList = { onAddToList(event.id) },
+                            isInList = event.id in listedIds,
+                            onDelete = { onDeleteEvent(event.id, event.kind) },
+                            translationState = translationState,
+                            onTranslate = { translationRepo?.translate(event.id, event.content) },
+                            autoTranslate = autoTranslate,
+                            pollVoteCounts = pollVoteCounts,
+                            pollTotalVotes = pollTotalVotes,
+                            userPollVotes = userPollVotes,
+                            onPollVote = { optionIds -> onPollVote(event.id, optionIds) },
+                            zapPollSatsCounts = zapPollSatsCounts,
+                            zapPollTotalSats = zapPollTotalSats,
+                            userZapPollVote = userZapPollVote,
+                            onZapPollVote = { idx -> onZapPollVote(event.id, idx) }
+                        )
+                    }
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        if (isSearching) {
+                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        }
+                        LazyColumn(modifier = Modifier.fillMaxSize()) {
+                            directMatch?.let { match ->
+                                item(key = "direct", contentType = "direct") {
+                                    DirectMatchItem(
+                                        match = match,
+                                        isFollowing = match.pubkey != null &&
+                                            followList.any { it.pubkey == match.pubkey },
+                                        onOpenRoute = onOpenRoute,
+                                        onToggleFollow = onToggleFollow,
+                                        noteResult = noteResult
+                                    )
+                                    HorizontalDivider()
+                                }
                             }
-                        } else {
-                            items(notes, key = { it.id }, contentType = { "post" }) { event ->
-                                val translationState = remember(translationVersion, event.id) {
-                                    translationRepo?.getState(event.id) ?: TranslationState()
+                            if (filter == SearchFilter.PEOPLE) {
+                                items(sortedUsers, key = { it.pubkey }, contentType = { "user" }) { profile ->
+                                    UserResultItem(
+                                        profile = profile,
+                                        isFollowing = followList.any { it.pubkey == profile.pubkey },
+                                        onClick = { onProfileClick(profile.pubkey) },
+                                        onToggleFollow = { onToggleFollow(profile.pubkey) }
+                                    )
                                 }
-                                val pollVoteCounts = remember(pollVoteVersion, event.id) {
-                                    if (event.kind == 1068) eventRepo.getPollVoteCounts(event.id) else emptyMap()
+                            } else {
+                                items(notes, key = { it.id }, contentType = { "post" }) { event ->
+                                    noteResult(event)
                                 }
-                                val pollTotalVotes = remember(pollVoteVersion, event.id) {
-                                    if (event.kind == 1068) eventRepo.getPollTotalVotes(event.id) else 0
-                                }
-                                val userPollVotes = remember(pollVoteVersion, event.id) {
-                                    if (event.kind == 1068) eventRepo.getUserPollVotes(event.id) else emptyList()
-                                }
-                                val zapPollSatsCounts = remember(pollVoteVersion, event.id) {
-                                    if (event.kind == 6969) eventRepo.getZapPollSatsCounts(event.id) else emptyMap()
-                                }
-                                val zapPollTotalSats = remember(pollVoteVersion, event.id) {
-                                    if (event.kind == 6969) eventRepo.getZapPollTotalSats(event.id) else 0L
-                                }
-                                val userZapPollVote = remember(pollVoteVersion, event.id) {
-                                    if (event.kind == 6969) eventRepo.getUserZapPollVote(event.id) else null
-                                }
-                                SearchNoteItem(
-                                    event = event,
-                                    eventRepo = eventRepo,
-                                    reactionVersion = reactionVersion,
-                                    repostVersion = repostVersion,
-                                    zapVersion = zapVersion,
-                                    isZapAnimating = event.id in zapAnimatingIds,
-                                    isZapInProgress = event.id in zapInProgress,
-                                    followList = followList,
-                                    contactRepo = contactRepo,
-                                    userPubkey = userPubkey,
-                                    isOwnEvent = event.pubkey == userPubkey,
-                                    noteActions = noteActions,
-                                    onReply = { onReply(event) },
-                                    onProfileClick = { onProfileClick(event.pubkey) },
-                                    onNoteClick = { onNoteClick(event) },
-                                    onQuotedNoteClick = onQuotedNoteClick,
-                                    onReact = { emoji -> onReact(event, emoji) },
-                                    onRepost = { onRepost(event) },
-                                    onQuote = { onQuote(event) },
-                                    onZap = { onZap(event) },
-                                    onFollowAuthor = { onToggleFollow(event.pubkey) },
-                                    onBlockAuthor = { onBlockUser(event.pubkey) },
-                                    onAddToList = { onAddToList(event.id) },
-                                    isInList = event.id in listedIds,
-                                    onDelete = { onDeleteEvent(event.id, event.kind) },
-                                    translationState = translationState,
-                                    onTranslate = { translationRepo?.translate(event.id, event.content) },
-                                    autoTranslate = autoTranslate,
-                                    pollVoteCounts = pollVoteCounts,
-                                    pollTotalVotes = pollTotalVotes,
-                                    userPollVotes = userPollVotes,
-                                    onPollVote = { optionIds -> onPollVote(event.id, optionIds) },
-                                    zapPollSatsCounts = zapPollSatsCounts,
-                                    zapPollTotalSats = zapPollTotalSats,
-                                    userZapPollVote = userZapPollVote,
-                                    onZapPollVote = { idx -> onZapPollVote(event.id, idx) }
-                                )
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Top result for a pasted identifier. Kind 1 notes render as a full card and
+ * profiles as a user row; anything else (loading, not found, other kinds) gets
+ * a compact row that opens [DirectMatch.route] when there is one.
+ */
+@Composable
+private fun DirectMatchItem(
+    match: DirectMatch,
+    isFollowing: Boolean,
+    onOpenRoute: (String) -> Unit,
+    onToggleFollow: (String) -> Unit,
+    noteResult: @Composable (NostrEvent) -> Unit
+) {
+    val event = match.event
+    val pubkey = match.pubkey
+    val route = match.route
+    val isProfileRoute = route?.startsWith("profile/") == true
+    when {
+        event != null && event.kind == 1 -> noteResult(event)
+        isProfileRoute && pubkey != null && match.profile != null -> UserResultItem(
+            profile = match.profile,
+            isFollowing = isFollowing,
+            onClick = { onOpenRoute(route!!) },
+            onToggleFollow = { onToggleFollow(pubkey) }
+        )
+        else -> {
+            val npub = remember(pubkey) {
+                pubkey?.let { runCatching { it.toNpub() }.getOrNull() }
+            }
+            val title = when {
+                event != null -> event.tags.firstOrNull { it.size > 1 && it[0] == "title" }?.get(1)
+                    ?: event.content.take(120).ifBlank { null }
+                    ?: stringResource(R.string.search_direct_open_note)
+                match.profile != null -> match.profile.displayString
+                isProfileRoute -> npub?.let { it.take(16) + "…" + it.takeLast(6) }
+                    ?: stringResource(R.string.search_direct_open_profile)
+                match.target is DirectTarget.Nip05Address && !match.isLoading ->
+                    stringResource(R.string.search_direct_nip05_not_found, match.target.identifier)
+                else -> null
+            }
+            val subtitle = when {
+                match.isLoading -> stringResource(R.string.search_direct_looking_up)
+                route == null && (event != null || match.target is DirectTarget.Entity) ->
+                    stringResource(R.string.search_direct_unsupported)
+                isProfileRoute && match.profile == null -> stringResource(R.string.search_direct_profile_not_found)
+                route != null && event == null -> stringResource(R.string.search_direct_note_not_found)
+                else -> null
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(if (route != null) Modifier.clickable { onOpenRoute(route) } else Modifier)
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (match.isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                } else {
+                    Icon(
+                        if (isProfileRoute) Icons.Default.AccountCircle else Icons.Default.Forum,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    if (title != null) {
+                        Text(
+                            title,
+                            style = MaterialTheme.typography.bodyLarge,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    if (subtitle != null) {
+                        Text(
+                            subtitle,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                if (route != null) {
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Icon(
+                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = stringResource(
+                            if (isProfileRoute) R.string.search_direct_open_profile
+                            else R.string.search_direct_open_note
+                        ),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }
@@ -702,7 +849,7 @@ private fun AuthorFilter(
 
     Column(modifier = Modifier.padding(horizontal = 16.dp)) {
         Text(
-            "Author",
+            stringResource(R.string.search_author_label),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -729,7 +876,7 @@ private fun AuthorFilter(
                 ) {
                     Icon(
                         Icons.Default.Close,
-                        contentDescription = "Clear author",
+                        contentDescription = stringResource(R.string.cd_clear_author),
                         modifier = Modifier.size(18.dp)
                     )
                 }
@@ -743,7 +890,7 @@ private fun AuthorFilter(
                 OutlinedTextField(
                     value = authorQuery,
                     onValueChange = { new -> if (!NsecPasteGuard.blockIfNsec(authorQuery, new)) authorQuery = new },
-                    placeholder = { Text("Search for author") },
+                    placeholder = { Text(stringResource(R.string.search_author_placeholder)) },
                     singleLine = true,
                     modifier = Modifier.weight(1f),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
@@ -752,7 +899,7 @@ private fun AuthorFilter(
                     )
                 )
                 IconButton(onClick = { onSearchAuthors(authorQuery) }) {
-                    Icon(Icons.Default.Search, contentDescription = "Search authors")
+                    Icon(Icons.Default.Search, contentDescription = stringResource(R.string.cd_search_authors))
                 }
             }
 
