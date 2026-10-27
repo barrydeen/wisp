@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import com.wisp.app.nostr.MediaMeta
 
 /**
  * Inline carousel for posts containing two or more media items. Mirrors the
@@ -117,7 +118,7 @@ private fun CarouselTile(
             is CarouselItem.Image, is CarouselItem.Unknown -> {
                 AsyncImage(
                     model = meta.url,
-                    contentDescription = null,
+                    contentDescription = meta.alt,
                     contentScale = ContentScale.Crop,
                     placeholder = placeholder,
                     error = placeholder,
@@ -129,7 +130,7 @@ private fun CarouselTile(
                     // Uploader-provided preview frame (NIP-92 imeta "image")
                     AsyncImage(
                         model = meta.image,
-                        contentDescription = null,
+                        contentDescription = meta.alt,
                         contentScale = ContentScale.Crop,
                         placeholder = placeholder,
                         error = placeholder,
@@ -138,7 +139,7 @@ private fun CarouselTile(
                 } else if (placeholder != null) {
                     Image(
                         painter = placeholder,
-                        contentDescription = null,
+                        contentDescription = meta.alt,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize()
                     )
@@ -158,6 +159,16 @@ private fun CarouselTile(
                     )
                 }
             }
+        }
+        // Sibling of the tile tap target, never nested inside it, so a screen
+        // reader gets two clean focus stops.
+        if (!meta.alt.isNullOrBlank() && item !is CarouselItem.Video) {
+            AltBadgeWithSheet(
+                alt = meta.alt,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(8.dp)
+            )
         }
     }
 }

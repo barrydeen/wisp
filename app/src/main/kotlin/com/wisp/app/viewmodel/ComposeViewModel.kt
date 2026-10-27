@@ -15,6 +15,9 @@ import androidx.lifecycle.viewModelScope
 import com.madebyevan.thumbhash.ThumbHash
 import com.wisp.app.nostr.ClientMessage
 import com.wisp.app.nostr.Keys
+import com.wisp.app.nostr.parseImetaTags
+import com.wisp.app.nostr.restoredDraftMedia
+import com.wisp.app.nostr.sanitizeAltText
 import com.wisp.app.nostr.Nip10
 import com.wisp.app.nostr.Nip30
 import com.wisp.app.nostr.Nip18
@@ -176,6 +179,29 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         val thumbhash: String? = null
     )
 
+    /** Image description (NIP-92 imeta `alt`) per uploaded image URL.
+     *  Blank/absent means undescribed — the image's `imeta` tag omits only
+     *  the `alt` slot. */
+    private val _altTexts = MutableStateFlow<Map<String, String>>(emptyMap())
+    val altTexts: StateFlow<Map<String, String>> = _altTexts
+
+    /**
+     * Set (or clear, when blank-after-trim) the alt text for [url]. The
+     * trimmed, ALT_TEXT_MAX_CHARS-capped value is what gets stored and
+     * later emitted.
+     */
+    fun setAltText(url: String, rawAlt: String) {
+        val sanitized = sanitizeAltText(rawAlt)
+        _altTexts.value = if (sanitized == null) _altTexts.value - url else _altTexts.value + (url to sanitized)
+    }
+
+    /**
+     * True when [url] is an uploaded image, so alt text applies — GIFs that
+     * transcode to video are excluded.
+     */
+    fun isImageUpload(url: String): Boolean =
+        _uploadedMediaMeta[url]?.mimeType?.startsWith("image/") == true
+
     companion object {
         val SCHEDULER_RELAYS = listOf("wss://scheduler.nostrarchives.com")
         const val MAX_GALLERY_IMAGES = 21
@@ -267,6 +293,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     private var countdownJob: Job? = null
     private var pendingPublish: (() -> Unit)? = null
     private var mentionSearchRepo: MentionSearchRepository? = null
+    private var profileRepo: ProfileRepository? = null
     private var eventRepo: EventRepository? = null
     private var dmRepo: DmRepository? = null
     private var relayListRepo: RelayListRepository? = null
@@ -286,6 +313,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     ) {
         if (initialized) return
         initialized = true
+        this.profileRepo = profileRepo
         this.eventRepo = eventRepo
         this.dmRepo = dmRepo
         this.relayListRepo = relayListRepo
@@ -328,31 +356,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
                 try {
                     _uploadProgress.value = if (total > 1) "Uploading ${index + 1}/$total..." else "Uploading..."
                     val (rawBytes, rawMime, rawExt) = readFileFromUri(contentResolver, uri)
-                    val (bytes, mime, ext) = when {
-                        rawMime == "image/gif" -> GifToMp4Converter.convert(rawBytes, getApplication())
-                        rawMime.startsWith("image/") -> MediaCompressor.compressForContent(rawBytes, rawMime).asTriple()
-                        else -> Triple(rawBytes, rawMime, rawExt)
-                    }
-                    // Re-extract dimensions from post-pipeline bytes so dim tags match what's uploaded.
-                    val dims = extractDimensionsFromBytes(bytes, mime)
-                    val thumbhash = if (mime.startsWith("image/")) createThumbhash(bytes) else null
-                    val url = blossomRepo.uploadMedia(bytes, mime, ext, signer)
-                    _uploadedUrls.value = _uploadedUrls.value + url
-                    _uploadedMediaMeta[url] = UploadedMediaMeta(
-                        mimeType = mime,
-                        dimensions = dims,
-                        thumbhash = thumbhash
-                    )
-                    if (_galleryMode.value && mime.startsWith("video/")) {
-                        _galleryHasVideo.value = true
-                    }
-                    // In gallery mode, don't insert URLs into the text — they're shown in the pager
-                    if (!_galleryMode.value) {
-                        val current = _content.value.text
-                        val newText = if (current.isBlank()) url else "$current\n$url"
-                        _content.value = TextFieldValue(newText, TextRange(newText.length))
-                        savedStateHandle["draft_content"] = newText
-                    }
+                    if (!processUpload(rawBytes, rawMime, rawExt, signer)) break
                 } catch (e: Exception) {
                     _error.value = "Upload failed: ${e.message}"
                     break
@@ -362,9 +366,81 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         }
     }
 
+    /** Attach a picked GIF (a gifs.nostr.build result) by URL — its media
+     *  host is the publisher, so nothing is downloaded, transcoded, or
+     *  re-uploaded. The API-reported dimensions seed the imeta `dim` tag;
+     *  the URL joins the body like any other note-mode attachment. */
+    fun attachGif(url: String, width: Double, height: Double, title: String) {
+        _uploadedMediaMeta[url] = UploadedMediaMeta(
+            mimeType = mimeFromMediaUrl(url),
+            dimensions = if (width > 0 && height > 0) width.toInt() to height.toInt() else null
+        )
+        _uploadedUrls.value = _uploadedUrls.value + url
+        val current = _content.value.text
+        val newText = if (current.isBlank()) url else "$current\n$url"
+        _content.value = TextFieldValue(newText, TextRange(newText.length))
+        savedStateHandle["draft_content"] = newText
+    }
+
+    private fun mimeFromMediaUrl(url: String): String {
+        val path = url.substringBefore('?').substringBefore('#')
+        return when (path.substringAfterLast('.', "").lowercase()) {
+            "webp" -> "image/webp"
+            "png" -> "image/png"
+            "jpg", "jpeg" -> "image/jpeg"
+            "mp4" -> "video/mp4"
+            else -> "image/gif"
+        }
+    }
+
+    /** Shared attachment pipeline: GIFs transcode to MP4, other images
+     *  compress, dimensions + thumbhash are captured for imeta, the bytes go
+     *  to Blossom, and the URL attaches to this compose (into the body in
+     *  note mode; pager-only in gallery mode). Returns false when the upload
+     *  failed (error message already set). */
+    private suspend fun processUpload(
+        rawBytes: ByteArray,
+        rawMime: String,
+        rawExt: String,
+        signer: NostrSigner?
+    ): Boolean {
+        return try {
+            val (bytes, mime, ext) = when {
+                rawMime == "image/gif" -> GifToMp4Converter.convert(rawBytes, getApplication())
+                rawMime.startsWith("image/") -> MediaCompressor.compressForContent(rawBytes, rawMime).asTriple()
+                else -> Triple(rawBytes, rawMime, rawExt)
+            }
+            // Re-extract dimensions from post-pipeline bytes so dim tags match what's uploaded.
+            val dims = extractDimensionsFromBytes(bytes, mime)
+            val thumbhash = if (mime.startsWith("image/")) createThumbhash(bytes) else null
+            val url = blossomRepo.uploadMedia(bytes, mime, ext, signer)
+            _uploadedUrls.value = _uploadedUrls.value + url
+            _uploadedMediaMeta[url] = UploadedMediaMeta(
+                mimeType = mime,
+                dimensions = dims,
+                thumbhash = thumbhash
+            )
+            if (_galleryMode.value && mime.startsWith("video/")) {
+                _galleryHasVideo.value = true
+            }
+            // In gallery mode, don't insert URLs into the text — they're shown in the pager
+            if (!_galleryMode.value) {
+                val current = _content.value.text
+                val newText = if (current.isBlank()) url else "$current\n$url"
+                _content.value = TextFieldValue(newText, TextRange(newText.length))
+                savedStateHandle["draft_content"] = newText
+            }
+            true
+        } catch (e: Exception) {
+            _error.value = "Upload failed: ${e.message}"
+            false
+        }
+    }
+
     fun removeMediaUrl(url: String) {
         _uploadedUrls.value = _uploadedUrls.value - url
         _uploadedMediaMeta.remove(url)
+        _altTexts.value = _altTexts.value - url
         // Reset video flag if all media removed
         if (_uploadedUrls.value.isEmpty()) _galleryHasVideo.value = false
         if (!_galleryMode.value) {
@@ -513,12 +589,20 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         clearMentionState()
     }
 
-    private fun sanitizeMentionDisplay(candidate: MentionCandidate): String {
-        val raw = candidate.profile.displayName?.takeIf { it.isNotBlank() }
-            ?: candidate.profile.name?.takeIf { it.isNotBlank() }
-            ?: return candidate.profile.pubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
-        // Strip whitespace and leading @ so the mention remains a single token and mention detection
-        // can't re-trigger on a name that itself contains spaces.
+    private fun sanitizeMentionDisplay(candidate: MentionCandidate): String =
+        sanitizeMentionToken(
+            candidate.profile.displayName?.takeIf { it.isNotBlank() }
+                ?: candidate.profile.name?.takeIf { it.isNotBlank() },
+            candidate.profile.pubkey
+        )
+
+    /** Single-token mention display: strips whitespace and the leading @ so
+     *  the mention remains one token and mention detection can't re-trigger
+     *  on a name that itself contains spaces; a blank name falls back to a
+     *  short npub. */
+    private fun sanitizeMentionToken(rawDisplayName: String?, pubkey: String): String {
+        val raw = rawDisplayName?.takeIf { it.isNotBlank() }
+            ?: return pubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
         return raw.trim().removePrefix("@").replace(Regex("\\s+"), "_")
     }
 
@@ -670,13 +754,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         }
         if (replyTo != null) {
             val hint = outboxRouter?.getRelayHint(replyTo.pubkey) ?: ""
-            if (replyTo.kind == Nip22.KIND_COMMENT) {
-                // Replying to a NIP-22 comment: publish a comment, with the root
-                // in the uppercase E scope and the parent in lowercase e.
-                tags.addAll(Nip22.buildCommentTags(replyTo, hint))
-            } else {
-                tags.addAll(Nip10.buildReplyTags(replyTo, hint))
-            }
+            tags.addAll(Nip10.buildReplyTags(replyTo, hint))
         }
 
         val (mentionedPubkeys, _) = extractNostrRefs(content)
@@ -736,6 +814,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
                 tags.addAll(Nip71.buildVideoTags(title = null, media = videoMeta, hashtags = _hashtags.value))
                 eventKind = if (isVertical) Nip71.KIND_VIDEO_VERTICAL else Nip71.KIND_VIDEO_HORIZONTAL
             } else {
+                val altTexts = _altTexts.value
                 val imetaEntries = urls.map { url ->
                     val meta = _uploadedMediaMeta[url]
                     val dimStr = meta?.dimensions?.let { "${it.first}x${it.second}" }
@@ -743,7 +822,8 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
                         url = url,
                         mimeType = meta?.mimeType,
                         thumbhash = meta?.thumbhash,
-                        dim = dimStr
+                        dim = dimStr,
+                        alt = altTexts[url]
                     )
                 }
                 tags.addAll(Nip68.buildPictureTags(title = null, media = imetaEntries, hashtags = _hashtags.value))
@@ -778,12 +858,11 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
                 eventKind = Nip88.KIND_POLL
             }
         } else {
-            // Mirror the target's namespace: reply to a comment with a comment,
-            // everything else with a kind 1 note.
-            eventKind = if (replyTo?.kind == Nip22.KIND_COMMENT) Nip22.KIND_COMMENT else 1
+            eventKind = 1
         }
 
         if (!_galleryMode.value) {
+            val altTexts = _altTexts.value
             val imageEntries = _uploadedUrls.value.mapNotNull { url ->
                 val meta = _uploadedMediaMeta[url] ?: return@mapNotNull null
                 if (!meta.mimeType.startsWith("image/")) return@mapNotNull null
@@ -791,7 +870,8 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
                     url = url,
                     mimeType = meta.mimeType,
                     thumbhash = meta.thumbhash,
-                    dim = meta.dimensions?.let { "${it.first}x${it.second}" }
+                    dim = meta.dimensions?.let { "${it.first}x${it.second}" },
+                    alt = altTexts[url]
                 )
             }
             if (imageEntries.isNotEmpty()) {
@@ -835,6 +915,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
             savedStateHandle.remove<Array<String>>("draft_mentions")
             _uploadedUrls.value = emptyList()
             _uploadedMediaMeta.clear()
+            _altTexts.value = emptyMap()
             _error.value = null
             _publishing.value = false
             _scheduleEnabled.value = false
@@ -874,6 +955,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
             savedStateHandle.remove<Array<String>>("draft_mentions")
             _uploadedUrls.value = emptyList()
             _uploadedMediaMeta.clear()
+            _altTexts.value = emptyMap()
             _error.value = null
             _publishing.value = false
             return -1
@@ -920,6 +1002,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         savedStateHandle.remove<String>("draft_content")
         _uploadedUrls.value = emptyList()
         _uploadedMediaMeta.clear()
+        _altTexts.value = emptyMap()
         _error.value = null
         _publishing.value = false
         return sentCount
@@ -973,6 +1056,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         savedStateHandle.remove<Array<String>>("draft_mentions")
         _uploadedUrls.value = emptyList()
         _uploadedMediaMeta.clear()
+        _altTexts.value = emptyMap()
         _error.value = null
         _publishing.value = false
         _privateReply.value = false
@@ -1115,9 +1199,77 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
 
     fun loadDraft(draft: Nip37.Draft) {
         currentDraftId = draft.dTag
-        val text = draft.content
+        // Gallery drafts carry inner kind 20 — reopen in gallery mode so the
+        // restored attachments publish as a picture event again instead of
+        // inline kind-1 images.
+        _galleryMode.value = draft.kind == Nip68.KIND_PICTURE
+        _galleryHasVideo.value = false
+        // Drafts persist mentions as nostr:nprofile/npub URIs (saveDraft
+        // materializes them) — convert them back to @name pills so the editor
+        // renders like the session the draft was saved from.
+        val (text, restoredMentions) = rehydrateMentionsFromContent(draft.content)
         _content.value = TextFieldValue(text, TextRange(text.length))
+        _mentions.value = restoredMentions
         savedStateHandle["draft_content"] = text
+        // Re-apply the media the draft was saved with (imeta inner tags keyed
+        // by URL): attachments as well as descriptions. Restoring only the
+        // alt texts would strand them — the publish path emits imeta solely
+        // for URLs present in both _uploadedUrls and _uploadedMediaMeta, so a
+        // reopened draft would keep the image lines in its text but silently
+        // drop their descriptions, and the composer's alt chips would have
+        // nothing to attach to. Stale entries (images removed from the text
+        // before saving) are filtered out by [restoredDraftMedia].
+        val restored = restoredDraftMedia(draft.tags, text)
+        _uploadedUrls.value = restored.urls
+        _uploadedMediaMeta.clear()
+        for ((url, meta) in restored.meta) {
+            val dims = meta.dimension?.split('x')?.mapNotNull { it.toIntOrNull() }
+            _uploadedMediaMeta[url] = UploadedMediaMeta(
+                mimeType = meta.mime ?: "image/jpeg",
+                dimensions = if (dims != null && dims.size == 2) dims[0] to dims[1] else null,
+                thumbhash = meta.thumbhash
+            )
+        }
+        _altTexts.value = restored.alts
+        saveMentionsToState()
+        detectHashtags(text)
+    }
+
+    /** Converts every `nostr:nprofile1…` / `nostr:npub1…` URI in [text] back
+     *  to a sanitized `@displayName` token plus a tracked mention range — a
+     *  pure display rehydrate; `materializeMentions` turns them into URIs
+     *  again at publish. Unresolvable profiles fall back to a short npub so
+     *  the mention isn't lost; undecodable URIs pass through untouched. */
+    private fun rehydrateMentionsFromContent(text: String): Pair<String, List<Mention>> {
+        val regex = Regex("nostr:(nprofile1[a-z0-9]+|npub1[a-z0-9]{58})")
+        val matches = regex.findAll(text).toList()
+        if (matches.isEmpty()) return text to emptyList()
+
+        val mentions = mutableListOf<Mention>()
+        val sb = StringBuilder(text.length)
+        var last = 0
+        for (match in matches) {
+            val end = match.range.last + 1
+            val pubkey = try {
+                when (val data = Nip19.decodeNostrUri("nostr:" + match.groupValues[1])) {
+                    is com.wisp.app.nostr.NostrUriData.ProfileRef -> data.pubkey
+                    else -> null
+                }
+            } catch (_: Exception) { null }
+            if (pubkey == null) {
+                sb.append(text, last, end)
+                last = end
+                continue
+            }
+            val display = "@" + sanitizeMentionToken(profileRepo?.get(pubkey)?.displayString, pubkey)
+            sb.append(text, last, match.range.first)
+            val start = sb.length
+            sb.append(display)
+            mentions.add(Mention(start, sb.length, pubkey))
+            last = end
+        }
+        sb.append(text, last, text.length)
+        return sb.toString() to mentions
     }
 
     fun saveDraft(
@@ -1128,7 +1280,13 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         // Materialize @mentions into nostr:nprofile URIs so the draft is restorable as a standalone text.
         val (materialized, _) = materializeMentions(_content.value.text, _mentions.value)
         val text = materialized.trim()
-        if (text.isBlank() || signer == null) return
+        if (signer == null) return
+        val draftImageUrls = _uploadedUrls.value.filter {
+            _uploadedMediaMeta[it]?.mimeType?.startsWith("image/") == true
+        }
+        // A blank text still drafts when the composer carries described
+        // media (gallery-style image-only posts), so their alt survives.
+        if (text.isBlank() && draftImageUrls.isEmpty()) return
 
         val draftId = currentDraftId ?: Nip37.newDraftId()
         currentDraftId = draftId
@@ -1137,13 +1295,28 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
             try {
                 val innerTags = mutableListOf<List<String>>()
                 if (replyTo != null) {
-                    if (replyTo.kind == Nip22.KIND_COMMENT) {
-                        innerTags.addAll(Nip22.buildCommentTags(replyTo))
-                    } else {
-                        innerTags.addAll(Nip10.buildReplyTags(replyTo))
-                    }
+                    innerTags.addAll(Nip10.buildReplyTags(replyTo))
                 }
-                val innerKind = if (replyTo?.kind == Nip22.KIND_COMMENT) Nip22.KIND_COMMENT else 1
+                // Media rides in the draft as imeta inner tags keyed by URL,
+                // mirroring publish: one tag per image, metadata always and
+                // `alt` only when described. The entries must come back on
+                // reopen — publish emits imeta solely for URLs present in
+                // both _uploadedUrls and _uploadedMediaMeta, so restoring
+                // only the descriptions would strand them.
+                for (draftUrl in draftImageUrls) {
+                    val meta = _uploadedMediaMeta[draftUrl] ?: continue
+                    val parts = mutableListOf("imeta", "url $draftUrl")
+                    meta.mimeType.takeIf { it.isNotEmpty() }?.let { parts.add("m $it") }
+                    meta.dimensions?.let { parts.add("dim ${it.first}x${it.second}") }
+                    meta.thumbhash?.let { parts.add("thumbhash $it") }
+                    sanitizeAltText(_altTexts.value[draftUrl] ?: "")?.let { parts.add("alt $it") }
+                    innerTags.add(parts)
+                }
+                val innerKind = when {
+                    replyTo?.kind == Nip22.KIND_COMMENT -> Nip22.KIND_COMMENT
+                    _galleryMode.value -> Nip68.KIND_PICTURE
+                    else -> 1
+                }
                 val innerJson = Nip37.serializeDraftContent(
                     pubkeyHex = signer.pubkeyHex,
                     innerKind = innerKind,
@@ -1202,6 +1375,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         _galleryMode.value = false
         _galleryHasVideo.value = false
         _uploadedMediaMeta.clear()
+        _altTexts.value = emptyMap()
         _pollEnabled.value = false
         _pollOptions.value = listOf("", "")
         _pollType.value = Nip88.PollType.SINGLECHOICE

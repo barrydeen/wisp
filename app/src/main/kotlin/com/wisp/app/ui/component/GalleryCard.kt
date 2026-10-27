@@ -100,6 +100,7 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.wisp.app.nostr.MediaMeta
 
 private val GALLERY_KINDS = setOf(20, 21, 22)
 
@@ -536,6 +537,14 @@ fun GalleryCard(
                             onError = { isLoading = false },
                             modifier = Modifier.fillMaxSize()
                         )
+                        if (!entry.alt.isNullOrBlank()) {
+                            AltBadgeWithSheet(
+                                alt = entry.alt,
+                                modifier = Modifier
+                                    .align(Alignment.BottomStart)
+                                    .padding(8.dp)
+                            )
+                        }
                         if (isLoading) {
                             Box(
                                 modifier = Modifier.fillMaxSize(),
@@ -743,6 +752,10 @@ fun FullScreenGalleryViewer(
 
         val entry = imageEntries[currentPage]
 
+        // Immersive toggle: tapping the image hides every overlay (arrows,
+        // counter, dots, buttons, caption/alt) until the next tap restores it.
+        var chromeVisible by remember { mutableStateOf(true) }
+        var altSheetText by remember { mutableStateOf<String?>(null) }
         var scale by remember(currentPage) { mutableFloatStateOf(1f) }
         var offset by remember(currentPage) { mutableStateOf(Offset.Zero) }
 
@@ -759,7 +772,7 @@ fun FullScreenGalleryViewer(
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
-                        onClick = { if (scale <= 1f) onDismiss() }
+                        onClick = { chromeVisible = !chromeVisible }
                     ),
                 contentAlignment = Alignment.Center
             ) {
@@ -786,7 +799,7 @@ fun FullScreenGalleryViewer(
             }
 
             // Navigation arrows
-            if (imageEntries.size > 1) {
+            if (chromeVisible && imageEntries.size > 1) {
                 // Previous arrow
                 if (currentPage > 0) {
                     IconButton(
@@ -822,7 +835,7 @@ fun FullScreenGalleryViewer(
                 }
 
                 // Page counter
-                Surface(
+                if (chromeVisible) Surface(
                     shape = RoundedCornerShape(16.dp),
                     color = Color.Black.copy(alpha = 0.5f),
                     modifier = Modifier
@@ -838,10 +851,10 @@ fun FullScreenGalleryViewer(
                 }
 
                 // Page indicator dots
-                Row(
+                if (chromeVisible) Row(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
-                        .padding(bottom = if (caption != null) 60.dp else 16.dp),
+                        .padding(bottom = if (caption != null || !entry.alt.isNullOrBlank()) 60.dp else 16.dp),
                     horizontalArrangement = Arrangement.Center
                 ) {
                     repeat(imageEntries.size) { index ->
@@ -865,7 +878,7 @@ fun FullScreenGalleryViewer(
             val currentUrl = entry.url
 
             // Top-right buttons
-            Row(
+            if (chromeVisible) Row(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(16.dp)
@@ -898,24 +911,50 @@ fun FullScreenGalleryViewer(
                 }
             }
 
-            // Caption strip at bottom
-            if (caption != null) {
+            // Caption strip at bottom — alt text above the post caption. With
+            // alt present the strip is a tappable preview of the Description
+            // sheet (alt is truncated to 3 lines here; the sheet shows it all).
+            if (chromeVisible && (caption != null || !entry.alt.isNullOrBlank())) {
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
                         .background(Color.Black.copy(alpha = 0.6f))
+                        .then(
+                            if (!entry.alt.isNullOrBlank()) {
+                                Modifier.clickable { altSheetText = entry.alt }
+                            } else Modifier
+                        )
                         .padding(horizontal = 16.dp, vertical = 12.dp)
                 ) {
-                    Text(
-                        text = caption,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Color.White,
-                        maxLines = 4,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    Column {
+                        if (!entry.alt.isNullOrBlank()) {
+                            Text(
+                                text = entry.alt,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White,
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        if (caption != null) {
+                            Text(
+                                text = caption,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Color.White,
+                                maxLines = 4,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
                 }
             }
+
+            AltDescriptionSheet(
+                alt = altSheetText.orEmpty(),
+                visible = altSheetText != null,
+                onDismiss = { altSheetText = null }
+            )
         }
     }
 }
