@@ -179,6 +179,33 @@ class ImetaTest {
         assertTrue(restored.alts.isEmpty())
     }
 
+    /** Gallery-style drafts save a blank caption, so there is no content to
+     *  be stale against — every saved image must come back. */
+    @Test
+    fun `restored draft media with blank content keeps all images`() {
+        val restored = restoredDraftMedia(draftTags(), "")
+
+        assertEquals(listOf(draftUrl, staleUrl), restored.urls)
+        assertEquals("A red bicycle", restored.alts[draftUrl])
+        assertEquals("Deleted from the text before saving", restored.alts[staleUrl])
+    }
+
+    /** Undescribed uploads save an imeta with url/m/dim and no alt slot;
+     *  they restore as attachments (so publish re-emits their imeta) but
+     *  never grow a description. */
+    @Test
+    fun `undescribed upload restores as an attachment without alt`() {
+        val restored = restoredDraftMedia(
+            listOf(listOf("imeta", "url $draftUrl", "m image/jpeg", "dim 100x100")),
+            ""
+        )
+
+        assertEquals(listOf(draftUrl), restored.urls)
+        assertEquals("image/jpeg", restored.meta[draftUrl]?.mime)
+        assertEquals("100x100", restored.meta[draftUrl]?.dimension)
+        assertNull(restored.alts[draftUrl])
+    }
+
     @Test
     fun `reopened draft publishes the alt text it was saved with`() {
         // save side: the draft's imeta inner tags; reopen side: the composer

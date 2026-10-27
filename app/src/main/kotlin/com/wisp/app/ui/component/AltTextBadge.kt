@@ -48,9 +48,8 @@ fun AltDescriptionSheet(
 ) {
     if (!visible) return
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    // Size follows the text: opens at a comfortable default height even for
-    // one-liners, grows with the description up to ~55% of the screen, and
-    // scrolls inside beyond that.
+    // Size follows the text: hugs a one-liner, grows with the description up
+    // to ~55% of the screen, and scrolls inside beyond that.
     val configuration = LocalConfiguration.current
     val maxContentHeight = (configuration.screenHeightDp * 0.55f).dp
     ModalBottomSheet(
@@ -72,7 +71,7 @@ fun AltDescriptionSheet(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 280.dp, max = maxContentHeight)
+                    .heightIn(max = maxContentHeight)
                     .verticalScroll(rememberScrollState())
             ) {
                 Text(

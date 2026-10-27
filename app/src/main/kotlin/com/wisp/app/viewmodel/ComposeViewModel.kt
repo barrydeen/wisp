@@ -17,7 +17,6 @@ import com.wisp.app.nostr.ClientMessage
 import com.wisp.app.nostr.Keys
 import com.wisp.app.nostr.parseImetaTags
 import com.wisp.app.nostr.restoredDraftMedia
-import com.wisp.app.nostr.normalizeAltBreaks
 import com.wisp.app.nostr.sanitizeAltText
 import com.wisp.app.nostr.Nip10
 import com.wisp.app.nostr.Nip30
@@ -181,8 +180,8 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     )
 
     /** Image description (NIP-92 imeta `alt`) per uploaded image URL.
-     *  Blank/absent means undescribed — no `alt` slot, and no imeta tag,
-     *  is emitted for that image. */
+     *  Blank/absent means undescribed — the image's `imeta` tag omits only
+     *  the `alt` slot. */
     private val _altTexts = MutableStateFlow<Map<String, String>>(emptyMap())
     val altTexts: StateFlow<Map<String, String>> = _altTexts
 
@@ -1200,6 +1199,11 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
 
     fun loadDraft(draft: Nip37.Draft) {
         currentDraftId = draft.dTag
+        // Gallery drafts carry inner kind 20 — reopen in gallery mode so the
+        // restored attachments publish as a picture event again instead of
+        // inline kind-1 images.
+        _galleryMode.value = draft.kind == Nip68.KIND_PICTURE
+        _galleryHasVideo.value = false
         // Drafts persist mentions as nostr:nprofile/npub URIs (saveDraft
         // materializes them) — convert them back to @name pills so the editor
         // renders like the session the draft was saved from.
@@ -1276,7 +1280,13 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         // Materialize @mentions into nostr:nprofile URIs so the draft is restorable as a standalone text.
         val (materialized, _) = materializeMentions(_content.value.text, _mentions.value)
         val text = materialized.trim()
-        if (text.isBlank() || signer == null) return
+        if (signer == null) return
+        val draftImageUrls = _uploadedUrls.value.filter {
+            _uploadedMediaMeta[it]?.mimeType?.startsWith("image/") == true
+        }
+        // A blank text still drafts when the composer carries described
+        // media (gallery-style image-only posts), so their alt survives.
+        if (text.isBlank() && draftImageUrls.isEmpty()) return
 
         val draftId = currentDraftId ?: Nip37.newDraftId()
         currentDraftId = draftId
@@ -1287,16 +1297,26 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
                 if (replyTo != null) {
                     innerTags.addAll(Nip10.buildReplyTags(replyTo))
                 }
-                // Alt text rides in the draft as imeta inner tags keyed by URL
-                // so a restored draft can re-apply the descriptions. Only
-                // described images get a tag.
-                for ((draftAltUrl, draftAlt) in _altTexts.value) {
-                    val normalizedAlt = normalizeAltBreaks(draftAlt)
-                    if (normalizedAlt.isNotEmpty()) {
-                        innerTags.add(listOf("imeta", "url $draftAltUrl", "alt $normalizedAlt"))
-                    }
+                // Media rides in the draft as imeta inner tags keyed by URL,
+                // mirroring publish: one tag per image, metadata always and
+                // `alt` only when described. The entries must come back on
+                // reopen — publish emits imeta solely for URLs present in
+                // both _uploadedUrls and _uploadedMediaMeta, so restoring
+                // only the descriptions would strand them.
+                for (draftUrl in draftImageUrls) {
+                    val meta = _uploadedMediaMeta[draftUrl] ?: continue
+                    val parts = mutableListOf("imeta", "url $draftUrl")
+                    meta.mimeType.takeIf { it.isNotEmpty() }?.let { parts.add("m $it") }
+                    meta.dimensions?.let { parts.add("dim ${it.first}x${it.second}") }
+                    meta.thumbhash?.let { parts.add("thumbhash $it") }
+                    sanitizeAltText(_altTexts.value[draftUrl] ?: "")?.let { parts.add("alt $it") }
+                    innerTags.add(parts)
                 }
-                val innerKind = if (replyTo?.kind == Nip22.KIND_COMMENT) Nip22.KIND_COMMENT else 1
+                val innerKind = when {
+                    replyTo?.kind == Nip22.KIND_COMMENT -> Nip22.KIND_COMMENT
+                    _galleryMode.value -> Nip68.KIND_PICTURE
+                    else -> 1
+                }
                 val innerJson = Nip37.serializeDraftContent(
                     pubkeyHex = signer.pubkeyHex,
                     innerKind = innerKind,
@@ -1304,7 +1324,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
                     tags = innerTags
                 )
                 val encrypted = signer.nip44Encrypt(innerJson, signer.pubkeyHex)
-                val wrapperTags = Nip37.buildDraftTags(draftId, 1)
+                val wrapperTags = Nip37.buildDraftTags(draftId, innerKind)
                 val event = signer.signEvent(
                     kind = Nip37.KIND_DRAFT,
                     content = encrypted,

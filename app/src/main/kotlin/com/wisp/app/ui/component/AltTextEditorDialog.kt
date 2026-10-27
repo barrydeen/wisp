@@ -44,13 +44,19 @@ fun AltTextEditorDialog(
     var field by remember(url) { mutableStateOf(TextFieldValue(initialAlt)) }
 
     fun applyInput(value: TextFieldValue): TextFieldValue {
-        // Hard cap at 2000 chars, count shown below.
+        // Hard cap at 2000 chars, count shown below. The selection clamps
+        // into the capped text — typing mid-text at the cap must not yank
+        // the cursor to the end.
         val overflow = value.text.length - ALT_TEXT_MAX_CHARS
-        return if (overflow > 0) {
-            value.copy(text = value.text.dropLast(overflow)).let {
-                TextFieldValue(it.text, TextRange(it.text.length))
-            }
-        } else value
+        if (overflow <= 0) return value
+        val capped = value.text.dropLast(overflow)
+        return value.copy(
+            text = capped,
+            selection = TextRange(
+                value.selection.start.coerceAtMost(capped.length),
+                value.selection.end.coerceAtMost(capped.length)
+            )
+        )
     }
 
     AlertDialog(

@@ -87,10 +87,13 @@ data class RestoredDraftMedia(
  * Rebuild [RestoredDraftMedia] from a draft's imeta inner tags, keeping only
  * URLs still present in the draft content — descriptions for images the user
  * deleted from the text before saving must not resurrect as attachments.
+ * Blank content is a gallery-style draft (caption optional, URL lines never
+ * lived in the text), so there is nothing to be stale against and every
+ * image comes back.
  */
 fun restoredDraftMedia(tags: List<List<String>>, content: String): RestoredDraftMedia {
     val parsed = parseImetaTags(tags)
-    val present = parsed.values.filter { it.url in content }
+    val present = if (content.isBlank()) parsed.values else parsed.values.filter { it.url in content }
     return RestoredDraftMedia(
         urls = present.map { it.url },
         meta = present.associate { it.url to it },
