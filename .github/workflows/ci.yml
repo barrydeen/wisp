@@ -62,10 +62,14 @@ jobs:
 
   instrumentation:
     name: Instrumented tests (emulator, API 34)
-    # ubuntu-26.04 images break the emulator action's KVM autodetection: it
-    # silently runs with -accel off, the API 34 image boot times out, and the
-    # job reports zero executed tests. Pin to the 24.04 image until fixed.
+    # Currently NON-GATING: emulator 37.x hangs booting the API 34 image on
+    # GitHub runners (u24.04 and u26.04, with working KVM) and the job times
+    # out with zero tests executed. The reports still show what ran. Make this
+    # gating again once the emulator regression is resolved — the long-term
+    # fix under evaluation is moving the pure-JVM-safe auth suites into the
+    # unit-test job via the secp256k1 JVM dependency.
     runs-on: ubuntu-24.04
+    continue-on-error: true
     env:
       OBX_DISABLE_ANALYTICS: "true"
     timeout-minutes: 45
