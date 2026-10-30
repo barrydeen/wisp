@@ -259,9 +259,9 @@ class FeedViewModel @JvmOverloads constructor(
         context = app,
         relayPool = relayPool,
         scope = viewModelScope,
-        onReconnected = { force ->
-            Log.d("RLC", "[FeedVM] onReconnected(force=$force) feedType=${feedSub.feedType.value} selectedRelay=${feedSub.selectedRelay.value} feedSize=${eventRepo.feed.value.size}")
-            feedSub.subscribeFeed()
+        onReconnected = { force, refreshFeed ->
+            Log.d("RLC", "[FeedVM] onReconnected(force=$force, refreshFeed=$refreshFeed) feedType=${feedSub.feedType.value} selectedRelay=${feedSub.selectedRelay.value} feedSize=${eventRepo.feed.value.size}")
+            feedSub.subscribeFeed(refresh = refreshFeed)
             val myPubkey = getUserPubkey()
             if (myPubkey != null) startup.subscribeDmsAndNotifications(myPubkey)
             if (force) {

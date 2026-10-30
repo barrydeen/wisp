@@ -957,6 +957,7 @@ class StartupCoordinator(
         relayPool.updateRelays(relays)
         val dmRelays = keyRepo.getDmRelays()
         relayPool.updateDmRelays(dmRelays)
-        feedSub.subscribeFeed()
+        // Relay settings changed: re-open subs on the new relays without wiping the feed.
+        feedSub.subscribeFeed(refresh = false)
     }
 }

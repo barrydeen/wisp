@@ -299,8 +299,20 @@ class FeedSubscriptionManager(
         subscribeRelayFeed()
     }
 
-    fun subscribeFeed() {
-        resubscribeFeed()
+    /**
+     * Subscribe the current feed. With [refresh] false (a reconnect after a short trip
+     * away, or a relay-settings change) whatever is on screen stays put: the relay and
+     * trending snapshots aren't cleared and refetched, and For You's one-shot extras
+     * don't re-run. Live follow subscriptions are still re-opened so new notes keep
+     * arriving behind the "new notes" pill.
+     */
+    fun subscribeFeed(refresh: Boolean = true) {
+        val isSnapshotFeed = _feedType.value == FeedType.RELAY || _feedType.value == FeedType.TRENDING
+        if (!refresh && isSnapshotFeed && eventRepo.relayFeed.value.isNotEmpty()) {
+            Log.d("RLC", "[FeedSub] subscribeFeed(refresh=false) keeping ${_feedType.value} feed as is")
+            return
+        }
+        resubscribeFeed(runSupplementaryFetches = refresh)
         if (_feedType.value == FeedType.RELAY) {
             eventRepo.clearRelayFeed()
             subscribeRelayFeed()
@@ -314,8 +326,10 @@ class FeedSubscriptionManager(
         }
     }
 
+    /** Explicit refresh (pull-to-refresh, or tapping Home while already at the top). */
     fun refreshFeed() {
         _isRefreshing.value = true
+        subscribeFeed(refresh = true)
         refreshJob?.cancel()
         refreshJob = scope.launch {
             delay(3000)
@@ -323,7 +337,7 @@ class FeedSubscriptionManager(
         }
     }
 
-    fun resubscribeFeed() {
+    fun resubscribeFeed(runSupplementaryFetches: Boolean = true) {
         Log.d("RLC", "[FeedSub] resubscribeFeed() feedType=${_feedType.value} connectedCount=${relayPool.connectedCount.value}")
         val oldSubId = feedSubId
         feedGeneration++
@@ -477,7 +491,7 @@ class FeedSubscriptionManager(
 
             restoreSavedFeedType()
 
-            if (_feedType.value == FeedType.FOR_YOU) {
+            if (runSupplementaryFetches && _feedType.value == FeedType.FOR_YOU) {
                 startForYouSupplementaryFetches()
             }
         }
