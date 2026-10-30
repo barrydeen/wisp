@@ -17,6 +17,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 
 class BlossomRepository(private val context: Context, pubkeyHex: String? = null) {
+    private var activePubkey = pubkeyHex
     private var prefs: SharedPreferences =
         context.getSharedPreferences(prefsName(pubkeyHex), Context.MODE_PRIVATE)
     private val json = Json { ignoreUnknownKeys = true }
@@ -63,6 +64,7 @@ class BlossomRepository(private val context: Context, pubkeyHex: String? = null)
 
     fun reload(pubkeyHex: String?) {
         clear()
+        activePubkey = pubkeyHex
         prefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
         prefs = context.getSharedPreferences(prefsName(pubkeyHex), Context.MODE_PRIVATE)
         prefs.registerOnSharedPreferenceChangeListener(prefsListener)
@@ -73,15 +75,7 @@ class BlossomRepository(private val context: Context, pubkeyHex: String? = null)
         _servers.value = loadServers()
     }
 
-    private fun loadServers(): List<String> {
-        val str = prefs.getString("blossom_servers", null) ?: return listOf(Blossom.DEFAULT_SERVER)
-        return try {
-            val list = json.decodeFromString<List<String>>(str)
-            list.ifEmpty { listOf(Blossom.DEFAULT_SERVER) }
-        } catch (_: Exception) {
-            listOf(Blossom.DEFAULT_SERVER)
-        }
-    }
+    private fun loadServers(): List<String> = readServersFromPrefs(context, activePubkey)
 
     suspend fun uploadMedia(
         fileBytes: ByteArray,
@@ -240,5 +234,23 @@ class BlossomRepository(private val context: Context, pubkeyHex: String? = null)
     companion object {
         private fun prefsName(pubkeyHex: String?): String =
             if (pubkeyHex != null) "wisp_prefs_$pubkeyHex" else "wisp_prefs"
+
+        private val serversJson = Json { ignoreUnknownKeys = true }
+
+        /**
+         * The account's configured Blossom servers straight from its prefs
+         * file — for readers without a repository instance (the BUD-10
+         * resolver), so an account switch is picked up without constructing
+         * anything.
+         */
+        fun readServersFromPrefs(context: Context, pubkeyHex: String?): List<String> {
+            val prefs = context.getSharedPreferences(prefsName(pubkeyHex), Context.MODE_PRIVATE)
+            val str = prefs.getString("blossom_servers", null) ?: return listOf(Blossom.DEFAULT_SERVER)
+            return try {
+                serversJson.decodeFromString<List<String>>(str).ifEmpty { listOf(Blossom.DEFAULT_SERVER) }
+            } catch (_: Exception) {
+                listOf(Blossom.DEFAULT_SERVER)
+            }
+        }
     }
 }
