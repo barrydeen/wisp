@@ -159,16 +159,20 @@ fun FloatingVideoPlayer(
             var isPlaying by remember { mutableStateOf(pipState.player.isPlaying) }
 
             DisposableEffect(pipState.player) {
+                // Sync on mount: entering PiP hands over a playing player whose
+                // inline surface just disposed and dropped its keep-awake hold,
+                // and the listener below only fires on changes.
+                context.updateKeepScreenOn("pip", pipState.player.isPlaying)
                 val listener = object : Player.Listener {
                     override fun onIsPlayingChanged(playing: Boolean) {
                         isPlaying = playing
-                        context.updateKeepScreenOn(playing)
+                        context.updateKeepScreenOn("pip", playing)
                     }
                 }
                 pipState.player.addListener(listener)
                 onDispose {
                     pipState.player.removeListener(listener)
-                    context.updateKeepScreenOn(false)
+                    context.updateKeepScreenOn("pip", false)
                 }
             }
 
