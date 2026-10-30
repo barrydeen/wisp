@@ -242,7 +242,7 @@ class MetadataFetcher(
         val pollEvent = eventRepo.getEvent(pollEventId)
         if (pollEvent != null) {
             val sentUrls = relayPool.getReadRelayUrls().toSet() + relayPool.getWriteRelayUrls().toSet()
-            for (url in com.wisp.app.nostr.Nip88.parsePollRelays(pollEvent)) {
+            for (url in com.wisp.app.nostr.Nip88.cappedPollRelays(pollEvent)) {
                 if (url !in sentUrls) relayPool.sendToRelayOrEphemeral(url, msg)
             }
         }
@@ -268,7 +268,7 @@ class MetadataFetcher(
         val pollEvent = eventRepo.getEvent(pollEventId)
         if (pollEvent != null) {
             val sentUrls = relayPool.getReadRelayUrls().toSet() + relayPool.getWriteRelayUrls().toSet()
-            for (url in com.wisp.app.nostr.Nip69.parseZapPollRelays(pollEvent)) {
+            for (url in com.wisp.app.nostr.Nip69.cappedZapPollRelays(pollEvent)) {
                 if (url !in sentUrls) relayPool.sendToRelayOrEphemeral(url, msg)
             }
         }

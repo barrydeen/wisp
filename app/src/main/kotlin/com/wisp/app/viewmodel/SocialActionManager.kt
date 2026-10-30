@@ -559,7 +559,7 @@ class SocialActionManager(
                 // Also send to the poll's specified relays per NIP-88
                 val pollEvent = eventRepo.getEvent(pollEventId)
                 if (pollEvent != null) {
-                    for (url in Nip88.parsePollRelays(pollEvent)) {
+                    for (url in Nip88.cappedPollRelays(pollEvent)) {
                         relayPool.sendToRelayOrEphemeral(url, msg)
                     }
                 }
