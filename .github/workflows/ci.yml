@@ -80,10 +80,15 @@ jobs:
       # running first, the emulator logs "Unable to connect to adb daemon on
       # port: 5037" forever and the runner times out without running any test
       # (seen on the first merges to main). Start the daemon explicitly.
-      - name: Check KVM acceleration
+      - name: Make /dev/kvm accessible
+        # /dev/kvm is root:kvm 0660 and the runner user is not in the kvm
+        # group; group membership added mid-job does not propagate to later
+        # steps, so the udev rule is the reliable way to grant access.
         run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
           ls -la /dev/kvm
-          sudo -E adduser $USER kvm 2>/dev/null || true
       - name: Start adb server
         run: $ANDROID_HOME/platform-tools/adb start-server
       - name: Run instrumented tests on emulator
@@ -92,6 +97,7 @@ jobs:
           api-level: 34
           target: google_apis
           arch: x86_64
+          disable-linux-hw-accel: false
           emulator-options: -no-snapshot -noaudio -no-boot-anim -gpu swiftshader_indirect
           disable-animations: true
           emulator-boot-timeout: 900
