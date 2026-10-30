@@ -299,8 +299,9 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
     val zapSender = ZapSender(keyRepo, { activeWalletProvider }, relayPool, relayListRepo, HttpClientFactory.createRelayClient(), interfacePrefs)
     val powManager = PowManager(
-        powPrefs, relayPool, outboxRouter, eventRepo,
-        ComposeDraftStore.from(getApplication()), accountScope
+        { powPrefs.getNoteDifficulty() }, relayPool, outboxRouter, eventRepo,
+        ComposeDraftStore.from(getApplication()), accountScope,
+        currentPubkey = { getUserPubkey() }
     )
 
     // -- Manager classes --

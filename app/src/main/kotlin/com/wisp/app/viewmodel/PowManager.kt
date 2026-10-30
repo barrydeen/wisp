@@ -6,7 +6,6 @@ import com.wisp.app.nostr.NostrSigner
 import com.wisp.app.relay.OutboxRouter
 import com.wisp.app.relay.RelayPool
 import com.wisp.app.repo.EventRepository
-import com.wisp.app.repo.PowPreferences
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -53,12 +52,13 @@ private class PendingNote(
  * survives dismissing the pill and reopening the composer.
  */
 class PowManager(
-    private val powPrefs: PowPreferences,
+    private val noteDifficulty: () -> Int,
     private val relayPool: RelayPool,
     private val outboxRouter: OutboxRouter,
     private val eventRepo: EventRepository,
     private val draftStore: ComposeDraftStore,
-    private val scope: CoroutineScope
+    private val scope: CoroutineScope,
+    private val currentPubkey: () -> String? = { null }
 ) {
     private val _status = MutableStateFlow<PowStatus>(PowStatus.Idle)
     val status: StateFlow<PowStatus> = _status
@@ -91,7 +91,7 @@ class PowManager(
             signer, content, tags, kind, inboxPubkeys, onPublished,
             draftRestoreKey, draftRestorePayload
         )
-        val difficulty = powPrefs.getNoteDifficulty()
+        val difficulty = noteDifficulty()
 
         miningJob = scope.launch {
             val isCurrent = { miningJob === coroutineContext[Job] }
@@ -180,6 +180,15 @@ class PowManager(
         val note = pendingNote ?: return
         val s = _status.value
         if (s !is PowStatus.Failed && s !is PowStatus.Stopped) return
+        // A Failed / Stopped pill survives an account switch. Retrying then
+        // would broadcast with the previous account's signer — drop the note
+        // instead. Its draft already went back to the composer when the
+        // attempt failed.
+        if (note.signer.pubkeyHex != currentPubkey()) {
+            pendingNote = null
+            _status.value = PowStatus.Idle
+            return
+        }
         // submitNote re-stamps created_at — PoW commits the timestamp into the
         // event id, so a retry minutes after a stopped mining run (or after the
         // user sat on the error) must not publish a note dated to the failed
