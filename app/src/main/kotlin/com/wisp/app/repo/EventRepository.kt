@@ -40,6 +40,12 @@ data class ZapDetail(
 )
 
 class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: MuteRepository? = null, val relayHintStore: RelayHintStore? = null) {
+    private val _notePublisher = MutableStateFlow<NotePublisher?>(null)
+    val notePublisherState: StateFlow<NotePublisher?> = _notePublisher
+    var notePublisher: NotePublisher?
+        get() = _notePublisher.value
+        set(value) { _notePublisher.value = value }
+
     var metadataFetcher: MetadataFetcher? = null
     var deletedEventsRepo: DeletedEventsRepository? = null
     var currentUserPubkey: String? = null
@@ -609,7 +615,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
             5 -> {
                 val deletedIds = Nip09.getDeletedEventIds(event)
                 for (id in deletedIds) {
-                    val target = eventCache[id]
+                    val target = eventCache[id] ?: notePublisher?.publications?.value?.get(id)?.event
                     if (target == null || target.pubkey == event.pubkey) {
                         deletedEventsRepo?.markDeleted(id)
                         removeEvent(id)
@@ -961,6 +967,8 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     }
 
     fun removeEvent(eventId: String) {
+        notePublisher?.forget(eventId)
+        eventRelays.remove(eventId)
         val removed = eventCache.remove(eventId)
         synchronized(feedList) {
             if (feedIds.remove(eventId)) {

@@ -209,7 +209,7 @@ class Relay(
         }
     }
 
-    fun send(message: String): Boolean {
+    fun send(message: String, queueIfDisconnected: Boolean = true): Boolean {
         val ws = webSocket
         if (ws != null && isConnected) {
             onBytesSent?.invoke(config.url, message.length)
@@ -220,7 +220,7 @@ class Relay(
             }
         }
         // Queue message for delivery when connected
-        if (pendingMessages.size < maxPendingMessages) {
+        if (queueIfDisconnected && pendingMessages.size < maxPendingMessages) {
             pendingMessages.add(message)
         }
         return false
@@ -233,7 +233,7 @@ class Relay(
     suspend fun awaitConnected(timeoutMs: Long = 10_000): Boolean {
         if (isConnected) return true
         return withTimeoutOrNull(timeoutMs) {
-            connectionState.first { it }
+            connectionState.first { it && isConnected }
             true
         } ?: false
     }

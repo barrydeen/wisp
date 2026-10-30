@@ -52,6 +52,7 @@ fun OnboardingFirstPostScreen(
     onPosted: () -> Unit,
     onSkip: () -> Unit
 ) {
+    val publicationScope = androidx.compose.runtime.rememberCoroutineScope()
     val content by viewModel.content.collectAsState()
     val publishing by viewModel.publishing.collectAsState()
     val countdown by viewModel.countdownSeconds.collectAsState()
@@ -159,6 +160,7 @@ fun OnboardingFirstPostScreen(
                 Button(
                     onClick = {
                         viewModel.publish(
+                            editorScope = publicationScope,
                             relayPool = relayPool,
                             outboxRouter = outboxRouter,
                             signer = signer,

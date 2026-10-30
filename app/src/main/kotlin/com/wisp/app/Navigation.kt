@@ -296,7 +296,9 @@ fun WispNavHost(
                 groupListViewModel.reset()
                 walletViewModel.suspendForAccountSwitch()
             },
-            swapKey = {}
+            swapKey = {},
+            // Authentication chooses the new key later; do not restore the previous account now.
+            resumePublications = false
         ) {
             navController.navigate(Routes.SPLASH) {
                 popUpTo(0) { inclusive = true }
@@ -1005,7 +1007,7 @@ fun WispNavHost(
             )
         }
 
-        composable(Routes.COMPOSE) {
+        composable(Routes.COMPOSE) { composeEntry ->
             // Initialize PoW toggle from persisted preferences
             LaunchedEffect(Unit) {
                 composeViewModel.initPowState(feedViewModel.powPrefs.isNotePowEnabled())
@@ -1023,7 +1025,9 @@ fun WispNavHost(
                 relayPool = feedViewModel.relayPool,
                 replyTo = replyTarget,
                 quoteTo = quoteTarget,
-                onBack = { navController.popBackStack() },
+                onBack = {
+                    if (navController.currentBackStackEntry == composeEntry) navController.popBackStack()
+                },
                 onSaveDraft = {
                     composeViewModel.saveDraft(feedViewModel.relayPool, replyTarget, activeSigner)
                     navController.popBackStack()
@@ -3150,7 +3154,7 @@ fun WispNavHost(
             )
         }
 
-        composable(Routes.ONBOARDING_FIRST_POST) {
+        composable(Routes.ONBOARDING_FIRST_POST) { firstPostEntry ->
             LaunchedEffect(Unit) {
                 // Kick off the feed subscription while the user composes their intro.
                 feedViewModel.initRelays()
@@ -3161,6 +3165,7 @@ fun WispNavHost(
                 outboxRouter = feedViewModel.outboxRouter,
                 signer = activeSigner,
                 onPosted = {
+                    if (navController.currentBackStackEntry != firstPostEntry) return@OnboardingFirstPostScreen
                     topicOnboardingViewModel.reset()
                     navController.navigate(Routes.FEED) {
                         popUpTo(0) { inclusive = true }

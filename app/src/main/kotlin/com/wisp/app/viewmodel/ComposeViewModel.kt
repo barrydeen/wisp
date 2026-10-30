@@ -52,6 +52,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withTimeoutOrNull
 
 private val NOSTR_URI_REGEX = Regex("nostr:(npub1[a-z0-9]{58}|nprofile1[a-z0-9]+|note1[a-z0-9]{58}|nevent1[a-z0-9]+)")
@@ -124,6 +125,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     val explicit: StateFlow<Boolean> = _explicit
 
     fun toggleExplicit() {
+        editDuringPublication()
         _explicit.value = !_explicit.value
     }
 
@@ -136,6 +138,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     val privateReplyLocked: StateFlow<Boolean> = _privateReplyLocked
 
     fun togglePrivateReply() {
+        editDuringPublication()
         if (_privateReplyLocked.value) return
         _privateReply.value = !_privateReply.value
     }
@@ -156,6 +159,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     }
 
     fun togglePow(powPrefs: com.wisp.app.repo.PowPreferences) {
+        editDuringPublication()
         val newValue = !_powEnabled.value
         _powEnabled.value = newValue
         powPrefs.setNotePowEnabled(newValue)
@@ -182,6 +186,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     }
 
     fun toggleGalleryMode() {
+        editDuringPublication()
         _galleryMode.value = !_galleryMode.value
         if (_galleryMode.value) _pollEnabled.value = false
     }
@@ -214,20 +219,24 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     val scheduleTimestamp: StateFlow<Long?> = _scheduleTimestamp
 
     fun toggleSchedule() {
+        editDuringPublication()
         _scheduleEnabled.value = !_scheduleEnabled.value
         if (!_scheduleEnabled.value) _scheduleTimestamp.value = null
     }
 
     fun setScheduleTimestamp(epochSeconds: Long) {
+        editDuringPublication()
         _scheduleTimestamp.value = epochSeconds
     }
 
     fun togglePoll() {
+        editDuringPublication()
         _pollEnabled.value = !_pollEnabled.value
         if (_pollEnabled.value) _galleryMode.value = false
     }
 
     fun updatePollOption(index: Int, text: String) {
+        editDuringPublication()
         val options = _pollOptions.value.toMutableList()
         if (index in options.indices) {
             options[index] = text
@@ -236,36 +245,49 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     }
 
     fun addPollOption() {
+        editDuringPublication()
         if (_pollOptions.value.size < 10) {
             _pollOptions.value = _pollOptions.value + ""
         }
     }
 
     fun removePollOption(index: Int) {
+        editDuringPublication()
         if (_pollOptions.value.size > 2 && index in _pollOptions.value.indices) {
             _pollOptions.value = _pollOptions.value.toMutableList().apply { removeAt(index) }
         }
     }
 
     fun togglePollType() {
+        editDuringPublication()
         _pollType.value = if (_pollType.value == Nip88.PollType.SINGLECHOICE)
             Nip88.PollType.MULTIPLECHOICE else Nip88.PollType.SINGLECHOICE
     }
 
     fun toggleZapPoll() {
+        editDuringPublication()
         _isZapPoll.value = !_isZapPoll.value
         if (_isZapPoll.value) {
             _pollType.value = Nip88.PollType.SINGLECHOICE
         }
     }
 
-    fun setZapPollMinSats(value: Long?) { _zapPollMinSats.value = value }
-    fun setZapPollMaxSats(value: Long?) { _zapPollMaxSats.value = value }
-    fun setZapPollConsensus(value: Int?) { _zapPollConsensus.value = value?.coerceIn(0, 100) }
+    fun setZapPollMinSats(value: Long?) {
+        editDuringPublication()
+        _zapPollMinSats.value = value
+    }
+    fun setZapPollMaxSats(value: Long?) {
+        editDuringPublication()
+        _zapPollMaxSats.value = value
+    }
+    fun setZapPollConsensus(value: Int?) {
+        editDuringPublication()
+        _zapPollConsensus.value = value?.coerceIn(0, 100)
+    }
 
     private var mentionStartIndex: Int = -1
-    private var countdownJob: Job? = null
-    private var pendingPublish: (() -> Unit)? = null
+    private var publicationJob: Job? = null
+    private var postNow: kotlinx.coroutines.CompletableDeferred<Unit>? = null
     private var mentionSearchRepo: MentionSearchRepository? = null
     private var eventRepo: EventRepository? = null
     private var dmRepo: DmRepository? = null
@@ -337,6 +359,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
                     val dims = extractDimensionsFromBytes(bytes, mime)
                     val thumbhash = if (mime.startsWith("image/")) createThumbhash(bytes) else null
                     val url = blossomRepo.uploadMedia(bytes, mime, ext, signer)
+                    editDuringPublication()
                     _uploadedUrls.value = _uploadedUrls.value + url
                     _uploadedMediaMeta[url] = UploadedMediaMeta(
                         mimeType = mime,
@@ -363,6 +386,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     }
 
     fun removeMediaUrl(url: String) {
+        editDuringPublication()
         _uploadedUrls.value = _uploadedUrls.value - url
         _uploadedMediaMeta.remove(url)
         // Reset video flag if all media removed
@@ -379,6 +403,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         val prev = _content.value
         // Shift/drop tracked mention ranges based on the edit delta between prev and value.
         if (prev.text != value.text) {
+            editDuringPublication()
             val (editStart, oldEnd, newEnd) = diffRange(prev.text, value.text)
             if (editStart >= 0) {
                 val delta = (newEnd - editStart) - (oldEnd - editStart)
@@ -478,6 +503,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     }
 
     fun selectMention(candidate: MentionCandidate) {
+        editDuringPublication()
         val value = _content.value
         val text = value.text
         val cursor = value.selection.start
@@ -523,7 +549,12 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     }
 
 
+    private fun editDuringPublication() {
+        if (_publishing.value) cancelPublish()
+    }
+
     fun publish(
+        editorScope: kotlinx.coroutines.CoroutineScope,
         relayPool: RelayPool,
         replyTo: NostrEvent? = null,
         quoteTo: NostrEvent? = null,
@@ -572,87 +603,61 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         val useTimer = interfacePrefs.isPostUndoTimerEnabled() && (!isReply || interfacePrefs.isPostUndoTimerForReplies())
         val timerSeconds = interfacePrefs.getPostUndoTimerSeconds()
 
+        cancelPublish()
         _publishing.value = true
-        if (!useTimer || timerSeconds <= 0) {
-            viewModelScope.launch {
-                try {
-                    val sentCount = publishNote(text, s, relayPool, replyTo, quoteTo, outboxRouter, powManager, powPrefs, resolvedEmojis)
-                    if (sentCount == 0) return@launch
-                    onNotePublished?.invoke()
-                    onSuccess()
-                } catch (e: Exception) {
-                    _error.value = getApplication<Application>().getString(R.string.error_publish_failed, e.message ?: "Unknown error")
-                    _publishing.value = false
+        val signal = kotlinx.coroutines.CompletableDeferred<Unit>()
+        postNow = signal
+        val task = editorScope.launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
+            try {
+                if (useTimer && timerSeconds > 0) {
+                    _countdownTotalSeconds.value = timerSeconds
+                    _countdownStartedAt.value = System.currentTimeMillis()
+                    for (seconds in timerSeconds downTo 1) {
+                        _countdownSeconds.value = seconds
+                        if (withTimeoutOrNull(1000) { signal.await(); true } == true) break
+                    }
+                    _countdownSeconds.value = null
+                    _countdownStartedAt.value = null
                 }
-            }
-            return
-        }
-        startCountdown(text, s, relayPool, replyTo, quoteTo, outboxRouter, onSuccess, onNotePublished, powManager, powPrefs, resolvedEmojis, timerSeconds)
-    }
-
-    private fun startCountdown(
-        content: String,
-        signer: NostrSigner,
-        relayPool: RelayPool,
-        replyTo: NostrEvent?,
-        quoteTo: NostrEvent?,
-        outboxRouter: OutboxRouter?,
-        onSuccess: () -> Unit,
-        onNotePublished: (() -> Unit)? = null,
-        powManager: PowManager? = null,
-        powPrefs: com.wisp.app.repo.PowPreferences? = null,
-        resolvedEmojis: Map<String, String> = emptyMap(),
-        seconds: Int = 10
-    ) {
-        countdownJob?.cancel()
-        pendingPublish = {
-            viewModelScope.launch {
-                try {
-                    val sentCount = publishNote(content, signer, relayPool, replyTo, quoteTo, outboxRouter, powManager, powPrefs, resolvedEmojis)
-                    if (sentCount == 0) return@launch
+                val sentCount = publishNote(text, s, relayPool, replyTo, quoteTo, outboxRouter, powManager, powPrefs, resolvedEmojis)
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (sentCount != 0) {
                     onNotePublished?.invoke()
                     onSuccess()
-                } catch (e: Exception) {
-                    _error.value = getApplication<Application>().getString(R.string.error_publish_failed, e.message ?: "Unknown error")
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                _error.value = getApplication<Application>().getString(R.string.error_publish_failed, e.message ?: "Unknown error")
+            } finally {
+                if (publicationJob === kotlinx.coroutines.currentCoroutineContext()[Job]) {
+                    publicationJob = null
+                    postNow = null
+                    _countdownSeconds.value = null
+                    _countdownStartedAt.value = null
                     _publishing.value = false
                 }
             }
         }
-        _countdownSeconds.value = seconds
-        _countdownTotalSeconds.value = seconds
-        _countdownStartedAt.value = System.currentTimeMillis()
-        countdownJob = viewModelScope.launch {
-            for (i in (seconds - 1) downTo 1) {
-                delay(1000)
-                _countdownSeconds.value = i
-            }
-            delay(1000)
-            _countdownSeconds.value = null
-            _countdownStartedAt.value = null
-            pendingPublish?.invoke()
-            pendingPublish = null
-        }
+        publicationJob = task
+        task.start()
     }
 
     fun cancelPublish() {
-        countdownJob?.cancel()
-        countdownJob = null
-        pendingPublish = null
+        publicationJob?.cancel()
+        publicationJob = null
+        postNow = null
         _countdownSeconds.value = null
         _countdownStartedAt.value = null
         _publishing.value = false
     }
 
     fun publishNow() {
-        countdownJob?.cancel()
-        countdownJob = null
-        _countdownSeconds.value = null
-        _countdownStartedAt.value = null
-        pendingPublish?.invoke()
-        pendingPublish = null
+        postNow?.complete(Unit)
     }
 
-    /** Publishes a note and stores the event ID. Returns the number of relays sent to (0 = failure, -1 = handed to PowManager). */
+    /** Positive = saved public post or existing private/scheduled delivery, 0 = failure, -1 = PoW handoff. */
     private suspend fun publishNote(
         content: String,
         signer: NostrSigner,
@@ -824,10 +829,12 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
                 if (relayPool.sendToRelayOrEphemeral(url, msg, skipBadCheck = true)) sentCount++
             }
             if (sentCount == 0) {
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
                 _error.value = getApplication<Application>().getString(R.string.error_scheduler_relay)
                 _publishing.value = false
                 return 0
             }
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
             deleteDraftOnPublish(relayPool, signer)
             _content.value = TextFieldValue()
             _mentions.value = emptyList()
@@ -851,7 +858,9 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
 
         // Hand off to PowManager for background mining if PoW enabled
         if (_powEnabled.value && powManager != null) {
-            powManager.submitNote(
+            requireNotNull(eventRepo?.notePublisher) { "Publication storage unavailable" }.checkCapacity()
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            val handedOff = powManager.submitNote(
                 signer = signer,
                 content = finalContent,
                 tags = tags,
@@ -867,6 +876,11 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
                     }
                 }
             )
+            if (!handedOff) {
+                _publishing.value = false
+                return 0
+            }
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
             deleteDraftOnPublish(relayPool, signer)
             _content.value = TextFieldValue()
             _mentions.value = emptyList()
@@ -879,33 +893,12 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
             return -1
         }
 
+        val publisher = requireNotNull(eventRepo?.notePublisher) { "Publication storage unavailable" }
         val event = signer.signEvent(kind = eventKind, content = finalContent, tags = tags)
-        android.util.Log.d("GALLERY", "[ComposeVM] publishNote kind=$eventKind id=${event.id.take(12)} content='${finalContent.take(50)}' tags=${tags.size} galleryMode=${_galleryMode.value} uploadedUrls=${_uploadedUrls.value.size}")
-        val msg = ClientMessage.event(event)
-        var sentCount = if (outboxRouter != null && inboxPubkeys.isNotEmpty()) {
-            outboxRouter.publishToInbox(msg, inboxPubkeys)
-        } else {
-            relayPool.sendToWriteRelays(msg)
-        }
-        // If no relays were reachable, try reconnecting write relays and retry once
-        if (sentCount == 0) {
-            val reconnected = relayPool.ensureWriteRelaysConnected()
-            if (reconnected > 0) {
-                sentCount = if (outboxRouter != null && inboxPubkeys.isNotEmpty()) {
-                    outboxRouter.publishToInbox(msg, inboxPubkeys)
-                } else {
-                    relayPool.sendToWriteRelays(msg)
-                }
-            }
-        }
-        if (sentCount == 0) {
-            _error.value = getApplication<Application>().getString(R.string.error_no_relays_connected)
-            _publishing.value = false
-            return 0
-        }
-        relayPool.trackPublish(event.id, sentCount)
-        // Insert into feed so the note appears immediately without waiting for relay echo
-        eventRepo?.addEvent(event)
+        // Editing or leaving while signing must stop this attempt before it is saved or sent.
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        publisher.submit(event, inboxPubkeys)
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
         if (replyTo != null) {
             // Increment on direct parent so the PostCard showing replyTo updates
             eventRepo?.addReplyCount(replyTo.id, event.id)
@@ -922,7 +915,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         _uploadedMediaMeta.clear()
         _error.value = null
         _publishing.value = false
-        return sentCount
+        return 1
     }
 
     private suspend fun publishPrivateReply(
@@ -954,18 +947,23 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
                 baseTags = replyTags,
                 targetDifficulty = difficulty
             )
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
             _error.value = getApplication<Application>().getString(R.string.error_publish_failed, e.message ?: "wrap failed")
             _publishing.value = false
             return 0
         }
 
         if (result.sentCount == 0) {
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
             _error.value = getApplication<Application>().getString(R.string.error_no_relays_connected)
             _publishing.value = false
             return 0
         }
 
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
         deleteDraftOnPublish(relayPool, signer)
         _content.value = TextFieldValue()
         _mentions.value = emptyList()
@@ -1114,6 +1112,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     }
 
     fun loadDraft(draft: Nip37.Draft) {
+        cancelPublish()
         currentDraftId = draft.dTag
         val text = draft.content
         _content.value = TextFieldValue(text, TextRange(text.length))
@@ -1186,6 +1185,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     }
 
     fun clear() {
+        cancelPublish()
         currentDraftId = null
         _content.value = TextFieldValue()
         _mentions.value = emptyList()

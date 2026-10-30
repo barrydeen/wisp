@@ -10,6 +10,11 @@ import com.wisp.app.relay.HttpClientFactory
 import com.wisp.app.relay.Relay
 import com.wisp.app.relay.RelayLifecycleManager
 import com.wisp.app.relay.OutboxRouter
+import com.wisp.app.relay.BroadcastState
+import com.wisp.app.relay.NotePublicationRelayTransport
+import com.wisp.app.repo.FileNotePublicationStore
+import com.wisp.app.repo.NotePublisher
+import kotlinx.coroutines.flow.collectLatest
 import com.wisp.app.relay.RelayConfig
 import com.wisp.app.relay.RelayHealthTracker
 import com.wisp.app.relay.RelayPool
@@ -130,7 +135,10 @@ sealed class InitLoadingState {
     data object Done : InitLoadingState()
 }
 
-class FeedViewModel(app: Application) : AndroidViewModel(app) {
+class FeedViewModel @JvmOverloads constructor(
+    app: Application,
+    private val liveMetricsClient: okhttp3.OkHttpClient = HttpClientFactory.createRelayClient()
+) : AndroidViewModel(app) {
     private val accountScope = AccountSessionScope(viewModelScope)
     private val _accountSwitching = MutableStateFlow(false)
     val accountSwitching: StateFlow<Boolean> = _accountSwitching
@@ -215,6 +223,37 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     val relayInfoRepo = RelayInfoRepository()
     val relayScoreBoard = RelayScoreBoard(app, relayListRepo, contactRepo, pubkeyHex)
     val outboxRouter = OutboxRouter(relayPool, relayListRepo, relayHintStore, relayScoreBoard)
+
+    private fun startPublications() {
+        val account = getUserPubkey()
+        val previous = eventRepo.notePublisher
+        if (previous?.isActive == true && previous.accountPubkey == account) return
+        previous?.close()
+        val publisher = account?.let {
+            NotePublisher(it, FileNotePublicationStore(java.io.File(getApplication<Application>().filesDir, "note_publications/$it")),
+                NotePublicationRelayTransport(relayPool, outboxRouter), accountScope, eventRepo::addEvent,
+                isDeleted = deletedEventsRepo::isEventDeleted,
+                verifiedRelayUrls = { event -> eventRepo.getEventRelays(event.id) })
+        }
+        eventRepo.notePublisher = publisher
+        publisher?.launchWork {
+            publisher.latest.collectLatest { publication ->
+                relayPool.setBroadcastState(publication?.let {
+                    BroadcastState(it.acceptedCount, it.relays.size, !it.inFlight, it.rejectedCount)
+                })
+                if (publication != null && !publication.inFlight) {
+                    kotlinx.coroutines.delay(6000)
+                    relayPool.setBroadcastState(null)
+                }
+            }
+        }
+    }
+
+    private fun stopPublications() {
+        eventRepo.notePublisher?.close()
+        eventRepo.notePublisher = null
+        relayPool.setBroadcastState(null)
+    }
     val subManager = SubscriptionManager(relayPool)
     val lifecycleManager = RelayLifecycleManager(
         context = app,
@@ -298,7 +337,9 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         }
 
     val zapSender = ZapSender(keyRepo, { activeWalletProvider }, relayPool, relayListRepo, HttpClientFactory.createRelayClient(), interfacePrefs)
-    val powManager = PowManager(powPrefs, relayPool, outboxRouter, eventRepo, accountScope)
+    val powManager = PowManager(powPrefs::getNoteDifficulty, { eventRepo.notePublisher })
+
+    init { startPublications() }
 
     // -- Manager classes --
     val feedSub: FeedSubscriptionManager = FeedSubscriptionManager(
@@ -360,7 +401,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun connectLiveMetrics() {
-        val client = HttpClientFactory.createRelayClient()
+        val client = liveMetricsClient
         val req = okhttp3.Request.Builder()
             .url("wss://api.nostrarchives.com/v1/ws/live-metrics")
             .build()
@@ -450,6 +491,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         if (!_accountSwitching.value) startup.initRelays()
     }
     private fun resetForAccountSwitch(clearPersisted: Boolean) {
+        stopPublications()
         startup.resetForAccountSwitch(clearPersisted)
         groupRepo.clear()
         liveStreamRepo.clear()
@@ -469,7 +511,8 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
     }
-    fun reloadForNewAccount() {
+    fun reloadForNewAccount(resumePublications: Boolean = true) {
+        if (!resumePublications || eventRepo.notePublisher?.accountPubkey != getUserPubkey()) stopPublications()
         safetyPrefs.reload(getUserPubkey())
         startup.reloadForNewAccount()
         groupRepo.reload(getUserPubkey())
@@ -478,6 +521,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             getApplication<Application>().getSharedPreferences("relay_auth_prefs_$pk", Context.MODE_PRIVATE)
         )
         accountScope.start()
+        if (resumePublications) startPublications()
     }
 
     private var pendingSwitchJob: kotlinx.coroutines.Job? = null
@@ -487,6 +531,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         beforeKeySwap: suspend () -> Unit,
         swapKey: () -> Unit,
         clearPersisted: Boolean = false,
+        resumePublications: Boolean = true,
         afterReload: () -> Unit = {}
     ): Boolean {
         if (_accountSwitching.value) return false
@@ -496,13 +541,14 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         pendingSwitchJob = viewModelScope.launch {
             // Join every old producer before changing the key or any repository owner.
             lifecycleManager.stopAndJoin()
+            stopPublications()
             accountScope.stop()
             // Drain batched writes under the OLD owner before any repo is cleared or rekeyed.
             kotlinx.coroutines.withContext(Dispatchers.IO) { flushPersistedWrites() }
             beforeKeySwap()
             kotlinx.coroutines.withContext(Dispatchers.IO) { resetForAccountSwitch(clearPersisted) }
             swapKey()
-            kotlinx.coroutines.withContext(Dispatchers.IO) { reloadForNewAccount() }
+            kotlinx.coroutines.withContext(Dispatchers.IO) { reloadForNewAccount(resumePublications) }
             _accountSwitching.value = false
             afterReload()
         }
@@ -838,6 +884,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     override fun onCleared() {
+        stopPublications()
         super.onCleared()
         nwcRepo.disconnect()
         sparkRepo.disconnect()

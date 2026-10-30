@@ -1,6 +1,7 @@
 package com.wisp.app.relay
 
 import kotlinx.serialization.Serializable
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 enum class RelaySetType(val displayName: String, val eventKind: Int) {
     GENERAL("General", 10002),
@@ -38,6 +39,16 @@ data class RelayConfig(
             "wss://relay.damus.io",
             "wss://relay.primal.net"
         )
+
+        /** Canonical key for publication targets and responses, using OkHttp's URL parser. */
+        fun publicationUrl(url: String): String? {
+            if (!url.startsWith("wss://", ignoreCase = true)) return null
+            val parsed = ("https://" + url.substring(6)).toHttpUrlOrNull() ?: return null
+            val canonical = "wss://" + parsed.toString().substring(8)
+            return if (parsed.encodedPath == "/" && parsed.query == null && parsed.fragment == null) {
+                canonical.removeSuffix("/")
+            } else canonical
+        }
 
         private val IP_HOST_REGEX = Regex("^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}$")
 
