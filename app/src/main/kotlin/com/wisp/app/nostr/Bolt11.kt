@@ -3,11 +3,13 @@ package com.wisp.app.nostr
 object Bolt11 {
     private val bech32Charset = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
     private val hrpAmountRegex = Regex("""ln\w+?(\d+)([munp]?)$""")
+    private val zapHrpAmountRegex = Regex("""lnbc(\d+)([munp]?)$""")
 
     data class DecodedInvoice(
         val amountSats: Long?,
         val paymentHash: String?,
         val description: String?,
+        val descriptionHash: String?,
         val expiry: Long,
         val timestamp: Long
     ) {
@@ -52,6 +54,7 @@ object Bolt11 {
         var offset = 7
         var paymentHash: String? = null
         var description: String? = null
+        var descriptionHash: String? = null
         var expiry = 3600L // default 1 hour
 
         while (offset < sigStart) {
@@ -74,6 +77,11 @@ object Bolt11 {
                         description = String(bytes, Charsets.UTF_8)
                     }
                 }
+                23 -> { // description hash (h): 52 x 5-bit = 260 bits = 32 bytes + 4 padding bits
+                    if (dataLength == 52) {
+                        descriptionHash = convert5to8(data5, offset, dataLength)?.toHex()
+                    }
+                }
                 6 -> { // expiry: variable length integer
                     var exp = 0L
                     for (i in 0 until dataLength) {
@@ -89,6 +97,7 @@ object Bolt11 {
             amountSats = amountSats,
             paymentHash = paymentHash,
             description = description,
+            descriptionHash = descriptionHash,
             expiry = expiry,
             timestamp = timestamp
         )
@@ -105,6 +114,33 @@ object Bolt11 {
             "p" -> amount / 10_000
             "" -> amount * 100_000_000
             else -> null
+        }
+    }
+
+    /**
+     * Exact millisatoshi amount from the human-readable part of a zap invoice.
+     * Mainnet prefixes only (`lnbc`), matching NIP-57 zaps; overflow is rejected
+     * rather than wrapped; and pico amounts that are not a whole number of
+     * millisatoshis are rejected instead of floored.
+     */
+    internal fun decodeAmountMsat(invoice: String): Long? {
+        val lower = invoice.lowercase().removePrefix("lightning:")
+        val pos = lower.lastIndexOf('1')
+        if (pos < 1) return null
+        val match = zapHrpAmountRegex.find(lower.substring(0, pos)) ?: return null
+        val amount = match.groupValues[1].toLongOrNull() ?: return null
+        if (amount <= 0) return null
+        return try {
+            when (match.groupValues[2]) {
+                "m" -> Math.multiplyExact(amount, 100_000_000L)
+                "u" -> Math.multiplyExact(amount, 100_000L)
+                "n" -> Math.multiplyExact(amount, 100L)
+                "p" -> if (amount % 10 != 0L) null else amount / 10
+                "" -> Math.multiplyExact(amount, 100_000_000_000L)
+                else -> null
+            }
+        } catch (_: ArithmeticException) {
+            null
         }
     }
 
