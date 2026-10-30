@@ -58,7 +58,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -123,8 +122,6 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.PlayArrow
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.Request
@@ -277,7 +274,7 @@ private fun isBlossomUrl(url: String): Boolean {
     }
 }
 
-private val combinedRegex = Regex("""nostr:(note1|nevent1|npub1|nprofile1|naddr1)[a-z0-9]+|(?<!\w)(npub1[a-z0-9]{58})(?!\w|\.[a-zA-Z])|(?:https?|wss?)://\S+|(?<![\p{L}\p{M}\p{Nd}_@.])((?:[\p{L}\p{M}0-9](?:[\p{L}\p{M}0-9-]*[\p{L}\p{M}0-9])?\.)+(?:${IANA_TLD_ALTERNATION})(?:/\S*)?)(?![\p{L}\p{M}\p{Nd}_])|(?<!\w)#([\p{L}0-9_][\p{L}\p{M}0-9_-]*)|(?<!\w)((?:note1|nevent1|nprofile1|naddr1)[a-z0-9]{10,})(?!\w)""", RegexOption.IGNORE_CASE)
+private val combinedRegex = Regex("""nostr:(note1|nevent1|npub1|nprofile1|naddr1)[a-z0-9]+|(?<!\w)(npub1[a-z0-9]{58})(?!\w|\.[a-zA-Z])|(?:https?|wss?)://\S+|(?<!\w)((?:[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+(?:com|net|org|io|dev|app|pro|ai|co|me|info|xyz|cc|tv|to|gg|sh|im|is|it|rs|ly|site|online|store|tech|cloud|social|world|earth|space|lol|wtf|family|life|art|design|blog|news|live|video|media|chat|games|money|finance|agency|studio|build|run|codes|systems|network|zone|pub|blue|limo|fyi|wiki|page|link|click|exchange|markets|fun|club|today)(?:/\S*)?)(?!\w)|(?<!\w)#([\p{L}0-9_][\p{L}\p{M}0-9_-]*)|(?<!\w)((?:note1|nevent1|nprofile1|naddr1)[a-z0-9]{10,})(?!\w)""", RegexOption.IGNORE_CASE)
 
 private val emojiShortcodeRegex = Regex(""":([a-zA-Z0-9_-]+):""")
 
@@ -348,16 +345,20 @@ internal fun parseContent(content: String, emojiMap: Map<String, String> = empty
         if (!hashtagCapture.isNullOrEmpty() && token.startsWith("#")) {
             segments.add(ContentSegment.HashtagSegment(hashtagCapture))
         } else if (!bareDomainCapture.isNullOrEmpty() && !token.startsWith("http")) {
-            // A bare-domain match is a fuzzy inference: always an inline link
-            // with a synthesized scheme — never a preview card or media embed.
-            // A false positive must cost at most a stray underline.
-            val trimmedCapture = bareDomainCapture.trimEnd('.', ',', ')', ']', ';', ':', '!', '?')
-            val url = stripTrackingParams("https://$trimmedCapture")
-            segments.add(ContentSegment.InlineLinkSegment(url))
-            // The regex path `(\S*)` swallows trailing punctuation; re-emit it
-            // as text instead of silently eating it.
-            bareDomainCapture.drop(trimmedCapture.length).takeIf { it.isNotEmpty() }?.let {
-                segments.add(ContentSegment.TextSegment(it))
+            val url = stripTrackingParams("https://$bareDomainCapture")
+            val meta = imetaMap[url]
+            val imetaMime = meta?.mime?.let { classifyByMime(it) }
+            val ext = url.substringAfterLast('.').substringBefore('?').lowercase()
+            when {
+                imetaMime == "image" -> segments.add(ContentSegment.ImageSegment(meta!!))
+                imetaMime == "video" -> segments.add(ContentSegment.VideoSegment(meta!!))
+                imetaMime == "audio" -> segments.add(ContentSegment.AudioSegment(meta!!))
+                ext in imageExtensions -> segments.add(ContentSegment.ImageSegment(meta ?: MediaMeta(url)))
+                ext in videoExtensions -> segments.add(ContentSegment.VideoSegment(meta ?: MediaMeta(url)))
+                ext in audioExtensions -> segments.add(ContentSegment.AudioSegment(meta ?: MediaMeta(url)))
+                isBlossomUrl(url) -> segments.add(ContentSegment.UnknownMediaSegment(meta ?: MediaMeta(url)))
+                isStandaloneUrl(content, match.range) -> segments.add(ContentSegment.LinkSegment(url))
+                else -> segments.add(ContentSegment.InlineLinkSegment(url))
             }
         } else if (token.startsWith("nostr:")) {
             when (val decoded = Nip19.decodeNostrUri(token)) {
@@ -689,6 +690,27 @@ private fun LightningInvoiceCard(
     }
 }
 
+/** Splits [text] on word-bounded `@name` runs matched by [mentionPattern] and
+ *  styles them [mentionColor], the rest [baseColor] — the composer preview's
+ *  stand-in for published profile mentions, which only materialize as
+ *  nostr: URIs at publish time. */
+private fun AnnotatedString.Builder.appendTextWithMentions(
+    text: String,
+    mentionPattern: Regex,
+    baseColor: Color,
+    mentionColor: Color
+) {
+    var last = 0
+    for (match in mentionPattern.findAll(text)) {
+        val start = match.range.first
+        val end = match.range.last + 1
+        withStyle(SpanStyle(color = baseColor)) { append(text, last, start) }
+        withStyle(SpanStyle(color = mentionColor)) { append(text, start, end) }
+        last = end
+    }
+    withStyle(SpanStyle(color = baseColor)) { append(text, last, text.length) }
+}
+
 @Composable
 fun RichContent(
     content: String,
@@ -698,6 +720,10 @@ fun RichContent(
     emojiMap: Map<String, String> = emptyMap(),
     imetaMap: Map<String, MediaMeta> = emptyMap(),
     plainLinks: Boolean = false,
+    /** `@name` display tokens the composer tracks as mentions — styled in the
+     *  link tier so the live preview shows them as it will render once
+     *  published (mentions only materialize as nostr: URIs at publish time). */
+    mentionNames: List<String> = emptyList(),
     eventRepo: EventRepository? = null,
     onProfileClick: ((String) -> Unit)? = null,
     onNoteClick: ((String) -> Unit)? = null,
@@ -709,11 +735,7 @@ fun RichContent(
     modifier: Modifier = Modifier
 ) {
     val segments = remember(content, emojiMap, imetaMap, plainLinks) { parseContent(content.trimEnd('\n', '\r'), emojiMap, imetaMap, trimBlankLines = !plainLinks) }
-    // Click handlers are read through updated-state refs so the memoized
-    // AnnotatedStrings below never need rebuilding when only handler identities change.
-    val curHashtagClick = rememberUpdatedState(onHashtagClick ?: noteActions?.onHashtagClick)
-    val curProfileClick = rememberUpdatedState(onProfileClick)
-    val curRelayClick = rememberUpdatedState(noteActions?.onRelayClick)
+    val profileVer = eventRepo?.profileVersion?.collectAsState()?.value ?: 0
     var fullScreenPager by remember { mutableStateOf<Pair<List<MediaPagerItem>, Int>?>(null) }
     val mediaLayoutStyle = LocalMediaSettings.current.mediaLayoutStyle
     val galleryMode = mediaLayoutStyle == com.wisp.app.repo.InterfacePreferences.MediaLayoutStyle.GALLERY
@@ -817,7 +839,16 @@ fun RichContent(
     val defaultLinkColor = MaterialTheme.colorScheme.primary
     val effectiveLinkColor = if (linkColor == Color.Unspecified) defaultLinkColor else linkColor
     val linkDecoration = if (linkColor == Color.Unspecified) TextDecoration.None else TextDecoration.Underline
+    val mentionPattern = remember(mentionNames) {
+        // No word-boundary guard: the editor styles a tracked mention wherever
+        // its range sits (and publishes it there), even glued to preceding
+        // text — the preview must not disagree based on a lookbehind.
+        if (mentionNames.isEmpty()) null
+        else Regex("@(?:${mentionNames.distinct().joinToString("|") { Regex.escape(it) }})")
+    }
     val uriHandler = LocalUriHandler.current
+    val effectiveHashtagClick = onHashtagClick ?: noteActions?.onHashtagClick
+    val effectiveRelayClick = noteActions?.onRelayClick
 
     SelectionContainer {
     androidx.compose.runtime.CompositionLocalProvider(
@@ -846,16 +877,25 @@ fun RichContent(
                 val inlineSegments = group as List<ContentSegment>
 
                 // Build profile display names for this run
-                val profileMentions = remember(inlineSegments) {
-                    inlineSegments.filterIsInstance<ContentSegment.NostrProfileSegment>()
-                        .distinctBy { it.pubkey }
+                val profilePubkeys = inlineSegments
+                    .filterIsInstance<ContentSegment.NostrProfileSegment>()
+                    .map { it.pubkey }
+                val profileNames = remember(profilePubkeys, profileVer) {
+                    val names = mutableMapOf<String, String>()
+                    for (pubkey in profilePubkeys) {
+                        val profile = eventRepo?.getProfileData(pubkey)
+                        names[pubkey] = profile?.displayString
+                            ?: pubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
+                    }
+                    names
                 }
-                val profileNames = profileMentions.associate { mention ->
-                    val profile = rememberProfile(eventRepo, mention.pubkey, mention.relayHints)
-                    mention.pubkey to (profile?.displayString
-                        ?: remember(mention.pubkey) {
-                            mention.pubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
-                        })
+                // Queue fetches for any missing profiles
+                LaunchedEffect(profilePubkeys) {
+                    for (seg in inlineSegments) {
+                        if (seg is ContentSegment.NostrProfileSegment) {
+                            eventRepo?.requestProfileIfMissing(seg.pubkey, seg.relayHints)
+                        }
+                    }
                 }
 
                 // Check if run is only whitespace/empty text
@@ -867,114 +907,109 @@ fun RichContent(
                 }
                 if (!hasContent) continue
 
-                // Build inline content map for any custom emojis in this run.
-                // Memoized: InlineTextContent has no structural equals, so a fresh map
-                // would force the Text below to re-measure on every recomposition.
+                // Build inline content map for any custom emojis in this run
                 val emojiInlineContent: Map<String, InlineTextContent> =
-                    remember(inlineSegments, style.fontSize) {
-                        if (inlineSegments.any { it is ContentSegment.CustomEmojiSegment }) {
-                            val emojiSize = style.fontSize
-                            inlineSegments
-                                .filterIsInstance<ContentSegment.CustomEmojiSegment>()
-                                .distinctBy { it.shortcode }
-                                .associate { seg ->
-                                    seg.shortcode to InlineTextContent(
-                                        placeholder = Placeholder(
-                                            width = emojiSize * 1.5f,
-                                            height = emojiSize * 1.3f,
-                                            placeholderVerticalAlign = PlaceholderVerticalAlign.Center
-                                        )
-                                    ) {
-                                        AsyncImage(
-                                            model = seg.url,
-                                            contentDescription = seg.shortcode,
-                                            modifier = Modifier.fillMaxSize()
-                                        )
-                                    }
+                    if (inlineSegments.any { it is ContentSegment.CustomEmojiSegment }) {
+                        val emojiSize = style.fontSize
+                        inlineSegments
+                            .filterIsInstance<ContentSegment.CustomEmojiSegment>()
+                            .distinctBy { it.shortcode }
+                            .associate { seg ->
+                                seg.shortcode to InlineTextContent(
+                                    placeholder = Placeholder(
+                                        width = emojiSize * 1.5f,
+                                        height = emojiSize * 1.3f,
+                                        placeholderVerticalAlign = PlaceholderVerticalAlign.Center
+                                    )
+                                ) {
+                                    AsyncImage(
+                                        model = seg.url,
+                                        contentDescription = seg.shortcode,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
                                 }
-                        } else emptyMap()
-                    }
+                            }
+                    } else emptyMap()
 
-                // Retain link annotations while dispatching to the latest handlers.
-                val annotated = remember(
-                    inlineSegments, profileNames, color, effectiveLinkColor, linkDecoration, uriHandler
-                ) {
-                    buildAnnotatedString {
-                        for (seg in inlineSegments) {
-                            when (seg) {
-                                is ContentSegment.TextSegment -> {
+                val annotated = buildAnnotatedString {
+                    for (seg in inlineSegments) {
+                        when (seg) {
+                            is ContentSegment.TextSegment -> {
+                                if (mentionPattern == null) {
                                     withStyle(SpanStyle(color = color)) {
                                         append(seg.text)
                                     }
+                                } else {
+                                    appendTextWithMentions(seg.text, mentionPattern, color, effectiveLinkColor)
                                 }
-                                is ContentSegment.CustomEmojiSegment -> {
-                                    pushStringAnnotation(
-                                        tag = INLINE_CONTENT_TAG,
-                                        annotation = seg.shortcode
-                                    )
-                                    append(":${seg.shortcode}:")
-                                    pop()
-                                }
-                                is ContentSegment.HashtagSegment -> {
-                                    val tag = seg.tag
-                                    withLink(
-                                        LinkAnnotation.Clickable("hashtag") {
-                                            curHashtagClick.value?.invoke(tag)
-                                        }
-                                    ) {
-                                        withStyle(SpanStyle(color = effectiveLinkColor, textDecoration = linkDecoration)) {
-                                            append("#${seg.tag}")
-                                        }
+                            }
+                            is ContentSegment.CustomEmojiSegment -> {
+                                pushStringAnnotation(
+                                    tag = INLINE_CONTENT_TAG,
+                                    annotation = seg.shortcode
+                                )
+                                append(":${seg.shortcode}:")
+                                pop()
+                            }
+                            is ContentSegment.HashtagSegment -> {
+                                val tag = seg.tag
+                                withLink(
+                                    LinkAnnotation.Clickable("hashtag") {
+                                        effectiveHashtagClick?.invoke(tag)
+                                    }
+                                ) {
+                                    withStyle(SpanStyle(color = effectiveLinkColor, textDecoration = linkDecoration)) {
+                                        append("#${seg.tag}")
                                     }
                                 }
-                                is ContentSegment.NostrProfileSegment -> {
-                                    val pubkey = seg.pubkey
-                                    val displayName = profileNames[seg.pubkey] ?: seg.pubkey.toNpub().take(12)
-                                    withLink(
-                                        LinkAnnotation.Clickable("profile") {
-                                            curProfileClick.value?.invoke(pubkey)
-                                        }
-                                    ) {
-                                        withStyle(SpanStyle(color = effectiveLinkColor, textDecoration = linkDecoration)) {
-                                            append("@${displayName.trimEnd()}")
-                                        }
+                            }
+                            is ContentSegment.NostrProfileSegment -> {
+                                val pubkey = seg.pubkey
+                                val displayName = profileNames[seg.pubkey] ?: seg.pubkey.toNpub().take(12)
+                                withLink(
+                                    LinkAnnotation.Clickable("profile") {
+                                        onProfileClick?.invoke(pubkey)
+                                    }
+                                ) {
+                                    withStyle(SpanStyle(color = effectiveLinkColor, textDecoration = linkDecoration)) {
+                                        append("@${displayName.trimEnd()}")
                                     }
                                 }
-                                is ContentSegment.LinkSegment -> {
-                                    val linkUrl = seg.url
-                                    val displayUrl = linkUrl.removePrefix("https://").removePrefix("http://")
-                                    withLink(
-                                        LinkAnnotation.Clickable("url") {
+                            }
+                            is ContentSegment.LinkSegment -> {
+                                val linkUrl = seg.url
+                                val displayUrl = linkUrl.removePrefix("https://").removePrefix("http://")
+                                withLink(
+                                    LinkAnnotation.Clickable("url") {
+                                        uriHandler.openUri(linkUrl)
+                                    }
+                                ) {
+                                    withStyle(SpanStyle(color = effectiveLinkColor, textDecoration = linkDecoration)) {
+                                        append(displayUrl)
+                                    }
+                                }
+                            }
+                            is ContentSegment.InlineLinkSegment -> {
+                                val linkUrl = seg.url
+                                val isRelay = linkUrl.startsWith("wss://") || linkUrl.startsWith("ws://")
+                                val displayUrl = linkUrl
+                                    .removePrefix("https://")
+                                    .removePrefix("http://")
+                                withLink(
+                                    LinkAnnotation.Clickable("url") {
+                                        if (isRelay) {
+                                            effectiveRelayClick?.invoke(linkUrl)
+                                        } else {
                                             uriHandler.openUri(linkUrl)
                                         }
-                                    ) {
-                                        withStyle(SpanStyle(color = effectiveLinkColor, textDecoration = linkDecoration)) {
-                                            append(displayUrl)
-                                        }
+                                    }
+                                ) {
+                                    withStyle(SpanStyle(color = effectiveLinkColor, textDecoration = linkDecoration)) {
+                                        append(displayUrl)
                                     }
                                 }
-                                is ContentSegment.InlineLinkSegment -> {
-                                    val linkUrl = seg.url
-                                    val isRelay = linkUrl.startsWith("wss://") || linkUrl.startsWith("ws://")
-                                    val displayUrl = linkUrl
-                                        .removePrefix("https://")
-                                        .removePrefix("http://")
-                                    withLink(
-                                        LinkAnnotation.Clickable("url") {
-                                            if (isRelay) {
-                                                curRelayClick.value?.invoke(linkUrl)
-                                            } else {
-                                                uriHandler.openUri(linkUrl)
-                                            }
-                                        }
-                                    ) {
-                                        withStyle(SpanStyle(color = effectiveLinkColor, textDecoration = linkDecoration)) {
-                                            append(displayUrl)
-                                        }
-                                    }
-                                }
-                                else -> {}
                             }
+                            else -> {}
                         }
                     }
                 }
@@ -1155,12 +1190,16 @@ fun QuotedNote(
     noteActions: NoteActions? = null,
     quoteDepth: Int = 0
 ) {
-    val event = rememberObservedEvent(eventRepo, eventId)
-    val profile = rememberProfile(eventRepo, event?.pubkey)
+    // Observe versions so we recompose when data arrives from relays
+    val version by eventRepo.quotedEventVersion.collectAsState()
+    val event = remember(eventId, version) { eventRepo.getEvent(eventId) }
+    val profile = remember(event, version) { event?.let { eventRepo.getProfileData(it.pubkey) } }
 
     // Trigger on-demand fetch if the quoted event isn't cached
-    LaunchedEffect(eventRepo, eventId, relayHints) {
-        eventRepo.requestQuotedEvent(eventId, relayHints)
+    LaunchedEffect(eventId) {
+        if (eventRepo.getEvent(eventId) == null) {
+            eventRepo.requestQuotedEvent(eventId, relayHints)
+        }
     }
 
     // Cap nesting: depth >= 1 means we're already inside a quoted note,
@@ -1180,46 +1219,45 @@ fun QuotedNote(
 
     if (event != null && effectiveActions != null) {
         // Full rendering with all interactive features
-        val engagement by remember(eventRepo, eventId) {
-            eventRepo.engagementVersion(eventId)
-        }.collectAsState(initial = 0)
+        val reactionVersion by eventRepo.reactionVersion.collectAsState()
+        val zapVersion by eventRepo.zapVersion.collectAsState()
+        val replyCountVersion by eventRepo.replyCountVersion.collectAsState()
+        val repostVersion by eventRepo.repostVersion.collectAsState()
+        val pollVoteVersion by eventRepo.pollVoteVersion.collectAsState()
 
-        val likeCount = remember(eventRepo, engagement, eventId) { eventRepo.getReactionCount(eventId) }
-        val replyCount = remember(eventRepo, engagement, eventId) { eventRepo.getReplyCount(eventId) }
-        val zapSats = remember(eventRepo, engagement, eventId) { eventRepo.getZapSats(eventId) }
-        val repostCount = remember(eventRepo, engagement, eventId) { eventRepo.getRepostCount(eventId) }
-        val repostPubkeys = remember(eventRepo, engagement, eventId) { eventRepo.getReposterPubkeys(eventId) }
-        val userEmojis = remember(eventRepo, engagement, eventId, effectiveActions.userPubkey) {
+        val likeCount = remember(reactionVersion, eventId) { eventRepo.getReactionCount(eventId) }
+        val replyCount = remember(replyCountVersion, eventId) { eventRepo.getReplyCount(eventId) }
+        val zapSats = remember(zapVersion, eventId) { eventRepo.getZapSats(eventId) }
+        val repostCount = remember(repostVersion, eventId) { eventRepo.getRepostCount(eventId) }
+        val repostPubkeys = remember(repostVersion, eventId) { eventRepo.getReposterPubkeys(eventId) }
+        val userEmojis = remember(reactionVersion, eventId, effectiveActions.userPubkey) {
             effectiveActions.userPubkey?.let { eventRepo.getUserReactionEmojis(eventId, it) } ?: emptySet()
         }
-        val hasUserReposted = remember(eventRepo, engagement, eventId, effectiveActions.userPubkey) { eventRepo.hasUserReposted(eventId) }
-        val hasUserZapped = remember(eventRepo, engagement, eventId, effectiveActions.userPubkey) { eventRepo.hasUserZapped(eventId) }
-        // Sample revisions on keyed invalidation; reuse details while their category is unchanged.
-        val reactionRevision = remember(eventRepo, engagement, eventId) { eventRepo.reactionVersion.value }
-        val zapRevision = remember(eventRepo, engagement, eventId) { eventRepo.zapVersion.value }
-        val reactionDetails = remember(eventRepo, reactionRevision, eventId) { eventRepo.getReactionDetails(eventId) }
-        val zapDetails = remember(eventRepo, zapRevision, eventId) { eventRepo.getZapDetails(eventId) }
-        val reactionEmojiUrls = remember(eventRepo, reactionRevision, eventId) { eventRepo.getReactionEmojiUrls(eventId) }
+        val hasUserReposted = remember(repostVersion, eventId) { eventRepo.hasUserReposted(eventId) }
+        val hasUserZapped = remember(zapVersion, eventId) { eventRepo.hasUserZapped(eventId) }
+        val reactionDetails = remember(reactionVersion, eventId) { eventRepo.getReactionDetails(eventId) }
+        val zapDetails = remember(zapVersion, eventId) { eventRepo.getZapDetails(eventId) }
+        val reactionEmojiUrls = remember(reactionVersion, eventId) { eventRepo.getReactionEmojiUrls(eventId) }
 
         // Poll data for quoted polls
-        val pollVoteCounts = remember(eventRepo, engagement, eventId) {
+        val pollVoteCounts = remember(pollVoteVersion, eventId) {
             if (event.kind == com.wisp.app.nostr.Nip88.KIND_POLL) eventRepo.getPollVoteCounts(eventId) else emptyMap()
         }
-        val pollTotalVotes = remember(eventRepo, engagement, eventId) {
+        val pollTotalVotes = remember(pollVoteVersion, eventId) {
             if (event.kind == com.wisp.app.nostr.Nip88.KIND_POLL) eventRepo.getPollTotalVotes(eventId) else 0
         }
-        val userPollVotes = remember(eventRepo, engagement, eventId, effectiveActions.userPubkey) {
+        val userPollVotes = remember(pollVoteVersion, eventId) {
             if (event.kind == com.wisp.app.nostr.Nip88.KIND_POLL) eventRepo.getUserPollVotes(eventId) else emptyList()
         }
 
         // Zap poll data for quoted zap polls
-        val zapPollSatsCounts = remember(eventRepo, engagement, eventId) {
+        val zapPollSatsCounts = remember(pollVoteVersion, eventId) {
             if (event.kind == com.wisp.app.nostr.Nip69.KIND_ZAP_POLL) eventRepo.getZapPollSatsCounts(eventId) else emptyMap()
         }
-        val zapPollTotalSats = remember(eventRepo, engagement, eventId) {
+        val zapPollTotalSats = remember(pollVoteVersion, eventId) {
             if (event.kind == com.wisp.app.nostr.Nip69.KIND_ZAP_POLL) eventRepo.getZapPollTotalSats(eventId) else 0L
         }
-        val userZapPollVote = remember(eventRepo, engagement, eventId, effectiveActions.userPubkey) {
+        val userZapPollVote = remember(pollVoteVersion, eventId) {
             if (event.kind == com.wisp.app.nostr.Nip69.KIND_ZAP_POLL) eventRepo.getUserZapPollVote(eventId) else null
         }
 
@@ -1445,9 +1483,12 @@ private fun QuotedAddressableNote(
     quoteDepth: Int = 0,
     style: TextStyle
 ) {
-    val event = rememberAddressableEvent(eventRepo, kind, author, dTag)
+    val version by eventRepo.quotedEventVersion.collectAsState()
+    val event = remember(kind, author, dTag, version) {
+        eventRepo.findAddressableEvent(kind, author, dTag)
+    }
 
-    LaunchedEffect(eventRepo, kind, author, dTag, relayHints) {
+    LaunchedEffect(kind, author, dTag) {
         if (eventRepo.findAddressableEvent(kind, author, dTag) == null) {
             eventRepo.requestAddressableEvent(kind, author, dTag, relayHints)
         }
@@ -1521,10 +1562,13 @@ private fun ArticleCard(
     onArticleClick: ((Int, String, String) -> Unit)?,
     onProfileClick: ((String) -> Unit)?
 ) {
-    val event = rememberAddressableEvent(eventRepo, 30023, author, dTag)
-    val profile = rememberProfile(eventRepo, author)
+    val version by eventRepo.quotedEventVersion.collectAsState()
+    val event = remember(author, dTag, version) {
+        eventRepo.findAddressableEvent(30023, author, dTag)
+    }
+    val profile = remember(author, version) { eventRepo.getProfileData(author) }
 
-    LaunchedEffect(eventRepo, author, dTag, relayHints) {
+    LaunchedEffect(author, dTag) {
         if (eventRepo.findAddressableEvent(30023, author, dTag) == null) {
             eventRepo.requestAddressableEvent(30023, author, dTag, relayHints)
         }
@@ -1653,10 +1697,13 @@ private fun MusicTrackCard(
     onProfileClick: ((String) -> Unit)?
 ) {
     val context = LocalContext.current
-    val event = rememberAddressableEvent(eventRepo, 36787, author, dTag)
-    val profile = rememberProfile(eventRepo, author)
+    val version by eventRepo.quotedEventVersion.collectAsState()
+    val event = remember(author, dTag, version) {
+        eventRepo.findAddressableEvent(36787, author, dTag)
+    }
+    val profile = remember(author, version) { eventRepo.getProfileData(author) }
 
-    LaunchedEffect(eventRepo, author, dTag, relayHints) {
+    LaunchedEffect(author, dTag) {
         if (eventRepo.findAddressableEvent(36787, author, dTag) == null) {
             eventRepo.requestAddressableEvent(36787, author, dTag, relayHints)
         }
@@ -1670,9 +1717,7 @@ private fun MusicTrackCard(
         event?.tags?.firstOrNull { it.size >= 2 && it[0] == "duration" }?.get(1)?.toLongOrNull()
     }
 
-    val globalState by remember(audioUrl) {
-        AudioPlayerController.state.forAudioItem(audioUrl)
-    }.collectAsState(initial = null)
+    val globalState by AudioPlayerController.state.collectAsState()
     val isCurrent = audioUrl != null && globalState?.track?.url == audioUrl
     val isPlaying = isCurrent && globalState?.isPlaying == true
 
@@ -1869,10 +1914,13 @@ private fun LiveStreamCard(
     onLiveStreamClick: ((String, String, String?) -> Unit)? = null,
     segmentRelayHints: List<String> = emptyList()
 ) {
-    val event = rememberAddressableEvent(eventRepo, 30311, author, dTag)
-    val profile = rememberProfile(eventRepo, author)
+    val version by eventRepo.quotedEventVersion.collectAsState()
+    val event = remember(author, dTag, version) {
+        eventRepo.findAddressableEvent(30311, author, dTag)
+    }
+    val profile = remember(author, version) { eventRepo.getProfileData(author) }
 
-    LaunchedEffect(eventRepo, author, dTag, relayHints) {
+    LaunchedEffect(author, dTag) {
         if (eventRepo.findAddressableEvent(30311, author, dTag) == null) {
             eventRepo.requestAddressableEvent(30311, author, dTag, relayHints)
         }
@@ -2038,11 +2086,14 @@ private fun EmojiPackCard(
     onRemoveEmojiSet: ((String, String) -> Unit)?,
     isEmojiSetAdded: ((String, String) -> Boolean)?
 ) {
-    val event = rememberAddressableEvent(eventRepo, 30030, author, dTag)
-    val profile = rememberProfile(eventRepo, author)
+    val version by eventRepo.quotedEventVersion.collectAsState()
+    val event = remember(author, dTag, version) {
+        eventRepo.findAddressableEvent(30030, author, dTag)
+    }
+    val profile = remember(author, version) { eventRepo.getProfileData(author) }
 
     // Fetch if not cached; retry once after a delay if the first attempt got no result
-    LaunchedEffect(eventRepo, author, dTag, relayHints) {
+    LaunchedEffect(author, dTag) {
         if (eventRepo.findAddressableEvent(30030, author, dTag) == null) {
             eventRepo.requestAddressableEvent(30030, author, dTag, relayHints)
             delay(8_000)
@@ -2315,13 +2366,17 @@ private fun InlineAudioPlayer(
     val autoLoad = LocalMediaSettings.current.autoLoadMedia
     var loaded by remember { mutableStateOf(autoLoad) }
 
-    val globalState by remember(url) {
-        AudioPlayerController.state.forAudioItem(url)
-    }.collectAsState(initial = null)
+    val globalState by AudioPlayerController.state.collectAsState()
     val isCurrent = globalState?.track?.url == url
     val isPlaying = isCurrent && globalState?.isPlaying == true
 
-    val profile = rememberProfile(eventRepo, authorPubkey)
+    val profileVer = eventRepo?.profileVersion?.collectAsState()?.value ?: 0
+    val profile = remember(authorPubkey, profileVer) {
+        authorPubkey?.let { eventRepo?.getProfileData(it) }
+    }
+    LaunchedEffect(authorPubkey) {
+        if (authorPubkey != null) eventRepo?.requestProfileIfMissing(authorPubkey, emptyList())
+    }
 
     val title = profile?.displayString
         ?: url.substringAfterLast('/').substringBeforeLast('.').ifBlank { "Audio" }
@@ -3232,8 +3287,6 @@ private data class OgData(
 )
 
 private val ogCache = LruCache<String, OgData>(200)
-private val ogRetryAfter = LruCache<String, Long>(200)
-private const val OG_RETRY_DELAY_MS = 5 * 60 * 1000L
 
 private val httpClient
     get() = com.wisp.app.relay.HttpClientFactory.getShortTimeoutClient()
@@ -3276,8 +3329,6 @@ private suspend fun fetchYoutubeOembed(url: String): OgData? = withContext(Dispa
 
 private suspend fun fetchOgData(url: String): OgData? = withContext(Dispatchers.IO) {
     ogCache.get(url)?.let { return@withContext it }
-    val now = android.os.SystemClock.elapsedRealtime()
-    if ((ogRetryAfter.get(url) ?: 0L) > now) return@withContext null
     // YouTube blocks bot User-Agents; use their oEmbed API instead
     if (youtubeRegex.containsMatchIn(url)) {
         val yt = fetchYoutubeOembed(url)
@@ -3320,14 +3371,8 @@ private suspend fun fetchOgData(url: String): OgData? = withContext(Dispatchers.
                 ogData
             } else null
         }
-    } catch (e: CancellationException) {
-        throw e
     } catch (_: Exception) {
         null
-    } finally {
-        if (isActive && ogCache.get(url) == null) {
-            ogRetryAfter.put(url, android.os.SystemClock.elapsedRealtime() + OG_RETRY_DELAY_MS)
-        }
     }
 }
 
@@ -3421,22 +3466,17 @@ private fun LinkPreview(url: String) {
             }
         }
     } else {
-        // Loading and failure use the same compact link, without a collapsing spacer.
-        Box(
+        // Show clickable link text while loading / if OG fetch fails
+        Text(
+            text = url,
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.primary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
             modifier = Modifier
-                .fillMaxWidth()
-        ) {
-            Text(
-                text = url,
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.primary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier
-                    .padding(vertical = 2.dp)
-                    .clickable { uriHandler.openUri(url) }
-            )
-        }
+                .padding(vertical = 2.dp)
+                .clickable { uriHandler.openUri(url) }
+        )
     }
 }
 

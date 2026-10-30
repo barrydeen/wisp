@@ -11,6 +11,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -21,7 +22,6 @@ import androidx.compose.foundation.content.TransferableContent
 import androidx.compose.foundation.content.consume
 import androidx.compose.foundation.content.contentReceiver
 import androidx.compose.foundation.content.hasMediaType
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
@@ -41,6 +41,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -54,8 +55,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.foundation.text.input.TextFieldLineLimits
-import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -64,11 +63,11 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.BarChart
-import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Schedule
-import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.Tag
 import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material3.Button
@@ -84,7 +83,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -103,24 +101,28 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import kotlinx.coroutines.delay
+import kotlin.math.roundToInt
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.KeyboardCapitalization
-import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import coil3.compose.AsyncImage
 import com.wisp.app.nostr.Nip19
 import com.wisp.app.nostr.toNpub
@@ -132,14 +134,14 @@ import com.wisp.app.repo.MentionCandidate
 import com.wisp.app.repo.ProfileRepository
 import com.wisp.app.repo.PowPreferences
 import com.wisp.app.R
+import com.wisp.app.ui.component.ComposerMoreSheet
 import com.wisp.app.ui.component.EmojiShortcodePopup
+import com.wisp.app.ui.component.GifPickerSheet
 import com.wisp.app.ui.component.EmojiVisualTransformation
-import com.wisp.app.ui.component.MentionOutputTransformation
 import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.ui.component.RichContent
 import com.wisp.app.ui.component.detectEmojiAutocomplete
 import com.wisp.app.ui.component.insertEmojiShortcode
-import com.wisp.app.ui.theme.WispThemeColors
 import com.wisp.app.viewmodel.ComposeViewModel
 import com.wisp.app.viewmodel.PowManager
 import com.wisp.app.viewmodel.PowStatus
@@ -178,6 +180,7 @@ fun ComposeScreen(
     val countdownStartedAt by viewModel.countdownStartedAt.collectAsState()
     val mentionCandidates by viewModel.mentionCandidates.collectAsState()
     val mentionQuery by viewModel.mentionQuery.collectAsState()
+    val mentions by viewModel.mentions.collectAsState()
     val explicit by viewModel.explicit.collectAsState()
     val hashtags by viewModel.hashtags.collectAsState()
     val powEnabled by viewModel.powEnabled.collectAsState()
@@ -194,8 +197,12 @@ fun ComposeScreen(
     val privateReply by viewModel.privateReply.collectAsState()
     val privateReplyLocked by viewModel.privateReplyLocked.collectAsState()
 
-    LaunchedEffect(replyTo) {
+    LaunchedEffect(replyTo, quoteTo) {
         viewModel.configureForReply(replyTo)
+        // Consume any draft a failed / stopped publish left in this slot —
+        // keys are per-pubkey and per-parent, so a failed reply restores only
+        // in its own thread's reply box.
+        viewModel.hydrateRestoredDraft(replyTo?.id, quoteTo?.id)
     }
     val powStatus = powManager?.status?.collectAsState()?.value ?: PowStatus.Idle
     val isMiningBusy = powStatus is PowStatus.Mining
@@ -204,6 +211,10 @@ fun ComposeScreen(
     var showDatePicker by remember { mutableStateOf(false) }
     var showTimePicker by remember { mutableStateOf(false) }
     var pendingDateMillis by remember { mutableStateOf<Long?>(null) }
+    // Secondary panel: NSFW / PoW / schedule / private reply / draft live here
+    // instead of crowding the attach row (composer redesign, Oct 2026).
+    var showMoreSheet by remember { mutableStateOf(false) }
+    var showGifPicker by remember { mutableStateOf(false) }
 
     val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
 
@@ -237,17 +248,15 @@ fun ComposeScreen(
         if (uris.isNotEmpty()) viewModel.uploadMedia(uris, context.contentResolver, signer)
     }
 
-    val outputTransformation = remember(profileRepo, resolvedEmojis) {
-        MentionOutputTransformation(
-            resolveDisplayName = { bech32 ->
-                if (profileRepo == null) return@MentionOutputTransformation null
-                try {
-                    val data = Nip19.decodeNostrUri("nostr:$bech32")
-                    if (data is com.wisp.app.nostr.NostrUriData.ProfileRef) {
-                        profileRepo.get(data.pubkey)?.displayString
-                    } else null
-                } catch (_: Exception) { null }
-            },
+    // Mention pill colors (iOS parity: accent text over a subtle accent fill,
+    // the same 12% wash the hashtag chips use).
+    val mentionPillTextColor = MaterialTheme.colorScheme.primary
+    val mentionPillFillColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+    val composerTransformation = remember(resolvedEmojis, mentions, mentionPillTextColor, mentionPillFillColor) {
+        com.wisp.app.ui.component.ComposerVisualTransformation(
+            mentionRanges = mentions.map { it.start to it.end },
+            pillTextColor = mentionPillTextColor,
+            pillFillColor = mentionPillFillColor,
             resolvedEmojis = resolvedEmojis
         )
     }
@@ -371,58 +380,40 @@ fun ComposeScreen(
                         maxLines = 8
                     )
 
-                    // Toolbar row: NSFW, PoW, Schedule only
+                    // Toolbar row, slimmed (composer redesign, Oct 2026): the
+                    // media picker stays inline; NSFW / PoW / schedule moved
+                    // into the More sheet.
                     Spacer(Modifier.height(4.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        IconButton(onClick = {
-                            val nextState = !explicit
-                            viewModel.toggleExplicit()
-                            android.widget.Toast.makeText(context, "NSFW ${if (nextState) "ON" else "OFF"}", android.widget.Toast.LENGTH_SHORT).show()
-                        }) {
-                            Icon(
-                                Icons.Outlined.Warning,
-                                contentDescription = "Mark as explicit",
-                                tint = if (explicit) MaterialTheme.colorScheme.error
-                                       else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-
-                        IconButton(onClick = {
-                            val prefs = powPrefs
-                            if (prefs != null) {
-                                val nextState = !powEnabled
-                                viewModel.togglePow(prefs)
-                                android.widget.Toast.makeText(context, "Mining ${if (nextState) "ON" else "OFF"}", android.widget.Toast.LENGTH_SHORT).show()
-                            }
-                        }) {
-                            Icon(
-                                Icons.Outlined.Shield,
-                                contentDescription = "Proof of Work",
-                                tint = if (powEnabled) WispThemeColors.zapColor
-                                       else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-
-                        IconButton(onClick = {
-                            if (scheduleEnabled) {
-                                viewModel.toggleSchedule()
-                            } else {
-                                viewModel.toggleSchedule()
-                                showDatePicker = true
-                            }
-                        }) {
-                            Icon(
-                                Icons.Outlined.Schedule,
-                                contentDescription = "Schedule post",
-                                tint = if (scheduleEnabled) MaterialTheme.colorScheme.primary
-                                       else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                        IconButton(
+                            onClick = {
+                                photoPickerLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+                                )
+                            },
+                            enabled = uploadProgress == null && countdownSeconds == null
+                        ) {
+                            Icon(Icons.Outlined.Image, contentDescription = "Attach media")
                         }
 
                         Spacer(Modifier.weight(1f))
+
+                        Box(contentAlignment = Alignment.TopEnd) {
+                            IconButton(onClick = { showMoreSheet = true }) {
+                                Icon(Icons.Outlined.MoreHoriz, contentDescription = "More options")
+                            }
+                            if (explicit || powEnabled || scheduleEnabled) {
+                                Box(
+                                    modifier = Modifier
+                                        .padding(top = 10.dp, end = 10.dp)
+                                        .size(8.dp)
+                                        .background(MaterialTheme.colorScheme.primary, CircleShape)
+                                )
+                            }
+                        }
                     }
 
                     // NSFW feedback banner
@@ -658,32 +649,6 @@ fun ComposeScreen(
                         }
                     }
 
-                    // Mention autocomplete dropdown
-                    AnimatedVisibility(
-                        visible = mentionQuery != null && mentionCandidates.isNotEmpty(),
-                        enter = fadeIn() + slideInVertically(),
-                        exit = fadeOut() + slideOutVertically()
-                    ) {
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            tonalElevation = 3.dp,
-                            shadowElevation = 2.dp,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = 200.dp)
-                                .padding(bottom = 4.dp)
-                        ) {
-                            LazyColumn {
-                                items(mentionCandidates, key = { it.profile.pubkey }) { candidate ->
-                                    MentionCandidateRow(
-                                        candidate = candidate,
-                                        onClick = { viewModel.selectMention(candidate) }
-                                    )
-                                }
-                            }
-                        }
-                    }
-
                     // Emoji shortcode autocomplete
                     val emojiState = remember(content) { detectEmojiAutocomplete(content) }
                     if (emojiState != null && mentionQuery == null) {
@@ -697,34 +662,25 @@ fun ComposeScreen(
                         )
                     }
 
-                    // Text field with GIF keyboard support via BasicTextField(TextFieldState)
-                    val textFieldState = remember { TextFieldState(content.text) }
-                    val interactionSource = remember { MutableInteractionSource() }
+                    // Text field — value-based BasicTextField (same pattern as
+                    // the gallery caption): the mention pills need span-styled
+                    // output, which the state API's OutputTransformation can't
+                    // produce before Compose 1.8. The VM's content is the
+                    // single source of truth.
                     val enabled = !publishing && countdownSeconds == null
 
-                    // Sync ViewModel -> TextFieldState (for programmatic updates: upload URL, mention select, etc.)
-                    LaunchedEffect(content) {
-                        if (textFieldState.text.toString() != content.text) {
-                            textFieldState.edit {
-                                replace(0, length, content.text)
-                                selection = content.selection
-                            }
-                        }
-                    }
-
-                    // Sync TextFieldState -> ViewModel (for user typing)
-                    LaunchedEffect(textFieldState) {
-                        snapshotFlow {
-                            textFieldState.text.toString() to textFieldState.selection
-                        }.collect { (text, selection) ->
-                            if (text != content.text) {
-                                viewModel.updateContent(TextFieldValue(text, selection))
-                            }
-                        }
-                    }
+                    // Mention autocomplete — cursor-anchored overlay below, so
+                    // it tracks the caret instead of the composer's tail.
+                    var textLayout by remember { mutableStateOf<androidx.compose.ui.text.TextLayoutResult?>(null) }
 
                     BasicTextField(
-                        state = textFieldState,
+                        value = content,
+                        onValueChange = { new ->
+                            if (!com.wisp.app.ui.component.NsecPasteGuard.blockIfNsec(content.text, new.text)) {
+                                viewModel.updateContent(new)
+                            }
+                        },
+                        onTextLayout = { textLayout = it },
                         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                         modifier = Modifier
                             .fillMaxWidth()
@@ -747,26 +703,94 @@ fun ComposeScreen(
                             }),
                         enabled = enabled,
                         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
-                        inputTransformation = com.wisp.app.ui.component.NsecPasteGuard.inputTransformation,
-                        lineLimits = TextFieldLineLimits.MultiLine(),
-                        outputTransformation = outputTransformation,
+                        visualTransformation = composerTransformation,
                         textStyle = MaterialTheme.typography.bodyLarge.copy(
                             color = MaterialTheme.colorScheme.onSurface
                         ),
-                        decorator = { innerTextField ->
-                            OutlinedTextFieldDefaults.DecorationBox(
-                                value = textFieldState.text.toString(),
-                                innerTextField = innerTextField,
-                                enabled = enabled,
-                                singleLine = false,
-                                visualTransformation = androidx.compose.ui.text.input.VisualTransformation.None,
-                                interactionSource = interactionSource,
-                                placeholder = { Text(stringResource(R.string.compose_placeholder)) }
-                            )
+                        decorationBox = { innerTextField ->
+                            // Borderless entry field (iOS parity): no outline
+                            // box — just the placeholder when empty, flush with
+                            // the composer's other content.
+                            var fieldWidthPx by remember { mutableStateOf(0) }
+                            var fieldOriginY by remember { mutableStateOf(0f) }
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .onGloballyPositioned {
+                                        fieldWidthPx = it.size.width
+                                        fieldOriginY = it.positionInRoot().y
+                                    }
+                            ) {
+                                if (content.text.isEmpty()) {
+                                    Text(
+                                        stringResource(R.string.compose_placeholder),
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                innerTextField()
+                                // Mention results anchored under the cursor, in
+                                // a Popup so they draw over the attach row and
+                                // every other composer sibling — an in-tree
+                                // overlay loses to later-drawn siblings no
+                                // matter its zIndex. Height clamps to the room
+                                // between the caret line and the keyboard.
+                                if (mentionQuery != null && mentionCandidates.isNotEmpty()) {
+                                    val layout = textLayout
+                                    val cursorRect = layout?.getCursorRect(
+                                        content.selection.start.coerceIn(
+                                            0,
+                                            layout.layoutInput.text.length
+                                        )
+                                    )
+                                    if (cursorRect != null) {
+                                        val density = LocalDensity.current
+                                        val cursorBottomPx = fieldOriginY +
+                                            cursorRect.bottom + with(density) { 4.dp.toPx() }
+                                        val imeBottomPx = WindowInsets.ime.getBottom(density)
+                                        val screenHpx = with(density) {
+                                            LocalConfiguration.current.screenHeightDp.dp.toPx()
+                                        }
+                                        val maxHeight = with(density) {
+                                            ((screenHpx - imeBottomPx - cursorBottomPx - 8.dp.toPx())
+                                                .coerceIn(120.dp.toPx(), 200.dp.toPx())).toDp()
+                                        }
+                                        val width = with(density) { fieldWidthPx.toDp() }
+                                        Popup(
+                                            alignment = Alignment.TopStart,
+                                            offset = IntOffset(0, (cursorBottomPx - fieldOriginY).roundToInt()),
+                                            properties = PopupProperties(focusable = false)
+                                        ) {
+                                            Surface(
+                                                shape = RoundedCornerShape(8.dp),
+                                                tonalElevation = 3.dp,
+                                                shadowElevation = 4.dp,
+                                                modifier = Modifier
+                                                    .width(width)
+                                                    .heightIn(max = maxHeight)
+                                            ) {
+                                                LazyColumn(
+                                                    modifier = Modifier.fillMaxWidth()
+                                                ) {
+                                                    items(mentionCandidates, key = { it.profile.pubkey }) { candidate ->
+                                                        MentionCandidateRow(
+                                                            candidate = candidate,
+                                                            onClick = { viewModel.selectMention(candidate) }
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     )
 
-                    // Attach row with preview toggle
+                    // Attach row, slimmed (composer redesign, Oct 2026): only
+                    // what a standard social client offers inline stays here —
+                    // media, GIF and poll; everything else overflows into the
+                    // More sheet (NSFW / PoW / schedule / private reply / draft).
                     Spacer(Modifier.height(4.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -783,33 +807,25 @@ fun ComposeScreen(
                             Icon(Icons.Outlined.Image, contentDescription = "Attach media")
                         }
 
-                        IconButton(onClick = {
-                            val nextState = !explicit
-                            viewModel.toggleExplicit()
-                            android.widget.Toast.makeText(context, "NSFW ${if (nextState) "ON" else "OFF"}", android.widget.Toast.LENGTH_SHORT).show()
-                        }) {
-                            Icon(
-                                Icons.Outlined.Warning,
-                                contentDescription = "Mark as explicit",
-                                tint = if (explicit) MaterialTheme.colorScheme.error
-                                       else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-
-                        IconButton(onClick = {
-                            val prefs = powPrefs
-                            if (prefs != null) {
-                                val nextState = !powEnabled
-                                viewModel.togglePow(prefs)
-                                android.widget.Toast.makeText(context, "Mining ${if (nextState) "ON" else "OFF"}", android.widget.Toast.LENGTH_SHORT).show()
+                        // GIF picker (gifs.nostr.build) — hidden while a poll
+                        // is armed; polls don't carry media payloads.
+                        if (!pollEnabled) {
+                            Surface(
+                                onClick = { showGifPicker = true },
+                                shape = RoundedCornerShape(5.dp),
+                                border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.onSurfaceVariant),
+                                color = Color.Transparent,
+                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(start = 8.dp)
+                            ) {
+                                Text(
+                                    text = "GIF",
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontWeight = FontWeight.Bold
+                                    ),
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 5.dp)
+                                )
                             }
-                        }) {
-                            Icon(
-                                Icons.Outlined.Shield,
-                                contentDescription = "Proof of Work",
-                                tint = if (powEnabled) WispThemeColors.zapColor
-                                       else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
                         }
 
                         IconButton(onClick = { viewModel.togglePoll() }) {
@@ -821,47 +837,21 @@ fun ComposeScreen(
                             )
                         }
 
-                        // Private reply toggle: only meaningful for replies in plain text mode
-                        // (private replies don't carry gallery/poll/schedule/quote payloads in v1).
-                        if (replyTo != null && quoteTo == null && !galleryMode && !pollEnabled && !scheduleEnabled) {
-                            IconButton(onClick = {
-                                // Locked toggles short-circuit in the VM, so the state stays ON.
-                                val nextState = if (privateReplyLocked) true else !privateReply
-                                viewModel.togglePrivateReply()
-                                android.widget.Toast.makeText(context, "Private Reply ${if (nextState) "ON" else "OFF"}", android.widget.Toast.LENGTH_SHORT).show()
-                            }) {
-                                Icon(
-                                    imageVector = Icons.Outlined.VisibilityOff,
-                                    contentDescription = "Private reply",
-                                    tint = if (privateReply) androidx.compose.ui.graphics.Color(0xFFFF8C00)
-                                           else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-
-                        IconButton(onClick = {
-                            if (scheduleEnabled) {
-                                viewModel.toggleSchedule()
-                            } else {
-                                viewModel.toggleSchedule()
-                                showDatePicker = true
-                            }
-                        }) {
-                            Icon(
-                                Icons.Outlined.Schedule,
-                                contentDescription = "Schedule post",
-                                tint = if (scheduleEnabled) MaterialTheme.colorScheme.primary
-                                       else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-
                         Spacer(Modifier.weight(1f))
 
-                            if (content.text.isNotBlank()) {
-                            TextButton(
-                                onClick = onSaveDraft
-                            ) {
-                                Text(stringResource(R.string.btn_save_draft))
+                        // Secondary panel trigger. Active toggles surface a dot so
+                        // state set in the sheet stays visible after it closes.
+                        Box(contentAlignment = Alignment.TopEnd) {
+                            IconButton(onClick = { showMoreSheet = true }) {
+                                Icon(Icons.Outlined.MoreHoriz, contentDescription = "More options")
+                            }
+                            if (explicit || powEnabled || scheduleEnabled || privateReply) {
+                                Box(
+                                    modifier = Modifier
+                                        .padding(top = 10.dp, end = 10.dp)
+                                        .size(8.dp)
+                                        .background(MaterialTheme.colorScheme.primary, CircleShape)
+                                )
                             }
                         }
                     }
@@ -983,6 +973,25 @@ fun ComposeScreen(
                                         )
                                     }
                                 }
+                            }
+                            // Polls publish as a dedicated kind (1068 / zap
+                            // poll), which clients without poll support hide.
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.padding(bottom = 4.dp)
+                            ) {
+                                Icon(
+                                    Icons.Outlined.Info,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Text(
+                                    text = "On clients that don't display polls, this post won't be visible.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
                             pollOptions.forEachIndexed { index, option ->
                                 Row(
@@ -1170,24 +1179,40 @@ fun ComposeScreen(
                                 ) {
                                     ProfilePicture(url = userProfile?.picture, size = 32)
                                     Spacer(Modifier.width(8.dp))
-                                    Column {
-                                        Text(
-                                            text = userProfile?.displayString ?: "You",
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            fontWeight = FontWeight.Medium,
-                                            maxLines = 1
-                                        )
-                                        Text(
-                                            text = "Preview",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
+                                    Text(
+                                        text = userProfile?.displayString ?: "You",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Medium,
+                                        maxLines = 1,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    // "Preview" badge pinned to the card's top-right
+                                    // corner (iOS parity), not stacked under the name.
+                                    Text(
+                                        text = "Preview",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier
+                                            .background(
+                                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                                                RoundedCornerShape(50)
+                                            )
+                                            .padding(horizontal = 8.dp, vertical = 3.dp)
+                                    )
                                 }
                                 RichContent(
                                     content = content.text,
                                     emojiMap = resolvedEmojis,
-                                    eventRepo = eventRepo
+                                    eventRepo = eventRepo,
+                                    mentionNames = remember(mentions, content.text) {
+                                        mentions.mapNotNull { m ->
+                                            if (m.start < m.end && m.end <= content.text.length) {
+                                                content.text.substring(m.start, m.end)
+                                                    .removePrefix("@").takeIf { it.isNotBlank() }
+                                            } else null
+                                        }
+                                    }
                                 )
                                 // Poll preview
                                 if (pollEnabled) {
@@ -1392,6 +1417,52 @@ fun ComposeScreen(
                         if (scheduleTimestamp == null) viewModel.toggleSchedule()
                     }) { Text("Cancel") }
                 }
+            )
+        }
+
+        if (showMoreSheet) {
+            ComposerMoreSheet(
+                explicit = explicit,
+                onToggleExplicit = { viewModel.toggleExplicit() },
+                powEnabled = powEnabled,
+                powAvailable = powPrefs != null,
+                onTogglePow = { powPrefs?.let { viewModel.togglePow(it) } },
+                scheduleEnabled = scheduleEnabled,
+                scheduleSummary = scheduleTimestamp?.let {
+                    val fmt = SimpleDateFormat("MMM d, yyyy 'at' h:mm a", Locale.getDefault())
+                    "Scheduled for " + fmt.format(Date(it * 1000))
+                },
+                onToggleSchedule = {
+                    if (scheduleEnabled) {
+                        viewModel.toggleSchedule()
+                    } else {
+                        // The date picker can't stack on this sheet — hand the
+                        // presentation off as the More sheet dismisses.
+                        viewModel.toggleSchedule()
+                        showMoreSheet = false
+                        showDatePicker = true
+                    }
+                },
+                privateReplyVisible = replyTo != null && quoteTo == null && !galleryMode && !pollEnabled && !scheduleEnabled,
+                privateReplyEnabled = privateReply,
+                privateReplyLocked = privateReplyLocked,
+                onTogglePrivateReply = { viewModel.togglePrivateReply() },
+                saveDraftVisible = content.text.isNotBlank(),
+                onSaveDraft = {
+                    onSaveDraft()
+                    showMoreSheet = false
+                },
+                onDismiss = { showMoreSheet = false }
+            )
+        }
+
+        if (showGifPicker) {
+            GifPickerSheet(
+                onSelect = { gif ->
+                    showGifPicker = false
+                    viewModel.attachGif(gif.url, gif.width, gif.height, gif.title)
+                },
+                onDismiss = { showGifPicker = false }
             )
         }
     }

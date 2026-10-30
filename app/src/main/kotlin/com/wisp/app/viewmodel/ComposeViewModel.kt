@@ -19,7 +19,6 @@ import com.wisp.app.nostr.Nip10
 import com.wisp.app.nostr.Nip30
 import com.wisp.app.nostr.Nip18
 import com.wisp.app.nostr.Nip19
-import com.wisp.app.nostr.Nip22
 import com.wisp.app.nostr.Nip37
 import com.wisp.app.nostr.Nip68
 import com.wisp.app.nostr.Nip71
@@ -76,6 +75,7 @@ private fun restoreMentionsFromState(state: SavedStateHandle): List<Mention> {
 class ComposeViewModel(app: Application, private val savedStateHandle: SavedStateHandle) : AndroidViewModel(app) {
     private val keyRepo = KeyRepository(app)
     private val interfacePrefs = InterfacePreferences(app)
+    private val draftStore = ComposeDraftStore.from(app)
     val blossomRepo = BlossomRepository(app, keyRepo.getPubkeyHex())
 
     fun reloadBlossomRepo() {
@@ -267,6 +267,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     private var countdownJob: Job? = null
     private var pendingPublish: (() -> Unit)? = null
     private var mentionSearchRepo: MentionSearchRepository? = null
+    private var profileRepo: ProfileRepository? = null
     private var eventRepo: EventRepository? = null
     private var dmRepo: DmRepository? = null
     private var relayListRepo: RelayListRepository? = null
@@ -286,6 +287,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     ) {
         if (initialized) return
         initialized = true
+        this.profileRepo = profileRepo
         this.eventRepo = eventRepo
         this.dmRepo = dmRepo
         this.relayListRepo = relayListRepo
@@ -328,37 +330,84 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
                 try {
                     _uploadProgress.value = if (total > 1) "Uploading ${index + 1}/$total..." else "Uploading..."
                     val (rawBytes, rawMime, rawExt) = readFileFromUri(contentResolver, uri)
-                    val (bytes, mime, ext) = when {
-                        rawMime == "image/gif" -> GifToMp4Converter.convert(rawBytes, getApplication())
-                        rawMime.startsWith("image/") -> MediaCompressor.compressForContent(rawBytes, rawMime).asTriple()
-                        else -> Triple(rawBytes, rawMime, rawExt)
-                    }
-                    // Re-extract dimensions from post-pipeline bytes so dim tags match what's uploaded.
-                    val dims = extractDimensionsFromBytes(bytes, mime)
-                    val thumbhash = if (mime.startsWith("image/")) createThumbhash(bytes) else null
-                    val url = blossomRepo.uploadMedia(bytes, mime, ext, signer)
-                    _uploadedUrls.value = _uploadedUrls.value + url
-                    _uploadedMediaMeta[url] = UploadedMediaMeta(
-                        mimeType = mime,
-                        dimensions = dims,
-                        thumbhash = thumbhash
-                    )
-                    if (_galleryMode.value && mime.startsWith("video/")) {
-                        _galleryHasVideo.value = true
-                    }
-                    // In gallery mode, don't insert URLs into the text — they're shown in the pager
-                    if (!_galleryMode.value) {
-                        val current = _content.value.text
-                        val newText = if (current.isBlank()) url else "$current\n$url"
-                        _content.value = TextFieldValue(newText, TextRange(newText.length))
-                        savedStateHandle["draft_content"] = newText
-                    }
+                    if (!processUpload(rawBytes, rawMime, rawExt, signer)) break
                 } catch (e: Exception) {
                     _error.value = "Upload failed: ${e.message}"
                     break
                 }
             }
             _uploadProgress.value = null
+        }
+    }
+
+    /** Attach a picked GIF (a gifs.nostr.build result) by URL — its media
+     *  host is the publisher, so nothing is downloaded, transcoded, or
+     *  re-uploaded. The API-reported dimensions seed the imeta `dim` tag;
+     *  the URL joins the body like any other note-mode attachment. */
+    fun attachGif(url: String, width: Double, height: Double, title: String) {
+        _uploadedMediaMeta[url] = UploadedMediaMeta(
+            mimeType = mimeFromMediaUrl(url),
+            dimensions = if (width > 0 && height > 0) width.toInt() to height.toInt() else null
+        )
+        _uploadedUrls.value = _uploadedUrls.value + url
+        val current = _content.value.text
+        val newText = if (current.isBlank()) url else "$current\n$url"
+        _content.value = TextFieldValue(newText, TextRange(newText.length))
+        savedStateHandle["draft_content"] = newText
+    }
+
+    private fun mimeFromMediaUrl(url: String): String {
+        val path = url.substringBefore('?').substringBefore('#')
+        return when (path.substringAfterLast('.', "").lowercase()) {
+            "webp" -> "image/webp"
+            "png" -> "image/png"
+            "jpg", "jpeg" -> "image/jpeg"
+            "mp4" -> "video/mp4"
+            else -> "image/gif"
+        }
+    }
+
+    /** Shared attachment pipeline: GIFs transcode to MP4, other images
+     *  compress, dimensions + thumbhash are captured for imeta, the bytes go
+     *  to Blossom, and the URL attaches to this compose (into the body in
+     *  note mode; pager-only in gallery mode). Returns false when the upload
+     *  failed (error message already set). */
+    private suspend fun processUpload(
+        rawBytes: ByteArray,
+        rawMime: String,
+        rawExt: String,
+        signer: NostrSigner?
+    ): Boolean {
+        return try {
+            val (bytes, mime, ext) = when {
+                rawMime == "image/gif" -> GifToMp4Converter.convert(rawBytes, getApplication())
+                rawMime.startsWith("image/") -> MediaCompressor.compressForContent(rawBytes, rawMime).asTriple()
+                else -> Triple(rawBytes, rawMime, rawExt)
+            }
+            // Re-extract dimensions from post-pipeline bytes so dim tags match what's uploaded.
+            val dims = extractDimensionsFromBytes(bytes, mime)
+            val thumbhash = if (mime.startsWith("image/")) createThumbhash(bytes) else null
+            val url = blossomRepo.uploadMedia(bytes, mime, ext, signer)
+            _uploadedUrls.value = _uploadedUrls.value + url
+            _uploadedMediaMeta[url] = UploadedMediaMeta(
+                mimeType = mime,
+                dimensions = dims,
+                thumbhash = thumbhash
+            )
+            if (_galleryMode.value && mime.startsWith("video/")) {
+                _galleryHasVideo.value = true
+            }
+            // In gallery mode, don't insert URLs into the text — they're shown in the pager
+            if (!_galleryMode.value) {
+                val current = _content.value.text
+                val newText = if (current.isBlank()) url else "$current\n$url"
+                _content.value = TextFieldValue(newText, TextRange(newText.length))
+                savedStateHandle["draft_content"] = newText
+            }
+            true
+        } catch (e: Exception) {
+            _error.value = "Upload failed: ${e.message}"
+            false
         }
     }
 
@@ -513,12 +562,20 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         clearMentionState()
     }
 
-    private fun sanitizeMentionDisplay(candidate: MentionCandidate): String {
-        val raw = candidate.profile.displayName?.takeIf { it.isNotBlank() }
-            ?: candidate.profile.name?.takeIf { it.isNotBlank() }
-            ?: return candidate.profile.pubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
-        // Strip whitespace and leading @ so the mention remains a single token and mention detection
-        // can't re-trigger on a name that itself contains spaces.
+    private fun sanitizeMentionDisplay(candidate: MentionCandidate): String =
+        sanitizeMentionToken(
+            candidate.profile.displayName?.takeIf { it.isNotBlank() }
+                ?: candidate.profile.name?.takeIf { it.isNotBlank() },
+            candidate.profile.pubkey
+        )
+
+    /** Single-token mention display: strips whitespace and the leading @ so
+     *  the mention remains one token and mention detection can't re-trigger
+     *  on a name that itself contains spaces; a blank name falls back to a
+     *  short npub. */
+    private fun sanitizeMentionToken(rawDisplayName: String?, pubkey: String): String {
+        val raw = rawDisplayName?.takeIf { it.isNotBlank() }
+            ?: return pubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
         return raw.trim().removePrefix("@").replace(Regex("\\s+"), "_")
     }
 
@@ -670,13 +727,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         }
         if (replyTo != null) {
             val hint = outboxRouter?.getRelayHint(replyTo.pubkey) ?: ""
-            if (replyTo.kind == Nip22.KIND_COMMENT) {
-                // Replying to a NIP-22 comment: publish a comment, with the root
-                // in the uppercase E scope and the parent in lowercase e.
-                tags.addAll(Nip22.buildCommentTags(replyTo, hint))
-            } else {
-                tags.addAll(Nip10.buildReplyTags(replyTo, hint))
-            }
+            tags.addAll(Nip10.buildReplyTags(replyTo, hint))
         }
 
         val (mentionedPubkeys, _) = extractNostrRefs(content)
@@ -778,9 +829,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
                 eventKind = Nip88.KIND_POLL
             }
         } else {
-            // Mirror the target's namespace: reply to a comment with a comment,
-            // everything else with a kind 1 note.
-            eventKind = if (replyTo?.kind == Nip22.KIND_COMMENT) Nip22.KIND_COMMENT else 1
+            eventKind = 1
         }
 
         if (!_galleryMode.value) {
@@ -851,6 +900,13 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
 
         // Hand off to PowManager for background mining if PoW enabled
         if (_powEnabled.value && powManager != null) {
+            // Snapshot what this composer holds so a rejected or stopped publish
+            // can put it back. The composer clears its state right after this —
+            // without the snapshot the text the user typed is gone the moment
+            // mining starts.
+            val restoreKey = keyRepo.getPubkeyHex()?.let { pk ->
+                draftStore.keyFor(pk, replyTo?.id, quoteTo?.id)
+            }
             powManager.submitNote(
                 signer = signer,
                 content = finalContent,
@@ -865,7 +921,9 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
                             eventRepo?.addReplyCount(rootId, "pow-pending")
                         }
                     }
-                }
+                },
+                draftRestoreKey = restoreKey,
+                draftRestorePayload = draftSnapshot()
             )
             deleteDraftOnPublish(relayPool, signer)
             _content.value = TextFieldValue()
@@ -1113,11 +1171,128 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         return sampleSize
     }
 
+    /**
+     * Snapshot of the composer handed to PowManager at publish time. If the
+     * post is rejected by every relay — or the user stops mining — the text the
+     * composer cleared on hand-off comes back the next time this composer slot
+     * opens ([hydrateRestoredDraft]).
+     *
+     * A draft-backed composer already has its NIP-37 draft on relays (deleted
+     * only on success), and a private reply must never touch disk in
+     * cleartext — neither hands over a snapshot. Gallery and poll structure
+     * aren't part of the snapshot; those ride on the status pill's Retry,
+     * which replays the prepared event rather than the composer state.
+     */
+    private fun draftSnapshot(): DraftPayload? {
+        if (currentDraftId != null) return null
+        if (_privateReply.value) return null
+        val raw = _content.value.text
+        val urls = _uploadedUrls.value
+        if (raw.isBlank() && urls.isEmpty()) return null
+        val mentions = _mentions.value.map { DraftMention(it.start, it.end, it.pubkey) }
+        val attachments = urls.map { url ->
+            val meta = _uploadedMediaMeta[url]
+            DraftAttachment(
+                url = url,
+                mimeType = meta?.mimeType ?: "image/jpeg",
+                width = meta?.dimensions?.first,
+                height = meta?.dimensions?.second,
+                thumbhash = meta?.thumbhash
+            )
+        }
+        return DraftPayload(
+            content = raw,
+            explicit = _explicit.value,
+            powEnabled = _powEnabled.value,
+            mentions = mentions,
+            attachments = attachments
+        )
+    }
+
+    /**
+     * Reopen this composer slot with the draft a failed / stopped publish left
+     * behind. The key is per-pubkey and per-parent, so a failed reply reappears
+     * in that thread's reply box rather than in the new-post composer.
+     *
+     * Skipped when the composer already holds text or attachments — e.g. a
+     * saved-state restore of this very slot — so a restore never stomps newer
+     * input.
+     */
+    fun hydrateRestoredDraft(replyToId: String?, quoteToId: String?) {
+        val pubkey = keyRepo.getPubkeyHex() ?: return
+        val payload = draftStore.take(draftStore.keyFor(pubkey, replyToId, quoteToId)) ?: return
+        if (_content.value.text.isNotBlank() || _uploadedUrls.value.isNotEmpty()) return
+        _content.value = TextFieldValue(payload.content, TextRange(payload.content.length))
+        val mentions = payload.mentions
+            .filter { it.start in 0..it.end && it.end <= payload.content.length }
+            .map { Mention(it.start, it.end, it.pubkey) }
+        _mentions.value = mentions
+        _explicit.value = payload.explicit
+        _powEnabled.value = payload.powEnabled
+        if (payload.attachments.isNotEmpty()) {
+            _uploadedUrls.value = payload.attachments.map { it.url }
+            _uploadedMediaMeta.clear()
+            for (a in payload.attachments) {
+                _uploadedMediaMeta[a.url] = UploadedMediaMeta(
+                    mimeType = a.mimeType,
+                    dimensions = if (a.width != null && a.height != null) a.width to a.height else null,
+                    thumbhash = a.thumbhash
+                )
+            }
+        }
+        savedStateHandle["draft_content"] = payload.content
+        savedStateHandle["draft_mentions"] =
+            mentions.map { "${it.start},${it.end},${it.pubkey}" }.toTypedArray()
+    }
+
     fun loadDraft(draft: Nip37.Draft) {
         currentDraftId = draft.dTag
-        val text = draft.content
+        // Drafts persist mentions as nostr:nprofile/npub URIs (saveDraft
+        // materializes them) — convert them back to @name pills so the editor
+        // renders like the session the draft was saved from.
+        val (text, restoredMentions) = rehydrateMentionsFromContent(draft.content)
         _content.value = TextFieldValue(text, TextRange(text.length))
+        _mentions.value = restoredMentions
         savedStateHandle["draft_content"] = text
+        saveMentionsToState()
+        detectHashtags(text)
+    }
+
+    /** Converts every `nostr:nprofile1…` / `nostr:npub1…` URI in [text] back
+     *  to a sanitized `@displayName` token plus a tracked mention range — a
+     *  pure display rehydrate; `materializeMentions` turns them into URIs
+     *  again at publish. Unresolvable profiles fall back to a short npub so
+     *  the mention isn't lost; undecodable URIs pass through untouched. */
+    private fun rehydrateMentionsFromContent(text: String): Pair<String, List<Mention>> {
+        val regex = Regex("nostr:(nprofile1[a-z0-9]+|npub1[a-z0-9]{58})")
+        val matches = regex.findAll(text).toList()
+        if (matches.isEmpty()) return text to emptyList()
+
+        val mentions = mutableListOf<Mention>()
+        val sb = StringBuilder(text.length)
+        var last = 0
+        for (match in matches) {
+            val end = match.range.last + 1
+            val pubkey = try {
+                when (val data = Nip19.decodeNostrUri("nostr:" + match.groupValues[1])) {
+                    is com.wisp.app.nostr.NostrUriData.ProfileRef -> data.pubkey
+                    else -> null
+                }
+            } catch (_: Exception) { null }
+            if (pubkey == null) {
+                sb.append(text, last, end)
+                last = end
+                continue
+            }
+            val display = "@" + sanitizeMentionToken(profileRepo?.get(pubkey)?.displayString, pubkey)
+            sb.append(text, last, match.range.first)
+            val start = sb.length
+            sb.append(display)
+            mentions.add(Mention(start, sb.length, pubkey))
+            last = end
+        }
+        sb.append(text, last, text.length)
+        return sb.toString() to mentions
     }
 
     fun saveDraft(
@@ -1137,21 +1312,16 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
             try {
                 val innerTags = mutableListOf<List<String>>()
                 if (replyTo != null) {
-                    if (replyTo.kind == Nip22.KIND_COMMENT) {
-                        innerTags.addAll(Nip22.buildCommentTags(replyTo))
-                    } else {
-                        innerTags.addAll(Nip10.buildReplyTags(replyTo))
-                    }
+                    innerTags.addAll(Nip10.buildReplyTags(replyTo))
                 }
-                val innerKind = if (replyTo?.kind == Nip22.KIND_COMMENT) Nip22.KIND_COMMENT else 1
                 val innerJson = Nip37.serializeDraftContent(
                     pubkeyHex = signer.pubkeyHex,
-                    innerKind = innerKind,
+                    innerKind = 1,
                     content = text,
                     tags = innerTags
                 )
                 val encrypted = signer.nip44Encrypt(innerJson, signer.pubkeyHex)
-                val wrapperTags = Nip37.buildDraftTags(draftId, innerKind)
+                val wrapperTags = Nip37.buildDraftTags(draftId, 1)
                 val event = signer.signEvent(
                     kind = Nip37.KIND_DRAFT,
                     content = encrypted,

@@ -3497,6 +3497,8 @@ fun WispNavHost(
         broadcastState = broadcastState,
         powStatus = powStatus,
         onCancelMining = { feedViewModel.powManager.cancel() },
+        onRetryMining = { feedViewModel.powManager.retry() },
+        onDismissStatus = { feedViewModel.powManager.dismiss() },
         modifier = Modifier
             .align(Alignment.BottomCenter)
             .padding(bottom = 16.dp)
