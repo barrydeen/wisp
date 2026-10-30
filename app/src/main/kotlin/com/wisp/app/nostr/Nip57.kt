@@ -301,6 +301,24 @@ object Nip57 {
         return runCatching { NostrEvent.fromJson(description) }.getOrNull()
     }
 
+    /**
+     * Verify an LNURL callback invoice before the wallet pays it: parseable,
+     * carries a payment hash, not expired, and its amount equals the requested
+     * zap amount in sats (the request is denominated in msats; the sats
+     * comparison floors, which tolerates sub-sat rounding but catches any
+     * meaningful inflation). The callback response is chosen by the lightning
+     * provider, so paying without these checks hands it a blank cheque above
+     * the amount the user agreed to.
+     */
+    fun isInvoiceAcceptable(bolt11: String, amountMsats: Long): Boolean {
+        val decoded = Bolt11.decode(bolt11) ?: return false
+        val paymentHash = decoded.paymentHash ?: return false
+        if (paymentHash.isBlank()) return false
+        if (decoded.isExpired()) return false
+        val invoiceSats = decoded.amountSats ?: return false
+        return amountMsats > 0 && invoiceSats == amountMsats / 1000
+    }
+
     suspend fun fetchSimpleInvoice(
         callbackUrl: String,
         amountMsats: Long,
