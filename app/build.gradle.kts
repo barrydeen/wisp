@@ -19,6 +19,7 @@ android {
         applicationId = baseApplicationId
         minSdk = 26
         targetSdk = 36
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         versionCode = 91
         versionName = "1.3.0"
         resValue("string", "app_name", "Wisp")
@@ -109,6 +110,9 @@ dependencies {
     testRuntimeOnly(libs.secp256k1.kmp.jni.jvm)
     testImplementation(libs.compose.ui.test.junit4)
     debugImplementation(libs.compose.ui.test.manifest)
+
+    androidTestImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.test.runner)
 
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
