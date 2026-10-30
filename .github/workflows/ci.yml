@@ -62,7 +62,10 @@ jobs:
 
   instrumentation:
     name: Instrumented tests (emulator, API 34)
-    runs-on: ubuntu-latest
+    # ubuntu-26.04 images break the emulator action's KVM autodetection: it
+    # silently runs with -accel off, the API 34 image boot times out, and the
+    # job reports zero executed tests. Pin to the 24.04 image until fixed.
+    runs-on: ubuntu-24.04
     env:
       OBX_DISABLE_ANALYTICS: "true"
     timeout-minutes: 45
@@ -77,6 +80,10 @@ jobs:
       # running first, the emulator logs "Unable to connect to adb daemon on
       # port: 5037" forever and the runner times out without running any test
       # (seen on the first merges to main). Start the daemon explicitly.
+      - name: Check KVM acceleration
+        run: |
+          ls -la /dev/kvm
+          sudo -E adduser $USER kvm 2>/dev/null || true
       - name: Start adb server
         run: $ANDROID_HOME/platform-tools/adb start-server
       - name: Run instrumented tests on emulator
@@ -87,6 +94,7 @@ jobs:
           arch: x86_64
           emulator-options: -no-snapshot -noaudio -no-boot-anim -gpu swiftshader_indirect
           disable-animations: true
+          emulator-boot-timeout: 900
           script: ./gradlew connectedDebugAndroidTest --no-daemon
       - name: Upload instrumented test reports
         if: always()
