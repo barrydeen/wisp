@@ -73,12 +73,20 @@ jobs:
           distribution: temurin
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
+      # The emulator registers with adb during boot; if the adb daemon is not
+      # running first, the emulator logs "Unable to connect to adb daemon on
+      # port: 5037" forever and the runner times out without running any test
+      # (seen on the first merges to main). Start the daemon explicitly.
+      - name: Start adb server
+        run: $ANDROID_HOME/platform-tools/adb start-server
       - name: Run instrumented tests on emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 34
           target: google_apis
           arch: x86_64
+          emulator-options: -no-snapshot -noaudio -no-boot-anim -gpu swiftshader_indirect
+          disable-animations: true
           script: ./gradlew connectedDebugAndroidTest --no-daemon
       - name: Upload instrumented test reports
         if: always()
