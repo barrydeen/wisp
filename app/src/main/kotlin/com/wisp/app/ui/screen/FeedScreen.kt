@@ -31,6 +31,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -70,6 +72,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import kotlinx.coroutines.flow.MutableStateFlow
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -95,6 +99,8 @@ import com.wisp.app.ui.component.isGalleryEvent
 import com.wisp.app.ui.component.PostCard
 import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.ui.component.RelayIcon
+import com.wisp.app.ui.util.relayMatchesQuery
+import com.wisp.app.ui.util.relaySearchQuery
 import com.wisp.app.ui.component.WispDrawerContent
 import com.wisp.app.ui.component.ZapDialog
 import com.wisp.app.repo.RelayInfoRepository
@@ -1757,6 +1763,40 @@ private fun RelayPickerDialog(
     var newSetName by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
     val couldntConnectError = stringResource(R.string.error_couldnt_connect_relay)
+    var probeJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+
+    fun startProbe() {
+        val input = urlInput.trim().removeSuffix("/")
+        val domain = input
+            .removePrefix("wss://")
+            .removePrefix("ws://")
+        if (domain.isBlank()) return
+        probeJob?.cancel()
+        isProbing = true
+        probeError = null
+        probeJob = scope.launch {
+            // If the user specified a protocol, try only that
+            val result = when {
+                input.startsWith("ws://") || input.startsWith("wss://") ->
+                    onProbe(input)
+                else -> onProbe(domain)
+            }
+            isProbing = false
+            if (result != null) {
+                onSelect(result)
+            } else {
+                probeError = couldntConnectError
+            }
+        }
+    }
+
+    // The URL bar also filters the lists below it
+    val query = relaySearchQuery(urlInput)
+    val shownFavorites = favoriteRelays.filter { relayMatchesQuery(it, query) }
+    val shownScored = scoredRelays.filter { relayMatchesQuery(it.url, query) }
+    val shownSets = if (query.isEmpty()) relaySets else relaySets.filter { set ->
+        set.name.lowercase().contains(query) || set.relays.any { relayMatchesQuery(it, query) }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1770,39 +1810,28 @@ private fun RelayPickerDialog(
                     onValueChange = {
                         urlInput = it
                         probeError = null
+                        // Editing while a connection attempt is running cancels it,
+                        // so a typo can be fixed without waiting for the probe to fail.
+                        if (isProbing) {
+                            probeJob?.cancel()
+                            isProbing = false
+                        }
                     },
                     placeholder = { Text(stringResource(R.string.placeholder_relay_example)) },
                     singleLine = true,
-                    enabled = !isProbing,
+                    // Relay addresses: no autocorrect, no auto-space after "."
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Uri,
+                        autoCorrectEnabled = false,
+                        imeAction = ImeAction.Go
+                    ),
+                    keyboardActions = KeyboardActions(onGo = { startProbe() }),
                     trailingIcon = {
                         if (isProbing) {
                             CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                         } else {
                             IconButton(
-                                onClick = {
-                                    val input = urlInput.trim().removeSuffix("/")
-                                    val domain = input
-                                        .removePrefix("wss://")
-                                        .removePrefix("ws://")
-                                    if (domain.isNotBlank()) {
-                                        isProbing = true
-                                        probeError = null
-                                        scope.launch {
-                                            // If the user specified a protocol, try only that
-                                            val result = when {
-                                                input.startsWith("ws://") || input.startsWith("wss://") ->
-                                                    onProbe(input)
-                                                else -> onProbe(domain)
-                                            }
-                                            isProbing = false
-                                            if (result != null) {
-                                                onSelect(result)
-                                            } else {
-                                                probeError = couldntConnectError
-                                            }
-                                        }
-                                    }
-                                },
+                                onClick = { startProbe() },
                                 enabled = urlInput.isNotBlank()
                             ) {
                                 Text(stringResource(R.string.btn_go), style = MaterialTheme.typography.labelMedium)
@@ -1824,7 +1853,7 @@ private fun RelayPickerDialog(
 
                 LazyColumn(modifier = Modifier.heightIn(max = 400.dp)) {
                     // Favorites section
-                    if (favoriteRelays.isNotEmpty()) {
+                    if (shownFavorites.isNotEmpty()) {
                         item {
                             Text(
                                 stringResource(R.string.tab_favorites),
@@ -1834,7 +1863,7 @@ private fun RelayPickerDialog(
                                 modifier = Modifier.padding(bottom = 4.dp)
                             )
                         }
-                        items(favoriteRelays) { url ->
+                        items(shownFavorites) { url ->
                             Surface(
                                 onClick = { onSelect(url) },
                                 shape = RoundedCornerShape(8.dp),
@@ -1861,8 +1890,9 @@ private fun RelayPickerDialog(
                         item { Spacer(Modifier.height(8.dp)) }
                     }
 
-                    // Relay Sets section — always shown so user can create their first set
-                    item {
+                    // Relay Sets section — always shown so user can create their first set,
+                    // unless a search hides every set
+                    if (query.isEmpty() || shownSets.isNotEmpty()) item {
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
@@ -1926,7 +1956,11 @@ private fun RelayPickerDialog(
                             }
                         }
                     }
-                    for (relaySet in relaySets) {
+                    for (relaySet in shownSets) {
+                        // While searching, sets open on their matching relays
+                        val matchingRelays = relaySet.relays.filter { relayMatchesQuery(it, query) }
+                        val searchExpanded = query.isNotEmpty() && matchingRelays.isNotEmpty()
+                        val isExpanded = searchExpanded || expandedSetDTag == relaySet.dTag
                         item(key = "set-${relaySet.dTag}") {
                             Surface(
                                 onClick = { expandedSetDTag = if (expandedSetDTag == relaySet.dTag) null else relaySet.dTag },
@@ -1956,7 +1990,7 @@ private fun RelayPickerDialog(
                                 }
                             }
                         }
-                        if (expandedSetDTag == relaySet.dTag) {
+                        if (isExpanded) {
                             // Combined feed button
                             item(key = "set-combined-${relaySet.dTag}") {
                                 Surface(
@@ -1975,7 +2009,10 @@ private fun RelayPickerDialog(
                                 }
                             }
                             // Individual relays in the set
-                            items(relaySet.relays.toList(), key = { "set-relay-${relaySet.dTag}-$it" }) { url ->
+                            items(
+                                if (searchExpanded) matchingRelays else relaySet.relays.toList(),
+                                key = { "set-relay-${relaySet.dTag}-$it" }
+                            ) { url ->
                                 Surface(
                                     onClick = { onSelect(url) },
                                     shape = RoundedCornerShape(8.dp),
@@ -2000,12 +2037,12 @@ private fun RelayPickerDialog(
                             }
                         }
                     }
-                    if (relaySets.isNotEmpty() || showCreateSet) {
+                    if (shownSets.isNotEmpty() || showCreateSet) {
                         item { Spacer(Modifier.height(8.dp)) }
                     }
 
                     // All Relays section
-                    if (scoredRelays.isNotEmpty()) {
+                    if (shownScored.isNotEmpty()) {
                         item {
                             Text(
                                 stringResource(R.string.tab_all_relays),
@@ -2015,7 +2052,7 @@ private fun RelayPickerDialog(
                                 modifier = Modifier.padding(bottom = 4.dp)
                             )
                         }
-                        items(scoredRelays) { scored ->
+                        items(shownScored) { scored ->
                             Surface(
                                 onClick = { onSelect(scored.url) },
                                 shape = RoundedCornerShape(8.dp),
@@ -2037,6 +2074,14 @@ private fun RelayPickerDialog(
                                     )
                                 }
                             }
+                        }
+                    } else if (query.isNotEmpty()) {
+                        if (shownFavorites.isEmpty() && shownSets.isEmpty()) item {
+                            Text(
+                                stringResource(R.string.relay_search_no_match),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodySmall
+                            )
                         }
                     } else if (favoriteRelays.isEmpty() && relaySets.isEmpty()) {
                         item {
