@@ -20,6 +20,7 @@ enum class Nip05Result {
 
 object Nip05 {
     private val json = Json { ignoreUnknownKeys = true }
+    private val PUBKEY_HEX = Regex("^[0-9a-f]{64}$")
 
     /**
      * Verify a NIP-05 identifier against a pubkey.
@@ -90,10 +91,17 @@ object Nip05 {
                         entry.key.equals(local, ignoreCase = true)
                     }?.value)?.jsonPrimitive?.content?.lowercase()
                         ?: return@withContext null
-                    if (pubkey.length != 64) return@withContext null
+                    if (!PUBKEY_HEX.matches(pubkey)) return@withContext null
+                    // Only trust wss:// hints; drop malformed entries instead of
+                    // letting one bad element discard the whole hint list.
                     val relays = try {
                         root["relays"]?.jsonObject?.get(pubkey)?.jsonArray
-                            ?.map { it.jsonPrimitive.content } ?: emptyList()
+                            ?.mapNotNull { entry ->
+                                runCatching { entry.jsonPrimitive.content.trim() }.getOrNull()
+                            }
+                            ?.filter { it.startsWith("wss://") }
+                            ?.distinct()
+                            ?: emptyList()
                     } catch (_: Exception) {
                         emptyList()
                     }

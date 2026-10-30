@@ -553,6 +553,9 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
         val filter = Filter(kinds = listOf(kind), authors = author?.let { listOf(it) }, dTags = listOf(ref.dTag), limit = 1)
         fetchDirect(subId, listOf(filter), ref.relays, relayPool) { event ->
             if (event.kind != kind) return@fetchDirect false
+            // A relay may answer with a different addressable event of the same kind.
+            if (author != null && event.pubkey != author) return@fetchDirect false
+            if (event.tags.none { it.size >= 2 && it[0] == "d" && it[1] == ref.dTag }) return@fetchDirect false
             if (found == null || event.created_at > found!!.created_at) found = event
             false
         }
