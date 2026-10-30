@@ -92,9 +92,17 @@ jobs:
       - name: Pin emulator to a stable release
         # Emulator 36.x/37.x dies mid-boot in this configuration (observed
         # locally with 36.6.11 as a SIGSEGV and on CI with 37.2.13 as a silent
-        # process exit during API 34 boot); 33.1.24 is the widely used stable
-        # pin for API 34 CI images.
-        run: $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "emulator;33.1.24"
+        # process exit during API 34 boot). Try known-stable releases in order;
+        # the first available package wins and the version is logged.
+        run: |
+          for v in 34.2.16 33.1.24 32.1.15 31.3.10; do
+            echo "trying emulator;$v"
+            if $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "emulator;$v"; then
+              echo "installed emulator;$v"
+              break
+            fi
+          done
+          $ANDROID_HOME/emulator/emulator -version | head -1
       - name: Start adb server
         run: $ANDROID_HOME/platform-tools/adb start-server
       - name: Run instrumented tests on emulator
