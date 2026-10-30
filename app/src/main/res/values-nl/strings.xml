@@ -461,7 +461,7 @@
     <string name="settings_video_autoplay">Video automatisch afspelen</string>
     <string name="settings_video_autoplay_description">Video\'s automatisch afspelen wanneer ze in beeld scrollen</string>
     <string name="settings_hide_live_streams">Livestreams verbergen</string>
-    <string name="settings_hide_live_streams_description">De livestream-rij bovenaan je feed verbergen</string>
+    <string name="settings_hide_live_streams_description">Verberg de livestream-rij in je feed en stop livestream-detectie. Aan: er wordt geen live-content geladen of afgespeeld</string>
     <string name="settings_client_tag">Client Tag</string>
     <string name="settings_tag_notes">Notities taggen met Wisp</string>
     <string name="settings_tag_notes_description">Voeg een tag toe die Wisp als client identificeert. Dit is zichtbaar voor anderen.</string>

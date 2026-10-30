@@ -26,11 +26,28 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import java.util.Collections
 
 class LiveStreamViewModel(app: Application) : AndroidViewModel(app) {
 
+    companion object {
+        private const val CHAT_PAGE_SIZE = 50
+        private const val ZAP_SCAN_PAGE_SIZE = 1000
+
+        /**
+         * Public relays that archive kind-9735 receipts for popular streams
+         * (sidecar's ZAP_ARCHIVE_RELAYS) — chat relays alone only hold
+         * recent zaps.
+         */
+        private val ZAP_ARCHIVE_RELAYS = listOf(
+            "wss://nostr21.com", "wss://relay.ditto.pub", "wss://nostr-01.yakihonne.com",
+            "wss://relay.nostr.net", "wss://soloco.nl"
+        )
+    }
+
     private var liveStreamRepo: LiveStreamRepository? = null
     private var relayPool: RelayPool? = null
+    private var subManager: SubscriptionManager? = null
     private var contactRepo: ContactRepository? = null
     var hostPubkey: String = ""
         private set
@@ -39,6 +56,15 @@ class LiveStreamViewModel(app: Application) : AndroidViewModel(app) {
     private var aTagValue: String = ""
     var chatRelays: List<String> = emptyList()
         private set
+    private var zapScanRelays: List<String> = emptyList()
+
+    // Chat history paging (sidecar-style): newest page only on open; each
+    // scroll-back pulls one more page until the in-memory cap or the stream's
+    // first message is reached.
+    private val _isLoadingOlder = MutableStateFlow(false)
+    val isLoadingOlder: StateFlow<Boolean> = _isLoadingOlder
+    private val _hasMoreChatHistory = MutableStateFlow(true)
+    val hasMoreChatHistory: StateFlow<Boolean> = _hasMoreChatHistory
 
     private val _activity = MutableStateFlow<Nip53.LiveActivity?>(null)
     val activity: StateFlow<Nip53.LiveActivity?> = _activity
@@ -48,6 +74,9 @@ class LiveStreamViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _streamZapTotal = MutableStateFlow(0L)
     val streamZapTotal: StateFlow<Long> = _streamZapTotal
+
+    private val _streamZapTotalUncertain = MutableStateFlow(false)
+    val streamZapTotalUncertain: StateFlow<Boolean> = _streamZapTotalUncertain
 
     private val _messageText = MutableStateFlow("")
     val messageText: StateFlow<String> = _messageText
@@ -85,6 +114,7 @@ class LiveStreamViewModel(app: Application) : AndroidViewModel(app) {
         this.dTag = dTag
         this.liveStreamRepo = liveStreamRepo
         this.relayPool = relayPool
+        this.subManager = subManager
         this.contactRepo = contactRepo
         if (mentionSearchRepo == null) {
             mentionSearchRepo = MentionSearchRepository(
@@ -112,6 +142,13 @@ class LiveStreamViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             liveStreamRepo.streamZapTotal.collect { total ->
                 _streamZapTotal.value = total
+            }
+        }
+
+        // Collect zap-total uncertainty (bounded relay scan may miss receipts)
+        viewModelScope.launch {
+            liveStreamRepo.streamZapTotalUncertain.collect { uncertain ->
+                _streamZapTotalUncertain.value = uncertain
             }
         }
 
@@ -143,11 +180,38 @@ class LiveStreamViewModel(app: Application) : AndroidViewModel(app) {
             // Prioritize relay hints (most likely to have chat), then inbox/outbox
             chatRelays = (naddrRelayHints + activityHints + inboxRelays + outboxRelays)
                 .distinct().take(10).ifEmpty { relayPool.getReadRelayUrls().take(3) }
+
+            // Bypass pool dedup for live chat subs — the discovery sub, the
+            // per-stream sub, and the history pager all receive kind 1311
+            // events and must each reach EventRouter independently. Normally
+            // registered by StartupCoordinator's discovery, but re-register
+            // here so deep-linked streams work even when discovery is off.
+            relayPool.registerDedupBypass("live-chat-")
+
+            // Recent history first: long-running streams carry months of kind-1311,
+            // and backfilling them wholesale (the old limit=200) stalls the chat for
+            // seconds. Pull the newest page up front and page older history on
+            // scroll (sidecar-style); the live subscription only covers now-10 so
+            // relays don't replay the whole archive on connect. Flagged with
+            // isLoadingOlder so the scroll sentinel can't fire a concurrent page
+            // under the same subscription id.
+            _isLoadingOlder.value = true
+            try {
+                fetchChatHistoryPage(until = null)
+            } finally {
+                _isLoadingOlder.value = false
+            }
+
             // Subscribe to chat, reactions, zaps — use writable, auto-reconnecting
             // ephemeral connections so we can both send and receive for the stream's
             // full duration without losing connectivity on transient drops.
             val chatATag = listOf(aTagValue)
-            val chatFilter = Filter(kinds = listOf(1311), aTags = chatATag, limit = 200)
+            val chatFilter = Filter(
+                kinds = listOf(1311),
+                aTags = chatATag,
+                limit = 100,
+                since = System.currentTimeMillis() / 1000 - 10
+            )
             val reactFilter = Filter(kinds = listOf(7), aTags = chatATag, limit = 500)
             val zapFilter = Filter(kinds = listOf(9735), aTags = chatATag, limit = 200)
 
@@ -159,6 +223,114 @@ class LiveStreamViewModel(app: Application) : AndroidViewModel(app) {
                 relayPool.sendToRelayOrEphemeral(url, ClientMessage.req(chatSubId, chatFilter), write = true, autoReconnect = true)
                 relayPool.sendToRelayOrEphemeral(url, ClientMessage.req(reactSubId, reactFilter), write = true, autoReconnect = true)
                 relayPool.sendToRelayOrEphemeral(url, ClientMessage.req(zapSubId, zapFilter), write = true, autoReconnect = true)
+            }
+
+            // The live zap sub only sees receipts delivered while watching (plus
+            // its small backfill) — a fraction of a popular stream's lifetime
+            // total. Scan chat + archive relays once for a much closer number.
+            refreshZapTotal()
+        }
+    }
+
+    /**
+     * One-shot kind-1311 page across the chat relays. Events route to the repo
+     * through EventRouter via the shared "live-chat-" prefix (pool dedup is
+     * bypassed for it; the repo dedupes the overlap). `until` is inclusive so
+     * boundary-second messages aren't skipped. Null [until] fetches the newest
+     * page; returns the number of unique events received.
+     */
+    private suspend fun fetchChatHistoryPage(until: Long?): Int {
+        val pool = relayPool ?: return 0
+        val manager = subManager ?: return 0
+        if (chatRelays.isEmpty()) return 0
+
+        val subId = "live-chat-hist-$dTag"
+        // Count unique ids, not raw relay copies — this sub bypasses pool
+        // dedup (it rides the "live-chat-" prefix), so every relay's copy
+        // of the same event reaches us.
+        val received = java.util.concurrent.atomic.AtomicInteger(0)
+        val seenIds = Collections.synchronizedSet(HashSet<String>())
+        val counter = viewModelScope.launch(Dispatchers.Default) {
+            pool.relayEvents.collect { relayEvent ->
+                if (relayEvent.subscriptionId == subId && seenIds.add(relayEvent.event.id)) {
+                    received.incrementAndGet()
+                }
+            }
+        }
+        try {
+            val filter = Filter(
+                kinds = listOf(1311),
+                aTags = listOf(aTagValue),
+                limit = CHAT_PAGE_SIZE,
+                until = until
+            )
+            for (url in chatRelays) {
+                pool.sendToRelayOrEphemeral(url, ClientMessage.req(subId, filter), write = true, autoReconnect = true)
+            }
+            manager.awaitEoseCount(subId, chatRelays.size, 8_000)
+        } finally {
+            counter.cancel()
+            manager.closeSubscription(subId)
+        }
+        return received.get()
+    }
+
+    /** Loads one older page of chat (scroll-back). Re-entrant calls are cheap no-ops. */
+    fun loadOlderMessages() {
+        if (_isLoadingOlder.value || !_hasMoreChatHistory.value || chatRelays.isEmpty()) return
+        val repo = liveStreamRepo ?: return
+        val oldest = repo.oldestChatMessageCreatedAt(aTagValue) ?: return
+        _isLoadingOlder.value = true
+        viewModelScope.launch(Dispatchers.Default) {
+            try {
+                val received = fetchChatHistoryPage(until = oldest)
+                if (received < CHAT_PAGE_SIZE ||
+                    repo.chatMessageCount(aTagValue) >= LiveStreamRepository.MAX_CHAT_MESSAGES
+                ) {
+                    _hasMoreChatHistory.value = false
+                }
+            } finally {
+                _isLoadingOlder.value = false
+            }
+        }
+    }
+
+    /**
+     * One-shot kind-9735 scan across the chat relays plus zap-archive relays,
+     * deduped by event id in the repository. Bounded sample: mark the total
+     * uncertain (rendered "+") when relays went quiet or hit the page limit.
+     */
+    private fun refreshZapTotal() {
+        val repo = liveStreamRepo ?: return
+        val pool = relayPool ?: return
+        val manager = subManager ?: return
+        viewModelScope.launch(Dispatchers.Default) {
+            val relays = (chatRelays + ZAP_ARCHIVE_RELAYS).distinct().take(12)
+            if (relays.isEmpty()) return@launch
+            zapScanRelays = relays
+
+            val subId = "live-zap-scan-$dTag"
+            val received = java.util.concurrent.atomic.AtomicInteger(0)
+            val seenIds = Collections.synchronizedSet(HashSet<String>())
+            val counter = launch {
+                pool.relayEvents.collect { relayEvent ->
+                    if (relayEvent.subscriptionId == subId && seenIds.add(relayEvent.event.id)) {
+                        received.incrementAndGet()
+                    }
+                }
+            }
+            try {
+                val filter = Filter(kinds = listOf(9735), aTags = listOf(aTagValue), limit = ZAP_SCAN_PAGE_SIZE)
+                for (url in relays) {
+                    pool.sendToRelayOrEphemeral(url, ClientMessage.req(subId, filter))
+                }
+                val responded = manager.awaitEoseCount(subId, relays.size, 12_000)
+                if (received.get() > 0 && (received.get() >= ZAP_SCAN_PAGE_SIZE || responded < relays.size)) {
+                    repo.markZapTotalUncertain(aTagValue)
+                }
+            } finally {
+                counter.cancel()
+                manager.closeSubscription(subId)
             }
         }
     }
@@ -260,12 +432,23 @@ class LiveStreamViewModel(app: Application) : AndroidViewModel(app) {
         val chatSubId = "live-chat-$dTag"
         val reactSubId = "live-react-$dTag"
         val zapSubId = "live-zap-$dTag"
+        val histSubId = "live-chat-hist-$dTag"
+        val zapScanSubId = "live-zap-scan-$dTag"
         for (url in chatRelays) {
             relayPool.sendToRelay(url, ClientMessage.close(chatSubId))
             relayPool.sendToRelay(url, ClientMessage.close(reactSubId))
             relayPool.sendToRelay(url, ClientMessage.close(zapSubId))
+            relayPool.sendToRelay(url, ClientMessage.close(histSubId))
+        }
+        if (zapScanRelays.isNotEmpty()) {
+            for (url in zapScanRelays) {
+                relayPool.sendToRelay(url, ClientMessage.close(zapScanSubId))
+            }
+        } else {
+            relayPool.sendToAll(ClientMessage.close(zapScanSubId))
         }
         // Release auto-reconnect so ephemeral relays can be evicted naturally
         relayPool.releaseEphemeralRelays(chatRelays)
+        relayPool.releaseEphemeralRelays(zapScanRelays)
     }
 }

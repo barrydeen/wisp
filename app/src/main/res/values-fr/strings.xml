@@ -461,7 +461,7 @@
     <string name="settings_video_autoplay">Lecture automatique des vidéos</string>
     <string name="settings_video_autoplay_description">Lire automatiquement les vidéos quand elles apparaissent à l\'écran</string>
     <string name="settings_hide_live_streams">Masquer les lives</string>
-    <string name="settings_hide_live_streams_description">Masquer la barre de lives en haut de votre fil</string>
+    <string name="settings_hide_live_streams_description">Masquer la barre de lives de votre fil et arrêter la découverte des lives. Activé, aucun contenu live ne se charge ni ne se lit</string>
     <string name="settings_client_tag">Tag Client</string>
     <string name="settings_tag_notes">Taguer les notes avec Wisp</string>
     <string name="settings_tag_notes_description">Inclure un tag identifiant Wisp comme le client. Ceci est visible par les autres.</string>

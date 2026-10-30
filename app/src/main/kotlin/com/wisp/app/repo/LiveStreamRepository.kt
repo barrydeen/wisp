@@ -27,6 +27,15 @@ data class LiveStream(
 )
 
 class LiveStreamRepository {
+    companion object {
+        /**
+         * Chat + zap-announcement rows kept per stream. Long-running radio
+         * streams carry months of kind-1311; history pages in on demand and
+         * stops here.
+         */
+        const val MAX_CHAT_MESSAGES = 1000
+    }
+
     private val streams = ConcurrentHashMap<String, LiveStream>()
     private val seenChatIds = ConcurrentHashMap.newKeySet<String>()
     private var currentStreamKey: String? = null
@@ -40,7 +49,16 @@ class LiveStreamRepository {
     private val _streamZapTotal = MutableStateFlow(0L)
     val streamZapTotal: StateFlow<Long> = _streamZapTotal
 
+    /**
+     * The current stream's zap total came from a bounded relay scan that may
+     * have missed older receipts — rendered with a trailing "+", sidecar-style.
+     */
+    private val _streamZapTotalUncertain = MutableStateFlow(false)
+    val streamZapTotalUncertain: StateFlow<Boolean> = _streamZapTotalUncertain
+
     private val chatMessages = ConcurrentHashMap<String, MutableList<LiveChatMessage>>()
+    private val streamZapTotals = ConcurrentHashMap<String, Long>()
+    private val zapTotalsUncertain = ConcurrentHashMap.newKeySet<String>()
     private val pendingFollowChatters = ConcurrentHashMap<String, MutableSet<String>>()
     private val pendingFollowChatAt = ConcurrentHashMap<String, Long>()
 
@@ -48,8 +66,12 @@ class LiveStreamRepository {
         val activity = Nip53.parseLiveActivity(event) ?: return
         val key = Nip53.aTagValue(activity.hostPubkey, activity.dTag)
         val existing = streams[key]
-        // Only keep if status is "live", remove if ended
-        if (activity.status != "live") {
+        // Kind-30311 is replaceable and relays deliver copies in any order:
+        // an older copy must never overwrite or remove a newer one.
+        if (existing != null && existing.activity.createdAt > activity.createdAt) return
+        // Drop streams that ended, went stale, or never carried a streaming
+        // URL — status "live" alone is not enough (sidecar's liveness rule).
+        if (!Nip53.isLiveNow(activity)) {
             if (existing != null) {
                 streams.remove(key)
                 emitStreams()
@@ -132,6 +154,7 @@ class LiveStreamRepository {
         synchronized(msgs) {
             msgs.add(msg)
             msgs.sortBy { it.createdAt }
+            trimToChatCap(msgs)
         }
 
         // Update current view if this is the active stream
@@ -179,25 +202,41 @@ class LiveStreamRepository {
         synchronized(msgs) {
             msgs.add(msg)
             msgs.sortBy { it.createdAt }
+            trimToChatCap(msgs)
         }
 
+        // Totals accumulate per stream across visits so re-opening a stream
+        // doesn't shrink the number back to whatever survived the chat cap.
+        streamZapTotals[aTagValue] = (streamZapTotals[aTagValue] ?: 0L) + sats
         if (aTagValue == currentStreamKey) {
-            _streamZapTotal.value += sats
+            _streamZapTotal.value = streamZapTotals[aTagValue] ?: 0L
             emitCurrentChat()
         }
+    }
+
+    /** Mark a stream's zap total as a bounded sample that may be short (renders "+"). */
+    fun markZapTotalUncertain(aTagValue: String) {
+        zapTotalsUncertain.add(aTagValue)
+        if (aTagValue == currentStreamKey) _streamZapTotalUncertain.value = true
     }
 
     fun setCurrentStream(aTagValue: String?) {
         currentStreamKey = aTagValue
         if (aTagValue != null) {
-            // Recalculate stream zap total from existing messages
-            val msgs = chatMessages[aTagValue]
-            _streamZapTotal.value = if (msgs != null) {
-                synchronized(msgs) { msgs.filter { it.isZapAnnouncement }.sumOf { it.zapAmountSats } }
-            } else 0L
+            // Prefer the accumulated total; fall back to what the retained
+            // chat rows say (first visit to a stream discovered before opening).
+            val known = streamZapTotals[aTagValue]
+            _streamZapTotal.value = known ?: run {
+                val msgs = chatMessages[aTagValue]
+                if (msgs != null) {
+                    synchronized(msgs) { msgs.filter { it.isZapAnnouncement }.sumOf { it.zapAmountSats } }
+                } else 0L
+            }
+            _streamZapTotalUncertain.value = aTagValue in zapTotalsUncertain
             emitCurrentChat()
         } else {
             _streamZapTotal.value = 0L
+            _streamZapTotalUncertain.value = false
             _currentChatMessages.value = emptyList()
         }
     }
@@ -206,6 +245,27 @@ class LiveStreamRepository {
 
     fun getChatRelayHint(aTagValue: String): String? =
         streams[aTagValue]?.activity?.relayHints?.firstOrNull()
+
+    /** Rows (chat + zap announcements) currently retained for a stream. */
+    fun chatMessageCount(aTagValue: String): Int {
+        val msgs = chatMessages[aTagValue] ?: return 0
+        return synchronized(msgs) { msgs.size }
+    }
+
+    /**
+     * Created-at of the oldest retained chat row (zap announcements excluded —
+     * they don't come from the chat feed and can predate all messages).
+     */
+    fun oldestChatMessageCreatedAt(aTagValue: String): Long? {
+        val msgs = chatMessages[aTagValue] ?: return null
+        return synchronized(msgs) { msgs.firstOrNull { !it.isZapAnnouncement }?.createdAt }
+    }
+
+    private fun trimToChatCap(msgs: MutableList<LiveChatMessage>) {
+        if (msgs.size > MAX_CHAT_MESSAGES) {
+            msgs.subList(0, msgs.size - MAX_CHAT_MESSAGES).clear()
+        }
+    }
 
     private fun emitStreams() {
         _liveStreams.value = streams.toMap()
@@ -219,15 +279,30 @@ class LiveStreamRepository {
         } else emptyList()
     }
 
+    /**
+     * Drop discovery state (live pills + pending chatter) without touching an
+     * open stream's chat. Called when the user hides live content so nothing
+     * reappears if discovery is later re-enabled from stale data.
+     */
+    fun clearDiscovered() {
+        streams.clear()
+        pendingFollowChatters.clear()
+        pendingFollowChatAt.clear()
+        emitStreams()
+    }
+
     fun clear() {
         streams.clear()
         chatMessages.clear()
         seenChatIds.clear()
+        streamZapTotals.clear()
+        zapTotalsUncertain.clear()
         pendingFollowChatters.clear()
         pendingFollowChatAt.clear()
         currentStreamKey = null
         _liveStreams.value = emptyMap()
         _currentChatMessages.value = emptyList()
         _streamZapTotal.value = 0L
+        _streamZapTotalUncertain.value = false
     }
 }
