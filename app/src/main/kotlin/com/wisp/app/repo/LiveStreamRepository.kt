@@ -66,6 +66,9 @@ class LiveStreamRepository {
         val activity = Nip53.parseLiveActivity(event) ?: return
         val key = Nip53.aTagValue(activity.hostPubkey, activity.dTag)
         val existing = streams[key]
+        // Kind-30311 is replaceable and relays deliver copies in any order:
+        // an older copy must never overwrite or remove a newer one.
+        if (existing != null && existing.activity.createdAt > activity.createdAt) return
         // Drop streams that ended, went stale, or never carried a streaming
         // URL — status "live" alone is not enough (sidecar's liveness rule).
         if (!Nip53.isLiveNow(activity)) {
