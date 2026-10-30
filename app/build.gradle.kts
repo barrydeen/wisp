@@ -114,8 +114,30 @@ dependencies {
     androidTestImplementation(libs.junit)
     androidTestImplementation(libs.androidx.test.runner)
 
+    // JVM natives for the secp256k1 JNI so the crypto regression suites can
+    // run as plain unit tests (CI has no emulator for these; the same suites
+    // also remain in androidTest for on-device runs).
+    testImplementation(libs.secp256k1.kmp.jvm)
+    testImplementation(libs.secp256k1.kmp.jni.jvm)
+    testImplementation(libs.secp256k1.kmp.jni.common)
+    testImplementation(libs.secp256k1.kmp.jni.jvm.extract)
+    testImplementation(libs.secp256k1.kmp.jni.jvm.linux)
+    testImplementation(libs.secp256k1.kmp.jni.jvm.darwin)
+    testImplementation(libs.secp256k1.kmp.jni.jvm.mingw)
+
     androidTestImplementation(libs.junit)
     androidTestImplementation(libs.androidx.test.runner)
+
+    // JVM natives for the secp256k1 JNI so the crypto regression suites can
+    // run as plain unit tests (CI has no emulator for these; the same suites
+    // also remain in androidTest for on-device runs).
+    testImplementation(libs.secp256k1.kmp.jvm)
+    testImplementation(libs.secp256k1.kmp.jni.jvm)
+    testImplementation(libs.secp256k1.kmp.jni.common)
+    testImplementation(libs.secp256k1.kmp.jni.jvm.extract)
+    testImplementation(libs.secp256k1.kmp.jni.jvm.linux)
+    testImplementation(libs.secp256k1.kmp.jni.jvm.darwin)
+    testImplementation(libs.secp256k1.kmp.jni.jvm.mingw)
 
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
