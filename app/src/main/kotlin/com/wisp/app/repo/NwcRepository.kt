@@ -259,7 +259,9 @@ class NwcRepository(private val context: Context, private val relayPool: RelayPo
             relay.messages.first { msg ->
                 when (msg) {
                     is RelayMessage.EventMsg -> {
-                        if (msg.subscriptionId == "nwc-info" && msg.event.kind == 13194) {
+                        if (msg.subscriptionId == "nwc-info" &&
+                            Nip47.infoFailureReason(conn, msg.event) == null
+                        ) {
                             result = Nip47.parseInfoEncryption(msg.event)
                             true
                         } else false
@@ -281,6 +283,13 @@ class NwcRepository(private val context: Context, private val relayPool: RelayPo
 
     private fun handleResponse(event: com.wisp.app.nostr.NostrEvent) {
         val conn = connection ?: return
+        // Single authentication boundary before anything can complete a pending
+        // request: signature, wallet-service author, and client recipient.
+        val failure = Nip47.responseFailureReason(conn, event)
+        if (failure != null) {
+            Log.w(TAG, "NWC response rejected: $failure")
+            return
+        }
         try {
             val response = Nip47.parseResponse(conn, event)
             emitStatus("Response decrypted")
