@@ -15,8 +15,10 @@ import java.security.MessageDigest
  * receipt, with the invoice's description hash committing to the exact
  * request string. Uses synthetic keys and real Schnorr/BOLT-11 operations.
  *
- * The file deliberately avoids Android-only APIs so the identical source
- * runs in the isolated JVM harness used for local validation.
+ * The file deliberately avoids Android-only APIs: it runs as a plain JVM
+ * unit test (via the secp256k1 JVM JNI test dependencies), in the isolated
+ * validation harness, and as an instrumented test from its previous
+ * androidTest location.
  */
 class Nip57AuthenticationTest {
     private val sender = Keys.generate()          // genuine zapper "V"
