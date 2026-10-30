@@ -209,7 +209,10 @@ class SparkRepository(
             return "Recovery phrase must be 12, 15, 18, 21, or 24 words"
         }
         val wordlist = BIP39_WORDS
-        if (wordlist.size < 2048) return null // can't validate without wordlist
+        // Fail closed: a missing or truncated wordlist must not make an
+        // invalid recovery phrase validate as correct. The SDK re-checks on
+        // connect, but the user should hear it here first.
+        if (wordlist.size < 2048) return "Recovery phrase validation is unavailable (wordlist missing)"
         val invalid = words.filter { it !in wordlist }
         if (invalid.isNotEmpty()) {
             return "Invalid word${if (invalid.size > 1) "s" else ""}: ${invalid.take(3).joinToString(", ")}"
