@@ -193,10 +193,19 @@ class ZapSender(
         val bolt11 = Nip57.fetchInvoice(payInfo.callback, amountMsats, zapRequest, httpClient)
             ?: return Result.failure(Exception("Could not get invoice from lightning provider"))
 
-        // 4. Record zap recipient for transaction history display
+        // 4. Verify the invoice is the one this zap asked for. The callback
+        // response is chosen by the provider, so its amount must match the
+        // request before the wallet commits funds to it.
+        if (!Nip57.isInvoiceAcceptable(bolt11, amountMsats)) {
+            return Result.failure(
+                Exception("The returned invoice does not match the requested zap (amount/expiry)")
+            )
+        }
+
+        // 5. Record zap recipient for transaction history display
         recordZap(bolt11, recipientPubkey)
 
-        // 5. Pay via wallet
+        // 6. Pay via wallet
         val payResult = getWalletProvider().payInvoice(bolt11)
         return payResult.map { }
     }
