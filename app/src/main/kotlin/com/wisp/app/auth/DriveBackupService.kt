@@ -49,7 +49,7 @@ class DriveBackupService(
         }
     }
 
-    data class BackupFile(val fileId: String, val name: String)
+    data class BackupFile(val fileId: String, val name: String, val modifiedTime: String? = null)
 
     suspend fun listBackups(accessToken: String): List<BackupFile> = withContext(Dispatchers.IO) {
         val nameQuery = "name contains '$BACKUP_PREFIX'"
@@ -78,7 +78,7 @@ class DriveBackupService(
                 val id = obj["id"]?.jsonPrimitive?.content ?: return@mapNotNull null
                 val name = obj["name"]?.jsonPrimitive?.content ?: return@mapNotNull null
                 if (!name.startsWith(BACKUP_PREFIX) || !name.endsWith(BACKUP_SUFFIX)) return@mapNotNull null
-                BackupFile(id, name)
+                BackupFile(id, name, obj["modifiedTime"]?.jsonPrimitive?.content)
             }
         }
     }
@@ -140,18 +140,47 @@ class DriveBackupService(
             }
         }
 
-    suspend fun deleteBackup(accessToken: String, fileId: String) = withContext(Dispatchers.IO) {
-        val req = Request.Builder()
-            .url("https://www.googleapis.com/drive/v3/files/$fileId")
-            .header("Authorization", "Bearer $accessToken")
-            .delete()
-            .build()
-        httpClient.newCall(req).execute().close()
-    }
+    /** Returns true when Drive confirmed the deletion (2xx). */
+    suspend fun deleteBackup(accessToken: String, fileId: String): Boolean =
+        withContext(Dispatchers.IO) {
+            val req = Request.Builder()
+                .url("https://www.googleapis.com/drive/v3/files/$fileId")
+                .header("Authorization", "Bearer $accessToken")
+                .delete()
+                .build()
+            httpClient.newCall(req).execute().use { it.isSuccessful }
+        }
+
+    /**
+     * Each backup uploads as a brand-new file, so without pruning the appData
+     * folder grows without bound and blobs encrypted under old PINs stay
+     * recoverable forever. Keeps the [keep] newest files (Drive modifiedTime
+     * is ISO-8601, so lexical descending order is chronological) and deletes
+     * the rest. Best effort: individual deletion failures are skipped.
+     * Returns the number of files deleted.
+     */
+    suspend fun pruneOldBackups(accessToken: String, keep: Int = 3): Int =
+        withContext(Dispatchers.IO) {
+            val files = listBackups(accessToken)
+            if (files.size <= keep) return@withContext 0
+            var deleted = 0
+            for (file in selectSuperseded(files, keep)) {
+                if (deleteBackup(accessToken, file.fileId)) deleted++
+            }
+            deleted
+        }
+
 
     companion object {
         private const val APP_DATA_FOLDER = "appDataFolder"
         private const val BACKUP_PREFIX = "wisp_bk_"
         private const val BACKUP_SUFFIX = ".bin"
+
+        /** Pure selection so the keep-newest rule is testable without Drive.
+         *  Files with a missing modifiedTime sort oldest. */
+        fun selectSuperseded(files: List<BackupFile>, keep: Int): List<BackupFile> {
+            if (keep < 0) return emptyList()
+            return files.sortedByDescending { it.modifiedTime ?: "" }.drop(keep)
+        }
     }
 }

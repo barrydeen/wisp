@@ -306,6 +306,17 @@ class GoogleAuthViewModel(app: Application) : AndroidViewModel(app) {
             val fresh = refreshToken(activity, e.staleToken)
             driveService.uploadBackup(fresh, payload)
         }
+        // Every backup is a new file; without pruning, appData accumulates
+        // unboundedly and blobs under old PINs stay recoverable. Best effort —
+        // a failed prune never fails the backup.
+        try {
+            val deleted = driveService.pruneOldBackups(token)
+            if (deleted > 0) Log.d(TAG, "Pruned $deleted superseded backup(s)")
+        } catch (e: DriveAuthorizationExpiredException) {
+            runCatching { driveService.pruneOldBackups(refreshToken(activity, e.staleToken)) }
+        } catch (e: Exception) {
+            Log.w(TAG, "Backup pruning skipped: ${e.message}")
+        }
     }
 
     private suspend fun refreshToken(activity: ComponentActivity, staleToken: String): String {
