@@ -2478,7 +2478,9 @@ private fun ImageWithContextMenu(meta: MediaMeta, onFullScreen: () -> Unit) {
         return
     }
 
-    val ratio = remember(meta.dimension) { parseAspectRatio(meta.dimension) }
+    // Without imeta dim, fall back to the ratio measured the last time this image loaded, so a
+    // post scrolled back into view keeps its height instead of growing from the spinner size.
+    val ratio = remember(meta.dimension, url) { parseAspectRatio(meta.dimension) ?: measuredAspectRatios.get(url) }
     val blurPainter = rememberMediaPlaceholderPainter(meta.thumbhash, meta.blurhash, meta.dimension)
 
     Box {
@@ -2489,6 +2491,7 @@ private fun ImageWithContextMenu(meta: MediaMeta, onFullScreen: () -> Unit) {
             blurPainter = blurPainter,
             onClick = onFullScreen,
             onLongClick = { showMenu = true },
+            onLoaded = { w, h -> if (w > 0 && h > 0) measuredAspectRatios.put(url, w.toFloat() / h) },
             modifier = Modifier
                 .fillMaxWidth()
                 .let { if (ratio != null) it.aspectRatio(ratio) else it }
@@ -3196,6 +3199,7 @@ private fun parseAspectRatio(dim: String?): Float? {
 }
 
 private val mediaPlaceholderCache = LruCache<String, BitmapPainter>(200)
+private val measuredAspectRatios = LruCache<String, Float>(500)
 
 @Composable
 internal fun rememberMediaPlaceholderPainter(
@@ -3469,6 +3473,7 @@ private fun LoadingAsyncImage(
     blurPainter: BitmapPainter? = null,
     onClick: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
+    onLoaded: ((width: Int, height: Int) -> Unit)? = null,
 ) {
     var isLoading by remember { mutableStateOf(true) }
 
@@ -3479,7 +3484,10 @@ private fun LoadingAsyncImage(
             contentScale = contentScale,
             placeholder = blurPainter,
             onLoading = { isLoading = true },
-            onSuccess = { isLoading = false },
+            onSuccess = {
+                isLoading = false
+                onLoaded?.invoke(it.result.image.width, it.result.image.height)
+            },
             onError = { isLoading = false },
             modifier = Modifier
                 .fillMaxSize()
