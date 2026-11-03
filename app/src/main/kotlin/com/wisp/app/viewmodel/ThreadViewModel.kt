@@ -59,6 +59,8 @@ class ThreadViewModel : ViewModel() {
      * "the note they came for": the default reply parent for the sticky bar.
      */
     private var seedEventId: String? = null
+    /** The tapped note; its card starts expanded since the user came to read it. */
+    val openedEventId: String? get() = seedEventId
     /** Anchors whose depth-capped subtree the user expanded inline. */
     private val expandedIds = mutableSetOf<String>()
     private var muteRepo: MuteRepository? = null
