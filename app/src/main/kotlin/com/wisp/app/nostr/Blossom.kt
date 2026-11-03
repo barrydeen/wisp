@@ -32,6 +32,27 @@ object Blossom {
         }.distinct()
     }
 
+    private val bud10Regex = Regex("""^blossom:([0-9a-f]{64})(\.[a-z0-9]+)?(?:\?(.*))?$""", RegexOption.IGNORE_CASE)
+
+    /**
+     * Resolves a BUD-10 `blossom:<sha256>.<ext>?xs=<server>&as=<pubkey>&sz=<bytes>` URI to an
+     * https URL on its first `xs` server hint. Servers without a scheme are assumed to be https.
+     * Returns null when the URI is malformed or carries no server hint.
+     */
+    fun resolveBud10Uri(uri: String): String? {
+        val match = bud10Regex.matchEntire(uri) ?: return null
+        val hash = match.groupValues[1].lowercase()
+        val ext = match.groupValues[2].lowercase()
+        val server = match.groupValues[3].split('&')
+            .firstNotNullOfOrNull { param ->
+                if (!param.startsWith("xs=")) return@firstNotNullOfOrNull null
+                val value = java.net.URLDecoder.decode(param.removePrefix("xs="), "UTF-8").trimEnd('/')
+                val withScheme = if ("://" in value) value else "https://$value"
+                withScheme.toHttpUrlOrNull()?.toString()?.trimEnd('/')
+            } ?: return null
+        return "$server/$hash$ext"
+    }
+
     /**
      * Builds BUD-03 server tags from a non-empty list of unique already-valid server URLs.
      * URL validation is expected to happen when URLs enter repository/viewmodel state.
