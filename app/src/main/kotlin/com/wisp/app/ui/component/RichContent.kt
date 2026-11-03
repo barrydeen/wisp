@@ -1530,24 +1530,19 @@ private fun ArticleCard(
         }
     }
 
-    val title = remember(event) { event?.tags?.firstOrNull { it.size >= 2 && it[0] == "title" }?.get(1) }
-    val summary = remember(event) { event?.tags?.firstOrNull { it.size >= 2 && it[0] == "summary" }?.get(1) }
-    val image = remember(event) { event?.tags?.firstOrNull { it.size >= 2 && it[0] == "image" }?.get(1) }
-    val publishedAt = remember(event) { event?.tags?.firstOrNull { it.size >= 2 && it[0] == "published_at" }?.get(1)?.toLongOrNull() }
-
-    Surface(
-        shape = RoundedCornerShape(12.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        color = MaterialTheme.colorScheme.surface,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 6.dp)
-            .then(
-                if (onArticleClick != null) Modifier.clickable { onArticleClick(30023, author, dTag) }
-                else Modifier
-            )
-    ) {
-        if (event == null) {
+    if (event == null) {
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            color = MaterialTheme.colorScheme.surface,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 6.dp)
+                .then(
+                    if (onArticleClick != null) Modifier.clickable { onArticleClick(30023, author, dTag) }
+                    else Modifier
+                )
+        ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.padding(14.dp)
@@ -1564,61 +1559,105 @@ private fun ArticleCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-        } else {
-            Column {
-                if (image != null) {
-                    val meta = remember(event.id) { parseImetaTags(event.tags)[image] ?: MediaMeta(url = image) }
-                    val ratio = remember(meta.dimension) { parseAspectRatio(meta.dimension) }
-                    LoadingAsyncImage(
-                        model = image,
-                        contentDescription = title,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .let { if (ratio != null) it.aspectRatio(ratio) else it.heightIn(max = 180.dp) }
-                            .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)),
+        }
+    } else {
+        ArticlePreviewCard(
+            event = event,
+            onArticleClick = onArticleClick,
+            authorProfile = profile,
+            onProfileClick = onProfileClick
+        )
+    }
+}
+
+/**
+ * Cover, ARTICLE badge, title and a short preview of a kind-30023 article. Used both for
+ * articles embedded in notes and as the body of an article item in the feed and on
+ * profiles. Set [showAuthor] to false where a post header already shows the author.
+ */
+@Composable
+internal fun ArticlePreviewCard(
+    event: NostrEvent,
+    onArticleClick: ((Int, String, String) -> Unit)?,
+    showAuthor: Boolean = true,
+    authorProfile: com.wisp.app.nostr.ProfileData? = null,
+    onProfileClick: ((String) -> Unit)? = null
+) {
+    val author = event.pubkey
+    val dTag = remember(event) { event.tags.firstOrNull { it.size >= 2 && it[0] == "d" }?.get(1) ?: "" }
+    val title = remember(event) { event.tags.firstOrNull { it.size >= 2 && it[0] == "title" }?.get(1) }
+    val summary = remember(event) { event.tags.firstOrNull { it.size >= 2 && it[0] == "summary" }?.get(1) }
+    val preview = remember(event, title, summary) { articlePreviewText(summary, title, event.content) }
+    val image = remember(event) { event.tags.firstOrNull { it.size >= 2 && it[0] == "image" }?.get(1)?.takeIf { it.isNotBlank() } }
+    val publishedAt = remember(event) { event.tags.firstOrNull { it.size >= 2 && it[0] == "published_at" }?.get(1)?.toLongOrNull() }
+
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        color = MaterialTheme.colorScheme.surface,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp)
+            .then(
+                if (onArticleClick != null) Modifier.clickable { onArticleClick(30023, author, dTag) }
+                else Modifier
+            )
+    ) {
+        Column {
+            if (image != null) {
+                val meta = remember(event.id) { parseImetaTags(event.tags)[image] ?: MediaMeta(url = image) }
+                val ratio = remember(meta.dimension) { parseAspectRatio(meta.dimension) }
+                LoadingAsyncImage(
+                    model = image,
+                    contentDescription = title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .let { if (ratio != null) it.aspectRatio(ratio) else it.heightIn(max = 180.dp) }
+                        .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)),
+                )
+            }
+            Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        modifier = Modifier.padding(end = 8.dp)
+                    ) {
+                        Text(
+                            text = "ARTICLE",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                    Text(
+                        text = title ?: "Untitled Article",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
                     )
                 }
-                Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Surface(
-                            shape = RoundedCornerShape(4.dp),
-                            color = MaterialTheme.colorScheme.primaryContainer,
-                            modifier = Modifier.padding(end = 8.dp)
-                        ) {
-                            Text(
-                                text = "ARTICLE",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
-                        }
-                        Text(
-                            text = title ?: "Untitled Article",
-                            style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                    if (!summary.isNullOrBlank()) {
-                        Text(
-                            text = summary,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 3,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(top = 4.dp)
-                        )
-                    }
+                if (preview != null) {
+                    Text(
+                        text = preview,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 4,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+                if (showAuthor) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.padding(top = 6.dp)
                     ) {
-                        ProfilePicture(url = profile?.picture, size = 20)
+                        ProfilePicture(url = authorProfile?.picture, size = 20)
                         Spacer(Modifier.width(6.dp))
-                        val displayName = profile?.displayString
+                        val displayName = authorProfile?.displayString
                             ?: author.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
                         Text(
                             text = displayName,
@@ -1642,6 +1681,61 @@ private fun ArticleCard(
             }
         }
     }
+}
+
+private val markdownLinkRegex = Regex("""!?\[([^\]]*)]\([^)]*\)""")
+private val markdownMarkRegex = Regex("""[*_`~>#]+""")
+
+/**
+ * For an article that is only a table: its first few data rows, first three cells each,
+ * as "cell · cell · cell" lines. Null when there is no table.
+ */
+private fun articleTablePreview(content: String, rows: Int = 3): String? {
+    val dataRows = content.lineSequence()
+        .map { it.trim() }
+        .filter { it.startsWith("|") && !it.matches(Regex("""\|[\s:|-]+\|?""")) }
+        .drop(1) // header row
+        .take(rows)
+        .map { row ->
+            row.trim('|').split('|').take(3).map { cell ->
+                cell.replace(markdownLinkRegex) { if (it.value.startsWith("!")) "" else it.groupValues[1] }
+                    .replace(markdownMarkRegex, "").trim()
+                    .let { if (it.length > 40) it.take(40).trimEnd() + "\u2026" else it }
+            }.filter { it.isNotEmpty() }.joinToString(" \u00b7 ")
+        }
+        .filter { it.isNotEmpty() }
+        .toList()
+    return dataRows.takeIf { it.isNotEmpty() }?.joinToString("\n")
+}
+
+/**
+ * The line of text under an article's title: its summary, unless that is blank or just
+ * repeats the title, else the opening prose of the article with markdown stripped (headings,
+ * tables, code, images and link targets dropped), or for a table-only article its first rows.
+ * Null when there is nothing worth showing.
+ */
+internal fun articlePreviewText(summary: String?, title: String?, content: String, maxChars: Int = 280): String? {
+    val cleanSummary = summary?.trim().orEmpty()
+    if (cleanSummary.isNotEmpty() && !cleanSummary.equals(title?.trim(), ignoreCase = true)) return cleanSummary
+    val words = StringBuilder()
+    var inCode = false
+    for (raw in content.lineSequence()) {
+        val line = raw.trim()
+        if (line.startsWith("```")) { inCode = !inCode; continue }
+        if (inCode || line.isEmpty() || line.startsWith("#") || line.startsWith("|") ||
+            line.startsWith("![") || line.matches(Regex("""[-*_=]{3,}"""))) continue
+        val text = line
+            .replace(markdownLinkRegex) { if (it.value.startsWith("!")) "" else it.groupValues[1] }
+            .replace(markdownMarkRegex, "")
+            .replace(Regex("""^\s*(?:[-+]|\d+\.)\s+"""), "")
+            .trim()
+        if (text.isEmpty()) continue
+        if (words.isNotEmpty()) words.append(' ')
+        words.append(text)
+        if (words.length >= maxChars) break
+    }
+    if (words.isEmpty()) return articleTablePreview(content)
+    return if (words.length > maxChars) words.take(maxChars).trimEnd().toString() + "\u2026" else words.toString()
 }
 
 @Composable
