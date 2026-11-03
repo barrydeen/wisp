@@ -1604,7 +1604,7 @@ private fun FeedArticleItem(
     }.collectAsState(initial = 0)
     val title = remember(event) { event.tags.firstOrNull { it.size >= 2 && it[0] == "title" }?.get(1) }
     val summary = remember(event) { event.tags.firstOrNull { it.size >= 2 && it[0] == "summary" }?.get(1) }
-    val image = remember(event) { event.tags.firstOrNull { it.size >= 2 && it[0] == "image" }?.get(1) }
+    val image = remember(event) { event.tags.firstOrNull { it.size >= 2 && it[0] == "image" }?.get(1)?.takeIf { it.isNotBlank() } }
     val dTag = remember(event) { event.tags.firstOrNull { it.size >= 2 && it[0] == "d" }?.get(1) ?: "" }
     val publishedAt = remember(event) {
         event.tags.firstOrNull { it.size >= 2 && it[0] == "published_at" }?.get(1)?.toLongOrNull()
