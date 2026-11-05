@@ -373,6 +373,38 @@ class Nip57AuthenticationTest {
     }
 
     @Test
+    fun receiptSignedByTheExpectedWalletServiceIsAccepted() {
+        val receipt = validReceipt()
+        val expected = wallet.pubkey.toHex()
+        assertTrue(Nip57.parseValidatedZapRequest(receipt, expected) != null)
+        assertEquals(sender.pubkey.toHex(), Nip57.getZapperPubkey(receipt, expected))
+        assertEquals(amountMsat / 1000, Nip57.getZapAmountSats(receipt, expected))
+    }
+
+    @Test
+    fun receiptFromAnotherWalletServiceIsRejectedWhenBound() {
+        // The attacker authors the receipt with their own key but reuses a
+        // genuinely signed request and a self-minted invoice whose hash
+        // matches — every structural check passes, yet the receipt author is
+        // not the recipient's wallet service. With the LNURL nostrPubkey
+        // binding the receipt is dropped, protecting zap counts and
+        // sats-weighted poll votes.
+        val request = buildZapRequest(attacker)
+        val receipt = NostrEvent.create(
+            attacker.privkey, attacker.pubkey, Nip57.KIND_ZAP_RECEIPT, "",
+            listOf(
+                listOf("bolt11", zapInvoice(request.toJson(), amountMsat)),
+                listOf("description", request.toJson()),
+                listOf("p", recipient.pubkey.toHex()),
+                listOf("e", eventId)
+            )
+        )
+        assertNull(Nip57.parseValidatedZapRequest(receipt, wallet.pubkey.toHex()))
+        assertNull(Nip57.getZapperPubkey(receipt, wallet.pubkey.toHex()))
+        assertEquals(0, Nip57.getZapAmountSats(receipt, wallet.pubkey.toHex()))
+    }
+
+    @Test
     fun replayedGenuineRequestWithIntactBindingStillValidates() {
         // NIP-57 cannot distinguish a re-announced (request, invoice) pair from
         // a genuine receipt: the signature, tags and hash all match. The replay

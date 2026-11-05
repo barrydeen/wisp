@@ -143,7 +143,7 @@ class EventRouter(
                             val (convKey, msgId) = dmRepo.findByRumorId(eTagId)
                                 ?.let { it.first to it.second } ?: (null to null)
                             if (convKey != null && msgId != null) {
-                                val sats = Nip57.getZapAmountSats(event)
+                                val sats = eventRepo.zapAmountSats(event)
                                 if (sats > 0) {
                                     val zapperPubkey = eventRepo.resolveZapSender(event).first ?: event.pubkey
                                     dmRepo.addZap(convKey, msgId, DmZap(zapperPubkey, sats, event.created_at))
@@ -248,7 +248,7 @@ class EventRouter(
                 if (eTagId != null) {
                     val found = dmRepo.findByRumorId(eTagId)
                     if (found != null) {
-                        val sats = Nip57.getZapAmountSats(event)
+                        val sats = eventRepo.zapAmountSats(event)
                         if (sats > 0) {
                             val zapper = zapperPubkey ?: event.pubkey
                             dmRepo.addZap(found.first, found.second, DmZap(zapper, sats, event.created_at))
@@ -375,7 +375,7 @@ class EventRouter(
                     if (zapATag != null) {
                         liveStreamRepo?.addStreamZap(event, zapATag)
                     }
-                    val zapperPubkey = Nip57.getZapperPubkey(event)
+                    val zapperPubkey = eventRepo.resolveZapSender(event).first
                     if (zapperPubkey != null && eventRepo.getProfileData(zapperPubkey) == null) {
                         metadataFetcher.addToPendingProfiles(zapperPubkey)
                     }

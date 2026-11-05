@@ -211,7 +211,7 @@ class FeedViewModel @JvmOverloads constructor(
     val listRepo = ListRepository(app, pubkeyHex)
     val dmRepo = DmRepository(app, pubkeyHex, dmPersistence)
     val groupRepo = GroupRepository(app, pubkeyHex)
-    val liveStreamRepo = LiveStreamRepository()
+    val liveStreamRepo = LiveStreamRepository(eventRepo)
     val notifRepo = NotificationRepository(app, pubkeyHex, muteRepo, eventRepo)
     val relayListRepo = RelayListRepository(app)
     val bookmarkRepo = BookmarkRepository(app, pubkeyHex)
