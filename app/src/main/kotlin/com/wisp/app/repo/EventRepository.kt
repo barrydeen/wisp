@@ -8,6 +8,7 @@ import com.wisp.app.nostr.Nip22
 import com.wisp.app.nostr.Nip30
 import com.wisp.app.nostr.Bolt11
 import com.wisp.app.nostr.Nip57
+import com.wisp.app.relay.HttpClientFactory
 import com.wisp.app.nostr.Nip69
 import com.wisp.app.nostr.Nip88
 import com.wisp.app.nostr.NostrEvent
@@ -19,6 +20,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -650,14 +653,14 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                         ?: mutableSetOf<String>().also { countedZapIds.put(targetId, it) }
                 }
                 synchronized(dedupSet) { if (!dedupSet.add(event.id)) return }
-                val sats = Nip57.getZapAmountSats(event)
+                val sats = zapAmountSats(event)
                 if (sats > 0) {
                     // Skip if this is our own zap and we already added it optimistically
                     val isOwnOptimistic = zapperPk == currentUserPubkey && optimisticZaps.remove(targetId)
                     if (!isOwnOptimistic) {
                         addZapSats(targetId, sats)
                         if (zapperPk != null) {
-                            val isPrivateZap = Nip57.isPrivateZap(event)
+                            val isPrivateZap = zapIsPrivate(event)
                             val zaps = zapDetails.get(targetId)
                                 ?: java.util.Collections.synchronizedList(mutableListOf<ZapDetail>()).also {
                                     zapDetails.put(targetId, it)
@@ -813,7 +816,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     }
 
     private fun addZapPollVote(zapReceipt: NostrEvent, pollId: String, sats: Long, zapperPubkey: String?) {
-        val optionIndex = Nip69.getZapPollOptionFromZapReceipt(zapReceipt) ?: return
+        val optionIndex = zapPollOption(zapReceipt) ?: return
         val pubkey = zapperPubkey ?: return
 
         // Check if poll has closed
@@ -1088,8 +1091,67 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                     ?.let { return it.senderPubkey to it.message }
             }
         }
-        return Nip57.getZapperPubkey(receipt) to Nip57.getZapMessage(receipt)
+        return Nip57.getZapperPubkey(receipt, expectedZapAuthor(receipt)) to
+            Nip57.getZapMessage(receipt, expectedZapAuthor(receipt))
     }
+
+    // ─── NIP-57 receipt author binding ─────────────────────────────────────
+    // A receipt is only trustworthy when signed by the zapped user's wallet
+    // service key (the LNURL-pay nostrPubkey). Otherwise anyone can mint
+    // receipts around their own request + invoice and inflate zap counts and
+    // sats-weighted poll votes. Resolved from the recipient's profile lud16,
+    // cached per recipient and per receipt; unresolvable receipts are dropped
+    // (fail closed).
+
+    private val zapOriginCache = ConcurrentHashMap<String, String>()
+    private val zapOriginUnresolvable = ConcurrentHashMap.newKeySet<String>()
+    private val receiptExpectedAuthor = java.util.Collections.synchronizedMap(
+        object : LinkedHashMap<String, String>(64, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>): Boolean =
+                size > 2048
+        }
+    )
+    private val zapHttpClient by lazy { HttpClientFactory.getGeneralClient() }
+
+    private fun receiptRecipient(receipt: NostrEvent): String? =
+        receipt.tags.firstOrNull { it.size >= 2 && it[0] == "p" }?.get(1)?.lowercase()
+
+    /** LNURL nostrPubkey expected as the receipt author, or null (fail closed). */
+    fun expectedZapAuthor(receipt: NostrEvent): String? {
+        val recipient = receiptRecipient(receipt) ?: return null
+        synchronized(receiptExpectedAuthor) { receiptExpectedAuthor[receipt.id]?.let { return it } }
+        zapOriginCache[recipient]?.let {
+            synchronized(receiptExpectedAuthor) { receiptExpectedAuthor[receipt.id] = it }
+            return it
+        }
+        if (recipient in zapOriginUnresolvable) return null
+        // One bounded lookup per recipient; the result is cached permanently.
+        val resolved = runBlocking {
+            withTimeoutOrNull(3_000) {
+                val lud16 = getProfileData(recipient)?.lud16
+                if (lud16.isNullOrBlank()) return@withTimeoutOrNull null
+                Nip57.resolveLud16(lud16, zapHttpClient)?.nostrPubkey
+            }
+        }
+        return if (resolved.isNullOrBlank()) {
+            zapOriginUnresolvable.add(recipient)
+            null
+        } else {
+            zapOriginCache[recipient] = resolved
+            synchronized(receiptExpectedAuthor) { receiptExpectedAuthor[receipt.id] = resolved }
+            resolved
+        }
+    }
+
+    /** Amount from a receipt whose author matches the recipient's wallet key. */
+    fun zapAmountSats(receipt: NostrEvent): Long =
+        Nip57.getZapAmountSats(receipt, expectedZapAuthor(receipt))
+
+    fun zapIsPrivate(receipt: NostrEvent): Boolean =
+        Nip57.isPrivateZap(receipt, expectedZapAuthor(receipt))
+
+    fun zapPollOption(receipt: NostrEvent): Int? =
+        Nip69.getZapPollOptionFromZapReceipt(receipt, expectedZapAuthor(receipt))
 
     /**
      * Bulk-load events from ObjectBox into eventCache and seenEventIds without running

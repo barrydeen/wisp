@@ -226,7 +226,45 @@ class Nip57ReceiptConsistencyTest {
     }
 
     @Test
-    fun `request e tag must match receipt e tag`() {
+    fun `receipt a tag on a request without one is inconsistent`() {
+        // Addressable zap retargeting: a request with no a tag must not be
+        // redirected onto an addressable event by adding a to the receipt.
+        val description = requestJson(listOf(listOf("p", recipient), listOf("e", eventId)))
+        val r = receipt(description, listOf(listOf("p", recipient), listOf("e", eventId), listOf("a", "30023:$sender:article")))
+        val request = NostrEvent.fromJson(description)
+        assertEquals("a tag presence mismatch", Nip57.receiptInconsistency(r, request, description))
+    }
+
+    @Test
+    fun `request a tag without a receipt a tag is inconsistent`() {
+        val description = requestJson(listOf(listOf("p", recipient), listOf("e", eventId), listOf("a", "30023:$sender:article")))
+        val r = receipt(description, listOf(listOf("p", recipient), listOf("e", eventId)))
+        val request = NostrEvent.fromJson(description)
+        assertEquals("a tag presence mismatch", Nip57.receiptInconsistency(r, request, description))
+    }
+
+    @Test
+    fun `mismatched receipt a tag value is inconsistent`() {
+        val description = requestJson(listOf(listOf("p", recipient), listOf("e", eventId), listOf("a", "30023:$sender:article")))
+        val r = receipt(description, listOf(
+            listOf("p", recipient), listOf("e", eventId), listOf("a", "30023:${"44".repeat(32)}:other")
+        ))
+        val request = NostrEvent.fromJson(description)
+        assertEquals("a tag mismatch", Nip57.receiptInconsistency(r, request, description))
+    }
+
+    @Test
+    fun `matching a tags are consistent`() {
+        val description = requestJson(listOf(listOf("p", recipient), listOf("e", eventId), listOf("a", "30023:$sender:article")))
+        val r = receipt(description, listOf(
+            listOf("p", recipient), listOf("e", eventId), listOf("a", "30023:$sender:article")
+        ))
+        val request = NostrEvent.fromJson(description)
+        assertNull(Nip57.receiptInconsistency(r, request, description))
+    }
+
+    @Test
+    fun `receipt e tag must match receipt e tag`() {
         val description = requestJson(listOf(listOf("p", recipient), listOf("e", "bb".repeat(32))))
         val r = receipt(description, listOf(listOf("p", recipient), listOf("e", eventId)))
         val request = NostrEvent.fromJson(description)
