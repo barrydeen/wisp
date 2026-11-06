@@ -128,10 +128,18 @@ object Nip57 {
         }
         val bolt11 = tagValue(receipt, "bolt11") ?: return "receipt has no bolt11"
         val invoice = Bolt11.decode(bolt11) ?: return "bolt11 undecodable"
-        if (!requireDescriptionHash) return null
-        val invoiceHash = invoice.descriptionHash ?: return "invoice has no description hash"
-        if (!invoiceHash.equals(descriptionHashHex(description), ignoreCase = true)) {
-            return "description hash mismatch"
+        val invoiceHash = invoice.descriptionHash
+        if (invoiceHash != null) {
+            // A present-but-mismatched h tag is rejected on BOTH tiers: the
+            // invoice was issued for a different description than the one
+            // attached, so forgiving it enables receipt-replay description
+            // substitution. Only a MISSING h tag is forgiven on the display
+            // tier (non-compliant LNURL providers).
+            if (!invoiceHash.equals(descriptionHashHex(description), ignoreCase = true)) {
+                return "description hash mismatch"
+            }
+        } else if (requireDescriptionHash) {
+            return "invoice has no description hash"
         }
         return null
     }

@@ -402,6 +402,31 @@ class Nip57AuthenticationTest {
     }
 
     @Test
+    fun hashMismatchReceiptIsRejectedOnBothTiers() {
+        // A wallet-issued invoice commits to description A via its h tag.
+        // Swapping the receipt's description tag for forged request B (same
+        // p/e/a and amount) must fail on the display tier too — the invoice
+        // does not commit to B.
+        val request = buildZapRequest(sender)
+        val description = request.toJson()
+        val wrongHashInvoice = buildInvoice(amountMsat, listOf(23 to sha256Bytes("other-description")))
+        val receipt = buildReceipt(request, wrongHashInvoice)
+        assertNull(Nip57.parseValidatedZapRequest(receipt, wallet.pubkey.toHex()))
+        assertNull(Nip57.parseValidatedZapRequest(receipt, wallet.pubkey.toHex(), requireDescriptionHash = false))
+        assertEquals(0, Nip57.getZapAmountSats(receipt))
+    }
+
+    @Test
+    fun missingHashInvoiceIsAcceptedOnlyOnDisplayTier() {
+        val request = buildZapRequest(sender)
+        val description = request.toJson()
+        val noHashInvoice = buildInvoice(amountMsat, emptyList())
+        val receipt = buildReceipt(request, noHashInvoice)
+        assertNull(Nip57.parseValidatedZapRequest(receipt, wallet.pubkey.toHex()))
+        assertEquals(sender.pubkey.toHex(), Nip57.getZapperPubkey(receipt, wallet.pubkey.toHex(), requireDescriptionHash = false))
+    }
+
+    @Test
     fun receiptSignedByTheExpectedWalletServiceIsAccepted() {
         val receipt = validReceipt()
         val expected = wallet.pubkey.toHex()
