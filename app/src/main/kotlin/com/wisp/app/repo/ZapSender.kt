@@ -201,10 +201,14 @@ class ZapSender(
         // response is chosen by the provider, so its amount must match the
         // request and its description-hash commitment must bind to the sent
         // zap request before the wallet commits funds to it.
+        // requireDescriptionHash = false mirrors the receive side: providers
+        // that omit the h tag (non-compliant LNURL) still get paid, while a
+        // PRESENT-but-mismatched h is always rejected (see Nip57).
         if (!Nip57.isInvoiceAcceptable(
                 bolt11 = bolt11,
                 amountMsats = amountMsats,
-                sentZapRequestJson = zapRequest.toJson()
+                sentZapRequestJson = zapRequest.toJson(),
+                requireDescriptionHash = false
             )
         ) {
             return Result.failure(
