@@ -129,10 +129,12 @@ class ZapInvoiceVerificationTest {
     }
 
     @Test
-    fun `sub-sat rounding in the request is tolerated`() {
-        // 100_999 msat floors to 100 sats; the invoice is denominated in sats.
+    fun `amount match is msat-exact`() {
+        // msat-exact comparison (Decision 4): a 100_999 msat request no longer
+        // tolerates a 100_000 msat invoice the way the sats-flooring version did.
         val inv = invoice(100L, paymentHash)
-        assertTrue(Nip57.isInvoiceAcceptable(inv, 100_999L))
+        assertFalse(Nip57.isInvoiceAcceptable(inv, 100_999L))
+        assertTrue(Nip57.isInvoiceAcceptable(inv, 100_000L))
     }
 
     @Test
