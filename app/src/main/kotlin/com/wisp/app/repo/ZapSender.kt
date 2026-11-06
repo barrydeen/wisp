@@ -124,17 +124,21 @@ class ZapSender(
         val zapRequest = when {
             isAnonymous -> {
                 val throwaway = Keys.generate()
-                Nip57.buildZapRequest(
-                    senderPrivkey = throwaway.privkey,
-                    senderPubkey = throwaway.pubkey,
-                    recipientPubkey = recipientPubkey,
-                    eventId = eventId,
-                    amountMsats = amountMsats,
-                    relayUrls = relayUrls,
-                    lnurl = recipientLud16,
-                    message = message,
-                    extraTags = allExtraTags
-                )
+                try {
+                    Nip57.buildZapRequest(
+                        senderPrivkey = throwaway.privkey,
+                        senderPubkey = throwaway.pubkey,
+                        recipientPubkey = recipientPubkey,
+                        eventId = eventId,
+                        amountMsats = amountMsats,
+                        relayUrls = relayUrls,
+                        lnurl = recipientLud16,
+                        message = message,
+                        extraTags = allExtraTags
+                    )
+                } finally {
+                    throwaway.wipe()
+                }
             }
             isPrivate -> {
                 // DIP-03 requires a concrete note target (id + created_at) to
@@ -195,8 +199,14 @@ class ZapSender(
 
         // 4. Verify the invoice is the one this zap asked for. The callback
         // response is chosen by the provider, so its amount must match the
-        // request before the wallet commits funds to it.
-        if (!Nip57.isInvoiceAcceptable(bolt11, amountMsats)) {
+        // request and its description-hash commitment must bind to the sent
+        // zap request before the wallet commits funds to it.
+        if (!Nip57.isInvoiceAcceptable(
+                bolt11 = bolt11,
+                amountMsats = amountMsats,
+                sentZapRequestJson = zapRequest.toJson()
+            )
+        ) {
             return Result.failure(
                 Exception("The returned invoice does not match the requested zap (amount/expiry)")
             )
