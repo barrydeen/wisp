@@ -1198,15 +1198,21 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
      * validation discussion on PR #678). Poll votes use the strict tier via
      * [zapPollOption].
      */
-    fun zapAmountSats(receipt: NostrEvent): Long =
-        Nip57.getZapAmountSats(receipt, expectedZapAuthor(receipt), requireDescriptionHash = false)
+    fun zapAmountSats(receipt: NostrEvent): Long {
+        val expected = expectedZapAuthor(receipt) ?: return 0 // fail closed
+        return Nip57.getZapAmountSats(receipt, expected, requireDescriptionHash = false)
+    }
 
-    fun zapIsPrivate(receipt: NostrEvent): Boolean =
-        Nip57.isPrivateZap(receipt, expectedZapAuthor(receipt), requireDescriptionHash = false)
+    fun zapIsPrivate(receipt: NostrEvent): Boolean {
+        val expected = expectedZapAuthor(receipt) ?: return false // fail closed
+        return Nip57.isPrivateZap(receipt, expected, requireDescriptionHash = false)
+    }
 
     /** Strict tier: sats-weighted poll votes require the description-hash commitment. */
-    fun zapPollOption(receipt: NostrEvent): Int? =
-        Nip69.getZapPollOptionFromZapReceipt(receipt, expectedZapAuthor(receipt))
+    fun zapPollOption(receipt: NostrEvent): Int? {
+        val expected = expectedZapAuthor(receipt) ?: return null // fail closed
+        return Nip69.getZapPollOptionFromZapReceipt(receipt, expected)
+    }
 
     /**
      * Bulk-load events from ObjectBox into eventCache and seenEventIds without running

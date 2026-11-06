@@ -57,7 +57,7 @@ object Nip57 {
      */
     fun parseValidatedZapRequest(
         receipt: NostrEvent,
-        expectedAuthor: String? = null,
+        expectedAuthor: String,
         requireDescriptionHash: Boolean = true
     ): NostrEvent? {
         if (receipt.kind != KIND_ZAP_RECEIPT) return null
@@ -70,7 +70,9 @@ object Nip57 {
         // mint receipts around their own request + invoice and inflate zap
         // counts and sats-weighted poll votes. Callers resolve it from the
         // recipient's lud16 and cache; null means unresolvable and fail-closed.
-        if (expectedAuthor != null && !receipt.pubkey.equals(expectedAuthor, ignoreCase = true)) {
+        // Required and fail-closed: a caller that could not resolve the
+        // recipient's wallet key must not reach this point with a blank value.
+        if (expectedAuthor.isBlank() || !receipt.pubkey.equals(expectedAuthor, ignoreCase = true)) {
             return null
         }
         val description = tagValue(receipt, "description") ?: return null
@@ -154,19 +156,19 @@ object Nip57 {
      */
     fun getZapperPubkey(
         event: NostrEvent,
-        expectedAuthor: String? = null,
+        expectedAuthor: String,
         requireDescriptionHash: Boolean = true
     ): String? {
         val zapRequest = parseValidatedZapRequest(event, expectedAuthor, requireDescriptionHash) ?: return null
         return zapRequest.pubkey.takeIf { it.isNotBlank() }
     }
 
-    fun getZapMessage(event: NostrEvent, expectedAuthor: String? = null, requireDescriptionHash: Boolean = true): String {
+    fun getZapMessage(event: NostrEvent, expectedAuthor: String, requireDescriptionHash: Boolean = true): String {
         return parseValidatedZapRequest(event, expectedAuthor, requireDescriptionHash)?.content ?: ""
     }
 
     /** Extract the relay URLs from the embedded 9734 zap request's "relays" tag. */
-    fun getZapRequestRelays(event: NostrEvent, expectedAuthor: String? = null): List<String> {
+    fun getZapRequestRelays(event: NostrEvent, expectedAuthor: String): List<String> {
         return parseValidatedZapRequest(event, expectedAuthor)
             ?.tags?.firstOrNull { it.size >= 2 && it[0] == "relays" }?.drop(1)
             ?: emptyList()
@@ -181,7 +183,7 @@ object Nip57 {
      */
     fun getZapAmountSats(
         event: NostrEvent,
-        expectedAuthor: String? = null,
+        expectedAuthor: String,
         requireDescriptionHash: Boolean = true
     ): Long {
         val bolt11 = tagValue(event, "bolt11") ?: return 0
@@ -349,7 +351,7 @@ object Nip57 {
     /** True if the receipt's validated embedded zap request carries a DIP-03 `anon` tag. */
     fun isPrivateZap(
         receipt: NostrEvent,
-        expectedAuthor: String? = null,
+        expectedAuthor: String,
         requireDescriptionHash: Boolean = true
     ): Boolean {
         val request = parseValidatedZapRequest(receipt, expectedAuthor, requireDescriptionHash) ?: return false
@@ -365,7 +367,7 @@ object Nip57 {
     fun decryptPrivateZap(
         receipt: NostrEvent,
         myPrivkey: ByteArray,
-        expectedAuthor: String? = null,
+        expectedAuthor: String,
         requireDescriptionHash: Boolean = true
     ): DecryptedPrivateZap? {
         val request = parseValidatedZapRequest(receipt, expectedAuthor, requireDescriptionHash) ?: return null
@@ -388,7 +390,7 @@ object Nip57 {
         receipt: NostrEvent,
         myPrivkey: ByteArray,
         target: NostrEvent,
-        expectedAuthor: String? = null,
+        expectedAuthor: String,
         requireDescriptionHash: Boolean = true
     ): DecryptedPrivateZap? {
         val request = parseValidatedZapRequest(receipt, expectedAuthor, requireDescriptionHash) ?: return null

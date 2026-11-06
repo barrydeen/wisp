@@ -159,11 +159,11 @@ class Nip57AuthenticationTest {
     @Test
     fun validReceiptExposesSenderMessageAmountAndRelays() {
         val receipt = validReceipt()
-        assertEquals(sender.pubkey.toHex(), Nip57.getZapperPubkey(receipt))
-        assertEquals("nice post", Nip57.getZapMessage(receipt))
-        assertEquals(amountMsat / 1000, Nip57.getZapAmountSats(receipt))
-        assertEquals(listOf("wss://relay.a", "wss://relay.b"), Nip57.getZapRequestRelays(receipt))
-        assertTrue(Nip57.parseValidatedZapRequest(receipt) != null)
+        assertEquals(sender.pubkey.toHex(), Nip57.getZapperPubkey(receipt, wallet.pubkey.toHex()))
+        assertEquals("nice post", Nip57.getZapMessage(receipt, wallet.pubkey.toHex()))
+        assertEquals(amountMsat / 1000, Nip57.getZapAmountSats(receipt, wallet.pubkey.toHex()))
+        assertEquals(listOf("wss://relay.a", "wss://relay.b"), Nip57.getZapRequestRelays(receipt, wallet.pubkey.toHex()))
+        assertTrue(Nip57.parseValidatedZapRequest(receipt, wallet.pubkey.toHex()) != null)
     }
 
     @Test
@@ -180,9 +180,9 @@ class Nip57AuthenticationTest {
         // Swap in the victim pubkey without a matching signature.
         val spoofed = forged.copy(pubkey = sender.pubkey.toHex())
         val receipt = buildReceipt(spoofed, zapInvoice(spoofed.toJson(), amountMsat))
-        assertNull(Nip57.getZapperPubkey(receipt))
-        assertNull(Nip57.parseValidatedZapRequest(receipt))
-        assertEquals(0, Nip57.getZapAmountSats(receipt))
+        assertNull(Nip57.getZapperPubkey(receipt, wallet.pubkey.toHex()))
+        assertNull(Nip57.parseValidatedZapRequest(receipt, wallet.pubkey.toHex()))
+        assertEquals(0, Nip57.getZapAmountSats(receipt, wallet.pubkey.toHex()))
     }
 
     @Test
@@ -196,7 +196,7 @@ class Nip57AuthenticationTest {
             )
         )
         val receipt = buildReceipt(unsigned, zapInvoice(unsigned.toJson(), amountMsat))
-        assertNull(Nip57.getZapperPubkey(receipt))
+        assertNull(Nip57.getZapperPubkey(receipt, wallet.pubkey.toHex()))
     }
 
     @Test
@@ -206,8 +206,8 @@ class Nip57AuthenticationTest {
         val receipt = buildReceipt(request, inflated)
         // Sender still resolves (spec-level receipt checks pass) but the
         // inflated amount is not counted — consumers gate on sats > 0.
-        assertEquals(sender.pubkey.toHex(), Nip57.getZapperPubkey(receipt))
-        assertEquals(0, Nip57.getZapAmountSats(receipt))
+        assertEquals(sender.pubkey.toHex(), Nip57.getZapperPubkey(receipt, wallet.pubkey.toHex()))
+        assertEquals(0, Nip57.getZapAmountSats(receipt, wallet.pubkey.toHex()))
     }
 
     @Test
@@ -220,7 +220,7 @@ class Nip57AuthenticationTest {
             )
         )
         val receipt = buildReceipt(request, zapInvoice(request.toJson(), amountMsat))
-        assertEquals(amountMsat / 1000, Nip57.getZapAmountSats(receipt))
+        assertEquals(amountMsat / 1000, Nip57.getZapAmountSats(receipt, wallet.pubkey.toHex()))
     }
 
     @Test
@@ -230,7 +230,7 @@ class Nip57AuthenticationTest {
             request, zapInvoice(request.toJson(), amountMsat),
             pOverride = attacker.pubkey.toHex()
         )
-        assertNull(Nip57.getZapperPubkey(receipt))
+        assertNull(Nip57.getZapperPubkey(receipt, wallet.pubkey.toHex()))
     }
 
     @Test
@@ -243,7 +243,7 @@ class Nip57AuthenticationTest {
             request, zapInvoice(request.toJson(), amountMsat),
             eOverride = otherEvent
         )
-        assertNull(Nip57.getZapperPubkey(receipt))
+        assertNull(Nip57.getZapperPubkey(receipt, wallet.pubkey.toHex()))
         assertNotEquals(eventId, otherEvent)
     }
 
@@ -251,8 +251,8 @@ class Nip57AuthenticationTest {
     fun receiptWithoutBolt11IsRejected() {
         val request = buildZapRequest(sender)
         val receipt = buildReceipt(request, zapInvoice(request.toJson(), amountMsat), dropBolt11 = true)
-        assertNull(Nip57.getZapperPubkey(receipt))
-        assertEquals(0, Nip57.getZapAmountSats(receipt))
+        assertNull(Nip57.getZapperPubkey(receipt, wallet.pubkey.toHex()))
+        assertEquals(0, Nip57.getZapAmountSats(receipt, wallet.pubkey.toHex()))
     }
 
     @Test
@@ -260,7 +260,7 @@ class Nip57AuthenticationTest {
         val request = buildZapRequest(sender)
         val noHashInvoice = buildInvoice(amountMsat, listOf(1 to sha256Bytes("payment preimage")))
         val receipt = buildReceipt(request, noHashInvoice)
-        assertNull(Nip57.getZapperPubkey(receipt))
+        assertNull(Nip57.getZapperPubkey(receipt, wallet.pubkey.toHex()))
     }
 
     @Test
@@ -269,7 +269,7 @@ class Nip57AuthenticationTest {
         // Invoice hashes a different string than the receipt's description tag.
         val wrongHash = buildInvoice(amountMsat, listOf(23 to sha256Bytes("unrelated")))
         val receipt = buildReceipt(request, wrongHash)
-        assertNull(Nip57.getZapperPubkey(receipt))
+        assertNull(Nip57.getZapperPubkey(receipt, wallet.pubkey.toHex()))
     }
 
     @Test
@@ -278,7 +278,7 @@ class Nip57AuthenticationTest {
             sender.privkey, sender.pubkey, 1, "just a note"
         )
         val receipt = buildReceipt(notAZapRequest, zapInvoice(notAZapRequest.toJson(), amountMsat))
-        assertNull(Nip57.getZapperPubkey(receipt))
+        assertNull(Nip57.getZapperPubkey(receipt, wallet.pubkey.toHex()))
     }
 
     @Test
@@ -290,16 +290,16 @@ class Nip57AuthenticationTest {
             request, zapInvoice(request.toJson(), amountMsat),
             eOverride = eventId
         )
-        assertNull(Nip57.getZapperPubkey(receipt))
-        assertNull(Nip57.parseValidatedZapRequest(receipt))
+        assertNull(Nip57.getZapperPubkey(receipt, wallet.pubkey.toHex()))
+        assertNull(Nip57.parseValidatedZapRequest(receipt, wallet.pubkey.toHex()))
     }
 
     @Test
     fun profileZapReceiptWithoutETagsValidates() {
         val request = buildZapRequest(sender, event = null)
         val receipt = buildReceipt(request, zapInvoice(request.toJson(), amountMsat))
-        assertEquals(sender.pubkey.toHex(), Nip57.getZapperPubkey(receipt))
-        assertEquals(amountMsat / 1000, Nip57.getZapAmountSats(receipt))
+        assertEquals(sender.pubkey.toHex(), Nip57.getZapperPubkey(receipt, wallet.pubkey.toHex()))
+        assertEquals(amountMsat / 1000, Nip57.getZapAmountSats(receipt, wallet.pubkey.toHex()))
     }
 
     @Test
@@ -313,7 +313,7 @@ class Nip57AuthenticationTest {
             listOf("e", eventId),
             listOf("P", attacker.pubkey.toHex())
         ))
-        assertNull(Nip57.getZapperPubkey(receipt))
+        assertNull(Nip57.getZapperPubkey(receipt, wallet.pubkey.toHex()))
     }
 
     @Test
@@ -328,8 +328,8 @@ class Nip57AuthenticationTest {
         )
         val receipt = buildReceipt(request, zapInvoice(request.toJson(), amountMsat))
         // Sender identity still resolves; only the amount is refused.
-        assertEquals(sender.pubkey.toHex(), Nip57.getZapperPubkey(receipt))
-        assertEquals(0, Nip57.getZapAmountSats(receipt))
+        assertEquals(sender.pubkey.toHex(), Nip57.getZapperPubkey(receipt, wallet.pubkey.toHex()))
+        assertEquals(0, Nip57.getZapAmountSats(receipt, wallet.pubkey.toHex()))
     }
 
     @Test
@@ -344,7 +344,7 @@ class Nip57AuthenticationTest {
                 )
             )
             val receipt = buildReceipt(request, zapInvoice(request.toJson(), amountMsat))
-            assertEquals(0, Nip57.getZapAmountSats(receipt))
+            assertEquals(0, Nip57.getZapAmountSats(receipt, wallet.pubkey.toHex()))
         }
     }
 
@@ -360,16 +360,16 @@ class Nip57AuthenticationTest {
             )
         )
         val receipt = buildReceipt(request, zapInvoice(request.toJson(), amountMsat))
-        assertNull(Nip57.getZapperPubkey(receipt))
-        assertEquals(0, Nip57.getZapAmountSats(receipt))
+        assertNull(Nip57.getZapperPubkey(receipt, wallet.pubkey.toHex()))
+        assertEquals(0, Nip57.getZapAmountSats(receipt, wallet.pubkey.toHex()))
     }
 
     @Test
     fun tamperedReceiptFailsOuterAuthentication() {
         val receipt = validReceipt()
-        assertNull(Nip57.parseValidatedZapRequest(receipt.copy(id = "00".repeat(32))))
-        assertNull(Nip57.parseValidatedZapRequest(receipt.copy(sig = "f".repeat(128))))
-        assertNull(Nip57.parseValidatedZapRequest(receipt.copy(content = "tampered")))
+        assertNull(Nip57.parseValidatedZapRequest(receipt.copy(id = "00".repeat(32)), wallet.pubkey.toHex()))
+        assertNull(Nip57.parseValidatedZapRequest(receipt.copy(sig = "f".repeat(128)), wallet.pubkey.toHex()))
+        assertNull(Nip57.parseValidatedZapRequest(receipt.copy(content = "tampered"), wallet.pubkey.toHex()))
     }
 
     @Test
@@ -391,14 +391,14 @@ class Nip57AuthenticationTest {
         val description = request.toJson()
         val noHashInvoice = buildInvoice(amountMsat, emptyList())
         val receipt = buildReceipt(request, noHashInvoice)
-        assertNull(Nip57.getZapperPubkey(receipt))
+        assertNull(Nip57.getZapperPubkey(receipt, wallet.pubkey.toHex()))
         assertNull(Nip57.parseValidatedZapRequest(receipt, wallet.pubkey.toHex(), requireDescriptionHash = true))
         assertEquals(
             sender.pubkey.toHex(),
             Nip57.getZapperPubkey(receipt, wallet.pubkey.toHex(), requireDescriptionHash = false)
         )
         assertEquals(amountMsat / 1000, Nip57.getZapAmountSats(receipt, wallet.pubkey.toHex(), requireDescriptionHash = false))
-        assertNull(Nip69.getZapPollOptionFromZapReceipt(receipt))
+        assertNull(Nip69.getZapPollOptionFromZapReceipt(receipt, wallet.pubkey.toHex()))
     }
 
     @Test
@@ -413,7 +413,7 @@ class Nip57AuthenticationTest {
         val receipt = buildReceipt(request, wrongHashInvoice)
         assertNull(Nip57.parseValidatedZapRequest(receipt, wallet.pubkey.toHex()))
         assertNull(Nip57.parseValidatedZapRequest(receipt, wallet.pubkey.toHex(), requireDescriptionHash = false))
-        assertEquals(0, Nip57.getZapAmountSats(receipt))
+        assertEquals(0, Nip57.getZapAmountSats(receipt, wallet.pubkey.toHex()))
     }
 
     @Test
@@ -467,8 +467,8 @@ class Nip57AuthenticationTest {
         val invoice = zapInvoice(request.toJson(), amountMsat)
         val receipt1 = buildReceipt(request, invoice)
         val receipt2 = buildReceipt(request, invoice)
-        assertEquals(Nip57.getZapperPubkey(receipt1), Nip57.getZapperPubkey(receipt2))
-        assertTrue(Nip57.getZapperPubkey(receipt2) != null)
+        assertEquals(Nip57.getZapperPubkey(receipt1, wallet.pubkey.toHex()), Nip57.getZapperPubkey(receipt2, wallet.pubkey.toHex()))
+        assertTrue(Nip57.getZapperPubkey(receipt2, wallet.pubkey.toHex()) != null)
     }
 
     // ─── Private zap round trip ─────────────────────────────────────────────
@@ -487,12 +487,12 @@ class Nip57AuthenticationTest {
             message = "secret zap"
         )
         val receipt = buildReceipt(request, zapInvoice(request.toJson(), amountMsat))
-        assertTrue(Nip57.isPrivateZap(receipt))
-        val decrypted = Nip57.decryptPrivateZap(receipt, recipient.privkey)
+        assertTrue(Nip57.isPrivateZap(receipt, wallet.pubkey.toHex()))
+        val decrypted = Nip57.decryptPrivateZap(receipt, recipient.privkey, wallet.pubkey.toHex())
         assertEquals(sender.pubkey.toHex(), decrypted?.senderPubkey)
         assertEquals("secret zap", decrypted?.message)
         // Sender can re-derive their own outgoing private zap.
-        val own = Nip57.decryptOwnOutgoingPrivateZap(receipt, sender.privkey, targetEvent)
+        val own = Nip57.decryptOwnOutgoingPrivateZap(receipt, sender.privkey, targetEvent, wallet.pubkey.toHex())
         assertEquals(sender.pubkey.toHex(), own?.senderPubkey)
     }
 
@@ -520,7 +520,7 @@ class Nip57AuthenticationTest {
             )
         )
         val receipt = buildReceipt(request, zapInvoice(request.toJson(), amountMsat))
-        assertNull(Nip57.decryptPrivateZap(receipt, recipient.privkey))
+        assertNull(Nip57.decryptPrivateZap(receipt, recipient.privkey, wallet.pubkey.toHex()))
     }
 
     // ─── Polls ──────────────────────────────────────────────────────────────
@@ -539,7 +539,7 @@ class Nip57AuthenticationTest {
             extraTags = listOf(listOf("poll_option", "2"))
         )
         val receipt = buildReceipt(request, zapInvoice(request.toJson(), amountMsat))
-        assertEquals(2, Nip69.getZapPollOptionFromZapReceipt(receipt))
+        assertEquals(2, Nip69.getZapPollOptionFromZapReceipt(receipt, wallet.pubkey.toHex()))
     }
 
     @Test
@@ -556,7 +556,7 @@ class Nip57AuthenticationTest {
                 listOf("e", eventId)
             )
         )
-        assertNull(Nip69.getZapPollOptionFromZapReceipt(forged))
+        assertNull(Nip69.getZapPollOptionFromZapReceipt(forged, wallet.pubkey.toHex()))
     }
 
     // ─── Invoice amount decoding ────────────────────────────────────────────
@@ -566,12 +566,12 @@ class Nip57AuthenticationTest {
         for (msat in listOf(100L, 1_000L, 100_000L, 10_000_000L, 100_000_000_000L)) {
             val request = buildZapRequest(sender, msat = msat)
             val receipt = buildReceipt(request, zapInvoice(request.toJson(), msat))
-            assertEquals(msat / 1000, Nip57.getZapAmountSats(receipt))
+            assertEquals(msat / 1000, Nip57.getZapAmountSats(receipt, wallet.pubkey.toHex()))
         }
     }
 
     @Test
     fun nonZapEventsAreIgnoredByTheValidator() {
-        assertNull(Nip57.parseValidatedZapRequest(validReceipt().copy(kind = 1)))
+        assertNull(Nip57.parseValidatedZapRequest(validReceipt().copy(kind = 1), wallet.pubkey.toHex()))
     }
 }
