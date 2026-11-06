@@ -1124,21 +1124,37 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     private fun receiptRecipient(receipt: NostrEvent): String? =
         receipt.tags.firstOrNull { it.size >= 2 && it[0] == "p" }?.get(1)?.lowercase()
 
-    /** LNURL nostrPubkey expected as the receipt author, or null (fail closed). */
+    /**
+     * Composite cache key: the profile's CURRENT lightning address is part of
+     * the key, so updating kind-0 metadata mid-session (adding or migrating a
+     * lud16/lud06) automatically bypasses stale entries without an app
+     * restart. A missing profile sorts under the empty-address key and is
+     * retried on later receipts (never negatively cached).
+     */
+    private fun zapOriginCacheKey(recipient: String): String =
+        "$recipient|${getProfileData(recipient)?.lud16 ?: ""}" 
+
+    /**
+     * LNURL nostrPubkey expected as the receipt author, or null (fail closed).
+     * Caches are keyed by (recipient, current lightning address) so a
+     * mid-session kind-0 profile update — adding or migrating a lightning
+     * address — bypasses stale negative and positive entries automatically.
+     */
     fun expectedZapAuthor(receipt: NostrEvent): String? {
         val recipient = receiptRecipient(receipt) ?: return null
         synchronized(receiptExpectedAuthor) { receiptExpectedAuthor[receipt.id]?.let { return it } }
-        zapOriginCache[recipient]?.let {
+        val cacheKey = zapOriginCacheKey(recipient)
+        zapOriginCache[cacheKey]?.let {
             synchronized(receiptExpectedAuthor) { receiptExpectedAuthor[receipt.id] = it }
             return it
         }
-        if (recipient in zapOriginNotSupported) return null
+        if (cacheKey in zapOriginNotSupported) return null
         // Coalesce in-flight resolutions so a burst of receipts for one note
         // produces a single LNURL lookup, then share the outcome.
-        val deferred = zapOriginInFlight.computeIfAbsent(recipient) {
-            zapOriginScope.async { expectedZapOrigin(recipient) }
+        val deferred = zapOriginInFlight.computeIfAbsent(cacheKey) {
+            zapOriginScope.async { expectedZapOrigin(recipient, cacheKey) }
         }
-        deferred.invokeOnCompletion { zapOriginInFlight.remove(recipient, deferred) }
+        deferred.invokeOnCompletion { zapOriginInFlight.remove(cacheKey, deferred) }
         return runBlocking {
             try {
                 deferred.await()
@@ -1153,23 +1169,23 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
      * cached (receipts dropped for the session); transient network/HTTP
      * failures are not cached, so a later receipt retries the lookup.
      */
-    private suspend fun expectedZapOrigin(recipient: String): String? {
+    private suspend fun expectedZapOrigin(recipient: String, cacheKey: String): String? {
         val profile = getProfileData(recipient)
         // Profile not loaded yet — retry on a later receipt rather than
         // permanently treating the recipient as unsupported.
         if (profile == null) return null
         val lud16 = profile.lud16
         if (lud16.isNullOrBlank()) {
-            zapOriginNotSupported.add(recipient)
+            zapOriginNotSupported.add(cacheKey)
             return null
         }
         return when (val support = Nip57.resolveLnurlZapSupport(lud16, zapHttpClient)) {
             is Nip57.LnurlZapSupport.Supported -> {
-                zapOriginCache[recipient] = support.nostrPubkey
+                zapOriginCache[cacheKey] = support.nostrPubkey
                 support.nostrPubkey
             }
             Nip57.LnurlZapSupport.NotSupported -> {
-                zapOriginNotSupported.add(recipient)
+                zapOriginNotSupported.add(cacheKey)
                 null
             }
             Nip57.LnurlZapSupport.TransientError -> null
