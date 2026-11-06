@@ -533,6 +533,46 @@ object Nip57 {
         }
     }
 
+    /**
+     * Verify an LNURL callback invoice before the wallet pays it. The callback
+     * response is chosen by the provider, so the invoice must decode with a
+     * valid bech32 checksum, carry a payment hash, be msat-exact against the
+     * requested amount, be timestamp/expiry sane within a clock-skew grace
+     * window — and, when the zap request JSON is provided, its description
+     * hash must commit to that request whenever the h tag is present (a
+     * missing h tag is tolerated per the tiered policy; a mismatched one
+     * never is).
+     */
+    fun isInvoiceAcceptable(
+        bolt11: String,
+        amountMsats: Long,
+        sentZapRequestJson: String? = null,
+        requireDescriptionHash: Boolean = true,
+        nowEpochSeconds: Long = System.currentTimeMillis() / 1000,
+        clockSkewGraceSeconds: Long = 60
+    ): Boolean {
+        if (amountMsats <= 0) return false
+        val decoded = Bolt11.decode(bolt11) ?: return false
+        val paymentHash = decoded.paymentHash ?: return false
+        if (paymentHash.isBlank()) return false
+        val invoiceMsat = Bolt11.decodeAmountMsat(bolt11) ?: return false
+        if (invoiceMsat != amountMsats) return false
+        val timestamp = decoded.timestamp
+        if (timestamp <= 0 || timestamp > nowEpochSeconds + clockSkewGraceSeconds) return false
+        val expiresAt = runCatching { Math.addExact(timestamp, decoded.expiry) }.getOrNull() ?: return false
+        if (nowEpochSeconds - clockSkewGraceSeconds >= expiresAt) return false
+        val expectedHash = sentZapRequestJson?.let { descriptionHashHex(it) }
+        if (expectedHash != null) {
+            val invoiceHash = decoded.descriptionHash
+            if (invoiceHash == null) {
+                if (requireDescriptionHash) return false
+            } else if (!invoiceHash.equals(expectedHash, ignoreCase = true)) {
+                return false
+            }
+        }
+        return true
+    }
+
     suspend fun fetchSimpleInvoice(
         callbackUrl: String,
         amountMsats: Long,
