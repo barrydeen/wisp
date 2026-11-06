@@ -297,9 +297,9 @@ class GoogleAuthViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private suspend fun uploadWithRefresh(activity: ComponentActivity, payload: String) {
+    private suspend fun uploadWithRefresh(activity: ComponentActivity, payload: String): String? {
         val token = pendingAccessToken ?: error("no pending access token")
-        try {
+        val uploadedFileId: String? = try {
             driveService.uploadBackup(token, payload)
         } catch (e: DriveAuthorizationExpiredException) {
             Log.w(TAG, "Drive returned 401 on upload; refreshing token", e)
@@ -308,15 +308,20 @@ class GoogleAuthViewModel(app: Application) : AndroidViewModel(app) {
         }
         // Every backup is a new file; without pruning, appData accumulates
         // unboundedly and blobs under old PINs stay recoverable. Best effort —
-        // a failed prune never fails the backup.
+        // a failed prune never fails the backup. The just-uploaded file is
+        // pinned: Drive files.list can lag files.create on eventual
+        // consistency, so the fresh backup must never be pruned.
         try {
-            val deleted = driveService.pruneOldBackups(token)
+            val deleted = driveService.pruneOldBackups(token, mustKeepFileId = uploadedFileId)
             if (deleted > 0) Log.d(TAG, "Pruned $deleted superseded backup(s)")
         } catch (e: DriveAuthorizationExpiredException) {
-            runCatching { driveService.pruneOldBackups(refreshToken(activity, e.staleToken)) }
+            runCatching {
+                driveService.pruneOldBackups(refreshToken(activity, e.staleToken), mustKeepFileId = uploadedFileId)
+            }
         } catch (e: Exception) {
             Log.w(TAG, "Backup pruning skipped: ${e.message}")
         }
+        return uploadedFileId
     }
 
     private suspend fun refreshToken(activity: ComponentActivity, staleToken: String): String {

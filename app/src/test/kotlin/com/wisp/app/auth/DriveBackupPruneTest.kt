@@ -48,6 +48,19 @@ class DriveBackupPruneTest {
     }
 
     @Test
+    fun `pinned file id is never selected even when oldest`() {
+        // Drive files.list can lag files.create: the just-uploaded backup is
+        // pinned so eventual consistency cannot get it pruned.
+        val files = listOf(
+            file("fresh", null),
+            file("old", "2026-10-01T00:00:00Z"),
+            file("older", "2026-09-01T00:00:00Z")
+        )
+        // keep=1 among the two listed candidates: only the newest survives.
+        assertEquals(listOf("older"), DriveBackupService.selectSuperseded(files, 1, mustKeepFileId = "id-fresh").map { it.name })
+    }
+
+    @Test
     fun `fewer files than keep supersedes nothing`() {
         val files = listOf(file("a", "2026-10-01T00:00:00Z"), file("b", "2026-10-02T00:00:00Z"))
         assertTrue(DriveBackupService.selectSuperseded(files, 3).isEmpty())
