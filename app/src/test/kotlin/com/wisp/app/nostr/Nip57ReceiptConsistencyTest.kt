@@ -111,6 +111,27 @@ class Nip57ReceiptConsistencyTest {
     }
 
     @Test
+    fun `lenient tier skips the hash outcome but keeps other checks`() {
+        val description = requestJson(listOf(listOf("p", recipient), listOf("e", eventId)))
+        val noHashReceipt = NostrEvent.createUnsigned(
+            sender, Nip57.KIND_ZAP_RECEIPT, "",
+            listOf(
+                listOf("bolt11", invoice(100_000L, listOf(1 to sha256Bytes("preimage")))),
+                listOf("description", description),
+                listOf("p", recipient),
+                listOf("e", eventId)
+            ),
+            1_700_000_200L
+        )
+        val request = NostrEvent.fromJson(description)
+        assertEquals(
+            "invoice has no description hash",
+            Nip57.receiptInconsistency(noHashReceipt, request, description)
+        )
+        assertNull(Nip57.receiptInconsistency(noHashReceipt, request, description, requireDescriptionHash = false))
+    }
+
+    @Test
     fun `request p tag must match receipt p tag`() {
         val description = requestJson(listOf(listOf("p", sender), listOf("e", eventId)))
         val r = receipt(description, listOf(listOf("p", recipient), listOf("e", eventId)))

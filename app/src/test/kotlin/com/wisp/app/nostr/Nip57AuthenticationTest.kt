@@ -373,6 +373,35 @@ class Nip57AuthenticationTest {
     }
 
     @Test
+    fun hashMissingReceiptIsLenientOnDisplayTierAndStrictForPolls() {
+        // Invoice without the h commitment: passes the display tier (lenient
+        // hash) so non-compliant LNURL providers stay visible, but is rejected
+        // on the strict tier and never counted as a poll vote.
+        val request = Nip57.buildZapRequest(
+            senderPrivkey = sender.privkey,
+            senderPubkey = sender.pubkey,
+            recipientPubkey = recipient.pubkey.toHex(),
+            eventId = eventId,
+            amountMsats = amountMsat,
+            relayUrls = listOf("wss://relay.a"),
+            lnurl = "lnurl1dp",
+            message = "",
+            extraTags = listOf(listOf("poll_option", "1"))
+        )
+        val description = request.toJson()
+        val noHashInvoice = buildInvoice(amountMsat, emptyList())
+        val receipt = buildReceipt(request, noHashInvoice)
+        assertNull(Nip57.getZapperPubkey(receipt))
+        assertNull(Nip57.parseValidatedZapRequest(receipt, wallet.pubkey.toHex(), requireDescriptionHash = true))
+        assertEquals(
+            sender.pubkey.toHex(),
+            Nip57.getZapperPubkey(receipt, wallet.pubkey.toHex(), requireDescriptionHash = false)
+        )
+        assertEquals(amountMsat / 1000, Nip57.getZapAmountSats(receipt, wallet.pubkey.toHex(), requireDescriptionHash = false))
+        assertNull(Nip69.getZapPollOptionFromZapReceipt(receipt))
+    }
+
+    @Test
     fun receiptSignedByTheExpectedWalletServiceIsAccepted() {
         val receipt = validReceipt()
         val expected = wallet.pubkey.toHex()
