@@ -103,7 +103,7 @@ object Nip69 {
      * pass NIP-57 validation (authenticated request, matching tags, invoice
      * description hash) before its vote is counted.
      */
-    fun getZapPollOptionFromZapReceipt(zapReceipt: NostrEvent, expectedAuthor: String? = null): Int? {
+    fun getZapPollOptionFromZapReceipt(zapReceipt: NostrEvent, expectedAuthor: String): Int? {
         val zapRequest = Nip57.parseValidatedZapRequest(zapReceipt, expectedAuthor) ?: return null
         return zapRequest.tags
             .firstOrNull { it.size >= 2 && it[0] == "poll_option" }
