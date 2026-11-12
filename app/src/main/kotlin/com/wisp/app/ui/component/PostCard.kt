@@ -180,7 +180,8 @@ fun PostCard(
     autoTranslate: Boolean = false,
     quoteDepth: Int = 0,
     modifier: Modifier = Modifier,
-    showDivider: Boolean = true
+    showDivider: Boolean = true,
+    startExpanded: Boolean = false
 ) {
     val displayName = remember(event.pubkey, profile?.displayString) {
         profile?.displayString
@@ -630,7 +631,7 @@ fun PostCard(
             } else {
                 // Collapsible content with max height (~1 viewport)
                 val collapsedMaxHeight = 500.dp
-                var contentExpanded by remember { mutableStateOf(false) }
+                var contentExpanded by remember { mutableStateOf(startExpanded) }
                 var contentExceedsMax by remember { mutableStateOf(false) }
                 val density = LocalDensity.current
 
