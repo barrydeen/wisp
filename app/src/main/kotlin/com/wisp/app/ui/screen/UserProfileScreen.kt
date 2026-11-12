@@ -206,13 +206,14 @@ fun UserProfileScreen(
 ) {
     val resolvedEmojisState = rememberUpdatedState(resolvedEmojis)
     val unicodeEmojisState = rememberUpdatedState(unicodeEmojis)
-    val invoiceNoteActions = remember(onPayInvoice, onGroupRoom, onLiveStreamClick, fetchGroupPreview, onAddEmojiSet, onOpenEmojiLibrary) {
-        if (onPayInvoice != null || onGroupRoom != null || fetchGroupPreview != null || onAddEmojiSet != null || onLiveStreamClick != null || onOpenEmojiLibrary != null) {
+    val invoiceNoteActions = remember(onPayInvoice, onGroupRoom, onLiveStreamClick, fetchGroupPreview, onAddEmojiSet, onOpenEmojiLibrary, onArticleClick) {
+        if (onPayInvoice != null || onGroupRoom != null || fetchGroupPreview != null || onAddEmojiSet != null || onLiveStreamClick != null || onOpenEmojiLibrary != null || onArticleClick != null) {
             com.wisp.app.ui.component.NoteActions(
             onProfileClick = { pubkey -> onNavigateToProfile?.invoke(pubkey) },
             onPayInvoice = onPayInvoice,
             onGroupRoom = onGroupRoom,
             onLiveStreamClick = onLiveStreamClick,
+            onArticleClick = onArticleClick,
             fetchGroupPreview = fetchGroupPreview,
             onAddEmojiSet = onAddEmojiSet,
             onRemoveEmojiSet = onRemoveEmojiSet,
@@ -813,16 +814,6 @@ fun UserProfileScreen(
                         item { EmptyTabContent(stringResource(R.string.profile_no_notes)) }
                     } else {
                         items(items = displayNotes, key = { it.id }) { event ->
-                            if (event.kind == 30023) {
-                                ProfileArticleCard(
-                                    event = event,
-                                    profile = profile,
-                                    eventRepo = eventRepo,
-                                    onArticleClick = onArticleClick,
-                                    onProfileClick = onNavigateToProfile
-                                )
-                                return@items
-                            }
                             val likeCount = reactionVersion.let { eventRepo?.getReactionCount(event.id) ?: 0 }
                             val replyCount = replyCountVersion.let { eventRepo?.getReplyCount(event.id) ?: 0 }
                             val repostCount = repostVersion.let { eventRepo?.getRepostCount(event.id) ?: 0 }
@@ -2125,87 +2116,3 @@ private fun BlockedContentOverlay(onReveal: () -> Unit) {
     }
 }
 
-@Composable
-private fun ProfileArticleCard(
-    event: NostrEvent,
-    profile: ProfileData?,
-    eventRepo: EventRepository?,
-    onArticleClick: ((Int, String, String) -> Unit)?,
-    onProfileClick: ((String) -> Unit)?
-) {
-    val title = remember(event) { event.tags.firstOrNull { it.size >= 2 && it[0] == "title" }?.get(1) }
-    val summary = remember(event) { event.tags.firstOrNull { it.size >= 2 && it[0] == "summary" }?.get(1) }
-    val image = remember(event) { event.tags.firstOrNull { it.size >= 2 && it[0] == "image" }?.get(1) }
-    val dTag = remember(event) { event.tags.firstOrNull { it.size >= 2 && it[0] == "d" }?.get(1) ?: "" }
-    val publishedAt = remember(event) {
-        event.tags.firstOrNull { it.size >= 2 && it[0] == "published_at" }?.get(1)?.toLongOrNull()
-    }
-
-    androidx.compose.material3.Surface(
-        shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.surface,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 6.dp)
-            .then(
-                if (onArticleClick != null) Modifier.clickable { onArticleClick(30023, event.pubkey, dTag) }
-                else Modifier
-            )
-    ) {
-        Column {
-            if (image != null) {
-                coil3.compose.AsyncImage(
-                    model = image,
-                    contentDescription = title,
-                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(180.dp)
-                )
-            }
-            Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    androidx.compose.material3.Surface(
-                        shape = RoundedCornerShape(4.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer,
-                        modifier = Modifier.padding(end = 8.dp)
-                    ) {
-                        Text(
-                            text = "ARTICLE",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                    }
-                    Text(
-                        text = title ?: "Untitled Article",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 2,
-                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-                if (!summary.isNullOrBlank()) {
-                    Text(
-                        text = summary,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 3,
-                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
-                }
-                if (publishedAt != null) {
-                    Text(
-                        text = java.text.SimpleDateFormat("MMM d, yyyy", java.util.Locale.US)
-                            .format(java.util.Date(publishedAt * 1000)),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                        modifier = Modifier.padding(top = 6.dp)
-                    )
-                }
-            }
-        }
-    }
-}
