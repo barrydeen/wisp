@@ -4,6 +4,23 @@ object Nip53 {
     const val KIND_LIVE_ACTIVITY = 30311
     const val KIND_LIVE_CHAT_MESSAGE = 1311
 
+    /**
+     * A kind-30311 only counts as live while it was republished within this
+     * window. Real streams republish every few minutes; abandoned or test
+     * events stay stuck on status "live" forever and would otherwise haunt
+     * the LIVE row indefinitely.
+     */
+    const val LIVE_FRESHNESS_SECONDS = 3600L
+
+    /**
+     * Sidecar's liveness rule: status "live" alone is not enough — the event
+     * must also carry a streaming URL and have been republished recently.
+     */
+    fun isLiveNow(activity: LiveActivity, now: Long = System.currentTimeMillis() / 1000): Boolean =
+        activity.status?.equals("live", ignoreCase = true) == true &&
+            !activity.streamingUrl.isNullOrEmpty() &&
+            now - activity.createdAt < LIVE_FRESHNESS_SECONDS
+
     data class LiveActivity(
         val dTag: String,
         val hostPubkey: String,

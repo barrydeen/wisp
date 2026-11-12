@@ -461,7 +461,7 @@
     <string name="settings_video_autoplay">Autoreproducción de video</string>
     <string name="settings_video_autoplay_description">Reproducir videos automáticamente cuando se desplazan a la vista</string>
     <string name="settings_hide_live_streams">Ocultar transmisiones en vivo</string>
-    <string name="settings_hide_live_streams_description">Ocultar la fila de transmisiones en vivo en la parte superior del feed</string>
+    <string name="settings_hide_live_streams_description">Oculta la fila de transmisiones en vivo del feed y detiene su descubrimiento. Activado, no se carga ni reproduce contenido en vivo</string>
     <string name="settings_client_tag">Etiqueta de Cliente</string>
     <string name="settings_tag_notes">Etiquetar notas con Wisp</string>
     <string name="settings_tag_notes_description">Incluir una etiqueta identificando Wisp como el cliente. Esto es visible para otros.</string>

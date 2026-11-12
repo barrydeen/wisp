@@ -104,7 +104,8 @@ class StartupCoordinator(
     private val getUserPubkey: () -> String?,
     private val registerAuthSigner: () -> Unit,
     private val fetchEmojiSets: () -> Unit,
-    private val getSigner: () -> NostrSigner?
+    private val getSigner: () -> NostrSigner?,
+    private val isLiveContentHidden: () -> Boolean = { false }
 ) {
     private var eventProcessingJob: Job? = null
     private var metadataSweepJob: Job? = null
@@ -800,6 +801,10 @@ class StartupCoordinator(
     }
 
     private fun subscribeLiveStreams(myPubkey: String) {
+        // No-op when the "Hide live streams" setting is on — no live content
+        // should load or be discovered at all.
+        if (isLiveContentHidden()) return
+
         // Bypass dedup for live chat subs — the discovery sub and per-stream sub both
         // receive kind 1311 events and must each reach EventRouter independently.
         // Without this, whichever sub wins the dedup race silently drops the other copy.
@@ -813,6 +818,23 @@ class StartupCoordinator(
         val since = System.currentTimeMillis() / 1000 - 3600
         val chatFilter = Filter(kinds = listOf(1311), since = since, limit = 500)
         relayPool.sendToReadRelays(ClientMessage.req("live-chat-discovery", chatFilter))
+    }
+
+    /** Re-run NIP-53 discovery after the "Hide live streams" switch turns off. */
+    fun startLiveDiscovery() {
+        val pk = getUserPubkey() ?: return
+        subscribeLiveStreams(pk)
+    }
+
+    /**
+     * Stop NIP-53 discovery after the "Hide live streams" switch turns on so
+     * no live content loads while it's off. Discovery state is dropped; an
+     * open stream's chat is kept.
+     */
+    fun stopLiveDiscovery() {
+        subManager.closeSubscription("live-activities")
+        subManager.closeSubscription("live-chat-discovery")
+        liveStreamRepo?.clearDiscovered()
     }
 
     /**
