@@ -1532,7 +1532,7 @@ private fun ArticleCard(
 
     val title = remember(event) { event?.tags?.firstOrNull { it.size >= 2 && it[0] == "title" }?.get(1) }
     val summary = remember(event) { event?.tags?.firstOrNull { it.size >= 2 && it[0] == "summary" }?.get(1) }
-    val image = remember(event) { event?.tags?.firstOrNull { it.size >= 2 && it[0] == "image" }?.get(1) }
+    val image = remember(event) { event?.tags?.firstOrNull { it.size >= 2 && it[0] == "image" }?.get(1)?.takeIf { it.isNotBlank() } }
     val publishedAt = remember(event) { event?.tags?.firstOrNull { it.size >= 2 && it[0] == "published_at" }?.get(1)?.toLongOrNull() }
 
     Surface(
@@ -1665,7 +1665,7 @@ private fun MusicTrackCard(
     val title = remember(event) { event?.tags?.firstOrNull { it.size >= 2 && it[0] == "title" }?.get(1) }
     val artist = remember(event) { event?.tags?.firstOrNull { it.size >= 2 && it[0] == "artist" }?.get(1) }
     val audioUrl = remember(event) { event?.tags?.firstOrNull { it.size >= 2 && it[0] == "url" }?.get(1) }
-    val image = remember(event) { event?.tags?.firstOrNull { it.size >= 2 && it[0] == "image" }?.get(1) }
+    val image = remember(event) { event?.tags?.firstOrNull { it.size >= 2 && it[0] == "image" }?.get(1)?.takeIf { it.isNotBlank() } }
     val durationSecs = remember(event) {
         event?.tags?.firstOrNull { it.size >= 2 && it[0] == "duration" }?.get(1)?.toLongOrNull()
     }
@@ -1880,7 +1880,7 @@ private fun LiveStreamCard(
 
     val title = remember(event) { event?.tags?.firstOrNull { it.size >= 2 && it[0] == "title" }?.get(1) }
     val summary = remember(event) { event?.tags?.firstOrNull { it.size >= 2 && it[0] == "summary" }?.get(1) }
-    val image = remember(event) { event?.tags?.firstOrNull { it.size >= 2 && it[0] == "image" }?.get(1) }
+    val image = remember(event) { event?.tags?.firstOrNull { it.size >= 2 && it[0] == "image" }?.get(1)?.takeIf { it.isNotBlank() } }
     val status = remember(event) { event?.tags?.firstOrNull { it.size >= 2 && it[0] == "status" }?.get(1) }
     val streamUrl = remember(event) { event?.tags?.firstOrNull { it.size >= 2 && it[0] == "streaming" }?.get(1) }
 

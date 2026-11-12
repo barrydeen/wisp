@@ -23,7 +23,7 @@ object Nip53 {
         val dTag = event.tags.firstOrNull { it.size >= 2 && it[0] == "d" }?.get(1) ?: return null
         val title = event.tags.firstOrNull { it.size >= 2 && it[0] == "title" }?.get(1)
         val summary = event.tags.firstOrNull { it.size >= 2 && it[0] == "summary" }?.get(1)
-        val image = event.tags.firstOrNull { it.size >= 2 && it[0] == "image" }?.get(1)
+        val image = event.tags.firstOrNull { it.size >= 2 && it[0] == "image" }?.get(1)?.takeIf { it.isNotBlank() }
         val status = event.tags.firstOrNull { it.size >= 2 && it[0] == "status" }?.get(1)
         val streamingUrl = event.tags.firstOrNull { it.size >= 2 && it[0] == "streaming" }?.get(1)
         val participants = event.tags
