@@ -2,7 +2,7 @@
 
 A minimal, performant Android client for the [Nostr](https://nostr.com) protocol. Built with Kotlin and Jetpack Compose (Material 3), Wisp prioritizes decentralization, intelligent relay routing, strong privacy, and a clean native experience.
 
-> **Status:** v1.0.0 — stable, actively developed.
+> **Status:** v1.2.5 — stable, actively developed.
 
 ---
 
@@ -287,6 +287,15 @@ cd wisp
 # Build release APK (R8-minified)
 ./gradlew assembleRelease
 ```
+
+### Install & Run
+
+- **Install**: Download APKs from the [Releases](../releases) page.
+- **Local build & run**:
+  - Debug: `./gradlew assembleDebug`
+  - Production (R8-minified): `./gradlew assembleRelease`
+- **Install on device/emulator**: `./gradlew installDebug`
+- **Gradle launchers**: set `OBX_DISABLE_ANALYTICS=true` in the job/process environment before Gradle starts.
 
 Release builds use R8 minification; keep rules live in `app/proguard-rules.pro` and cover kotlinx.serialization, secp256k1 JNI, Bouncy Castle, OkHttp, Coil, Security Crypto, Media3, and ZXing.
 
