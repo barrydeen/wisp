@@ -5,6 +5,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -49,7 +50,7 @@ class DriveBackupService(
         }
     }
 
-    data class BackupFile(val fileId: String, val name: String)
+    data class BackupFile(val fileId: String, val name: String, val modifiedTime: String? = null)
 
     suspend fun listBackups(accessToken: String): List<BackupFile> = withContext(Dispatchers.IO) {
         val nameQuery = "name contains '$BACKUP_PREFIX'"
@@ -78,7 +79,7 @@ class DriveBackupService(
                 val id = obj["id"]?.jsonPrimitive?.content ?: return@mapNotNull null
                 val name = obj["name"]?.jsonPrimitive?.content ?: return@mapNotNull null
                 if (!name.startsWith(BACKUP_PREFIX) || !name.endsWith(BACKUP_SUFFIX)) return@mapNotNull null
-                BackupFile(id, name)
+                BackupFile(id, name, obj["modifiedTime"]?.jsonPrimitive?.content)
             }
         }
     }
@@ -105,7 +106,12 @@ class DriveBackupService(
      * creates a distinct file — there is no replace path, which sidesteps the
      * delete-then-upload race that an in-place update would introduce.
      */
-    suspend fun uploadBackup(accessToken: String, payload: String) =
+    /**
+     * Uploads a backup and returns the Drive fileId from the response JSON so
+     * the pruner can pin the just-created file (Drive files.list can lag
+     * files.create on eventual consistency).
+     */
+    suspend fun uploadBackup(accessToken: String, payload: String): String? =
         withContext(Dispatchers.IO) {
             val filename = "$BACKUP_PREFIX${UUID.randomUUID()}$BACKUP_SUFFIX"
 
@@ -137,21 +143,69 @@ class DriveBackupService(
                 if (!response.isSuccessful) {
                     throw IOException("Drive upload failed: ${response.code} ${response.message}")
                 }
+                val body = response.body?.string() ?: return@use null
+                try {
+                    (json.parseToJsonElement(body).jsonObject)["id"]
+                        ?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }
+                } catch (_: Exception) {
+                    null
+                }
             }
         }
 
-    suspend fun deleteBackup(accessToken: String, fileId: String) = withContext(Dispatchers.IO) {
-        val req = Request.Builder()
-            .url("https://www.googleapis.com/drive/v3/files/$fileId")
-            .header("Authorization", "Bearer $accessToken")
-            .delete()
-            .build()
-        httpClient.newCall(req).execute().close()
-    }
+    /** Returns true when Drive confirmed the deletion (2xx). */
+    suspend fun deleteBackup(accessToken: String, fileId: String): Boolean =
+        withContext(Dispatchers.IO) {
+            val req = Request.Builder()
+                .url("https://www.googleapis.com/drive/v3/files/$fileId")
+                .header("Authorization", "Bearer $accessToken")
+                .delete()
+                .build()
+            httpClient.newCall(req).execute().use { it.isSuccessful }
+        }
+
+    /**
+     * Each backup uploads as a brand-new file, so without pruning the appData
+     * folder grows without bound and blobs encrypted under old PINs stay
+     * recoverable forever. Keeps the [keep] newest files (Drive modifiedTime
+     * is ISO-8601, so lexical descending order is chronological) and deletes
+     * the rest. Best effort: individual deletion failures are skipped.
+     * Returns the number of files deleted.
+     */
+    suspend fun pruneOldBackups(
+        accessToken: String,
+        keep: Int = 3,
+        mustKeepFileId: String? = null
+    ): Int =
+        withContext(Dispatchers.IO) {
+            val files = listBackups(accessToken)
+            if (files.size <= keep) return@withContext 0
+            var deleted = 0
+            for (file in selectSuperseded(files, keep, mustKeepFileId)) {
+                if (deleteBackup(accessToken, file.fileId)) deleted++
+            }
+            deleted
+        }
+
 
     companion object {
         private const val APP_DATA_FOLDER = "appDataFolder"
         private const val BACKUP_PREFIX = "wisp_bk_"
         private const val BACKUP_SUFFIX = ".bin"
+
+        /** Pure selection so the keep-newest rule is testable without Drive.
+         *  Files with a missing modifiedTime sort oldest. */
+        fun selectSuperseded(
+            files: List<BackupFile>,
+            keep: Int,
+            mustKeepFileId: String? = null
+        ): List<BackupFile> {
+            if (keep < 0) return emptyList()
+            // mustKeepFileId is excluded before sorting: Drive files.list can
+            // lag files.create on eventual consistency, so the just-uploaded
+            // backup is pinned against accidental pruning.
+            val candidates = if (mustKeepFileId == null) files else files.filterNot { it.fileId == mustKeepFileId }
+            return candidates.sortedByDescending { it.modifiedTime ?: "" }.drop(keep)
+        }
     }
 }
