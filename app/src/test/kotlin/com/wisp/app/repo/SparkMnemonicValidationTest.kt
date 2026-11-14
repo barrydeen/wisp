@@ -3,7 +3,6 @@ package com.wisp.app.repo
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -32,16 +31,13 @@ class SparkMnemonicValidationTest {
     @Test
     fun `NBSP separators are normalized`() {
         val nbsp = '\u00A0'
-        val phrase = canonical.replace(' ', nbsp)
-        assertNull(SparkRepository.validateMnemonic(phrase))
+        assertNull(SparkRepository.validateMnemonic(canonical.replace(' ', nbsp)))
     }
 
     @Test
     fun `figure and narrow NBSP separators are normalized`() {
-        val figure = '\u2007'
-        val narrow = '\u202F'
-        val phrase = canonical.replace(' ', figure).replace("abandon$figure", "abandon$narrow", true)
-        assertNull(SparkRepository.validateMnemonic(phrase))
+        assertNull(SparkRepository.validateMnemonic(canonical.replace(' ', '\u2007')))
+        assertNull(SparkRepository.validateMnemonic(canonical.replace(' ', '\u202F')))
     }
 
     @Test
@@ -52,8 +48,7 @@ class SparkMnemonicValidationTest {
 
     @Test
     fun `corrupted final word fails checksum`() {
-        val corrupted = canonical.replace("about", "aboard")
-        assertNotNull(SparkRepository.validateMnemonic(corrupted))
+        assertNotNull(SparkRepository.validateMnemonic(canonical.replace("about", "aboard")))
     }
 
     @Test
