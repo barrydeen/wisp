@@ -21,6 +21,54 @@ object Nip57 {
     private const val IV_HRP = "iv"
 
     private val json = Json { ignoreUnknownKeys = true }
+    private const val MAX_LNURL_BODY_BYTES = 262_144
+
+    /**
+     * LNURL discovery is an outbound fetch driven by a user profile field, so
+     * the host must be a public DNS name resolving to a public unicast
+     * address — this rejects localhost, link-local, private (RFC 1918 /
+     * ULA), and broadcast/multicast targets that a crafted lud16 could
+     * otherwise reach from the device's network. DNS rebinding between this
+     * check and the connection is out of scope for a client-side resolver
+     * (the HTTP client enforces https, which fails on most such targets'
+     * certificates).
+     */
+    private fun isAllowedLnurlHost(domain: String): Boolean {
+        val host = domain.trim().lowercase().removeSuffix(".")
+        if (host.isEmpty() || host == "localhost" || host.endsWith(".localhost") ||
+            host.endsWith(".local") || host.endsWith(".internal")
+        ) return false
+        val addresses = try {
+            java.net.InetAddress.getAllByName(host).toList()
+        } catch (_: Exception) {
+            return false
+        }
+        if (addresses.isEmpty()) return false
+        return addresses.all { addr ->
+            val a = addr.address
+            when (a.size) {
+                4 -> {
+                    val b0 = a[0].toInt() and 0xFF
+                    val b1 = a[1].toInt() and 0xFF
+                    !(b0 == 0 || b0 == 10 || b0 == 127 ||
+                        (b0 == 169 && b1 == 254) ||
+                        (b0 == 172 && b1 in 16..31) ||
+                        (b0 == 192 && b1 == 168) ||
+                        b0 >= 224)
+                }
+                16 -> {
+                    val b0 = a[0].toInt() and 0xFF
+                    val b1 = a[1].toInt() and 0xFF
+                    val isGlobalUnicast = (b0 and 0xE0) == 0x20
+                    val isUla = (b0 and 0xFE) == 0xFC
+                    !(b0 == 0 && b1 == 0) && !isUla && isGlobalUnicast ||
+                        // fallthrough-safe: treat non-global unicast as rejected
+                        (isGlobalUnicast && !isUla)
+                }
+                else -> false
+            }
+        }
+    }
 
     data class DecryptedPrivateZap(val senderPubkey: String, val message: String)
 
@@ -212,11 +260,17 @@ object Nip57 {
                 val parts = lud16.split("@", limit = 2)
                 if (parts.size != 2) return@withContext null
                 val (user, domain) = parts
+                if (!isAllowedLnurlHost(domain)) return@withContext null
                 val url = "https://$domain/.well-known/lnurlp/$user"
                 val request = Request.Builder().url(url).build()
                 val response = httpClient.newCall(request).execute()
                 if (!response.isSuccessful) return@withContext null
+                val contentLength = response.body?.contentLength()
+                if (contentLength != null && (contentLength <= 0 || contentLength > MAX_LNURL_BODY_BYTES)) {
+                    return@withContext null
+                }
                 val body = response.body?.string() ?: return@withContext null
+                if (body.length > MAX_LNURL_BODY_BYTES) return@withContext null
                 val obj = json.parseToJsonElement(body).jsonObject
                 val allowsNostr = obj["allowsNostr"]?.jsonPrimitive?.boolean ?: false
                 LnurlPayInfo(
@@ -449,13 +503,21 @@ object Nip57 {
             val parts = lud16.split("@", limit = 2)
             if (parts.size != 2) return LnurlZapSupport.NotSupported
             val (user, domain) = parts
+            if (!isAllowedLnurlHost(domain)) return LnurlZapSupport.NotSupported
             val request = Request.Builder()
                 .url("https://$domain/.well-known/lnurlp/$user")
                 .build()
+            // Bound the response: LNURL-pay documents are tiny JSON; a hostile
+            // endpoint streaming unbounded bytes pins the reader thread.
             httpClient.newCall(request).execute().use { response ->
                 if (response.code >= 500 || response.code == 429) return LnurlZapSupport.TransientError
                 if (!response.isSuccessful) return LnurlZapSupport.NotSupported
+                val contentLength = response.body?.contentLength()
+                if (contentLength != null && (contentLength <= 0 || contentLength > MAX_LNURL_BODY_BYTES)) {
+                    return LnurlZapSupport.NotSupported
+                }
                 val body = response.body?.string() ?: return LnurlZapSupport.TransientError
+                if (body.length > MAX_LNURL_BODY_BYTES) return LnurlZapSupport.NotSupported
                 val obj = try {
                     json.parseToJsonElement(body).jsonObject
                 } catch (_: Exception) {
