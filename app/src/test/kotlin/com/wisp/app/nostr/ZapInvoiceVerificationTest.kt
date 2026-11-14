@@ -144,3 +144,31 @@ class ZapInvoiceVerificationTest {
         assertFalse(Nip57.isInvoiceAcceptable(broken, 100_000L))
     }
 }
+
+class LnurlHostGuardTest {
+    private val client = okhttp3.OkHttpClient()
+
+    @Test
+    fun `localhost lud16 is classified as unsupported without network`() {
+        assertEquals(
+            Nip57.LnurlZapSupport.NotSupported,
+            Nip57.resolveLnurlZapSupport("user@localhost", client)
+        )
+    }
+
+    @Test
+    fun `loopback IP literal lud16 is classified as unsupported`() {
+        assertEquals(
+            Nip57.LnurlZapSupport.NotSupported,
+            Nip57.resolveLnurlZapSupport("user@127.0.0.1", client)
+        )
+    }
+
+    @Test
+    fun `malformed lud16 is classified as unsupported`() {
+        assertEquals(
+            Nip57.LnurlZapSupport.NotSupported,
+            Nip57.resolveLnurlZapSupport("no-at-sign", client)
+        )
+    }
+}
