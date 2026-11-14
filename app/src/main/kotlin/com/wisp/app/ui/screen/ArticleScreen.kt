@@ -1,5 +1,11 @@
 package com.wisp.app.ui.screen
 
+import com.wisp.app.nostr.Nip19
+import com.wisp.app.R
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.material.icons.outlined.Share
+import android.content.Intent
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -137,6 +143,27 @@ fun ArticleScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    val articleEvent = article
+                    if (articleEvent != null) {
+                        val context = LocalContext.current
+                        IconButton(onClick = {
+                            try {
+                                val dTag = articleEvent.tags.firstOrNull { it.size >= 2 && it[0] == "d" }?.get(1) ?: ""
+                                val relays = eventRepo.getEventRelays(articleEvent.id).take(2).toList()
+                                val naddr = Nip19.naddrEncode(articleEvent.kind, articleEvent.pubkey, dTag, relays)
+                                val intent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    title?.let { putExtra(Intent.EXTRA_SUBJECT, it) }
+                                    putExtra(Intent.EXTRA_TEXT, "https://njump.me/$naddr")
+                                }
+                                context.startActivity(Intent.createChooser(intent, null))
+                            } catch (_: Exception) {}
+                        }) {
+                            Icon(Icons.Outlined.Share, contentDescription = stringResource(R.string.btn_share))
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(

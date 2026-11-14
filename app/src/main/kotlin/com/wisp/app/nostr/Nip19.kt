@@ -32,6 +32,16 @@ object Nip19 {
         return bech32Encode("nevent", tlv)
     }
 
+    fun naddrEncode(kind: Int, author: String, dTag: String, relays: List<String> = emptyList()): String {
+        val tlv = buildTlv {
+            addTlv(0x00, dTag.toByteArray(Charsets.UTF_8))
+            for (relay in relays) addTlv(0x01, relay.toByteArray(Charsets.UTF_8))
+            addTlv(0x02, author.hexToByteArray())
+            addTlv(0x03, byteArrayOf((kind ushr 24).toByte(), (kind ushr 16).toByte(), (kind ushr 8).toByte(), kind.toByte()))
+        }
+        return bech32Encode("naddr", tlv)
+    }
+
     private class TlvBuilder {
         private val bytes = mutableListOf<Byte>()
         fun addTlv(type: Int, value: ByteArray) {
