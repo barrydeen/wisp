@@ -14,14 +14,185 @@ import java.security.MessageDigest
 
 object Nip57 {
     const val KIND_PRIVATE_ZAP_EVENT = 9733
+    const val KIND_ZAP_REQUEST = 9734
+    const val KIND_ZAP_RECEIPT = 9735
     private const val ANON_TAG = "anon"
     private const val PZAP_HRP = "pzap"
     private const val IV_HRP = "iv"
 
-    private val bolt11AmountRegex = Regex("""lnbc(\d+)([munp]?)1""")
     private val json = Json { ignoreUnknownKeys = true }
+    private const val MAX_LNURL_BODY_BYTES = 262_144
+
+    /**
+     * LNURL discovery is an outbound fetch driven by a user profile field, so
+     * the host must be a public DNS name resolving to a public unicast
+     * address — this rejects localhost, link-local, private (RFC 1918 /
+     * ULA), and broadcast/multicast targets that a crafted lud16 could
+     * otherwise reach from the device's network. DNS rebinding between this
+     * check and the connection is out of scope for a client-side resolver
+     * (the HTTP client enforces https, which fails on most such targets'
+     * certificates).
+     */
+    private fun isAllowedLnurlHost(domain: String): Boolean {
+        val host = domain.trim().lowercase().removeSuffix(".")
+        if (host.isEmpty() || host == "localhost" || host.endsWith(".localhost") ||
+            host.endsWith(".local") || host.endsWith(".internal")
+        ) return false
+        val addresses = try {
+            java.net.InetAddress.getAllByName(host).toList()
+        } catch (_: Exception) {
+            return false
+        }
+        if (addresses.isEmpty()) return false
+        return addresses.all { addr ->
+            val a = addr.address
+            when (a.size) {
+                4 -> {
+                    val b0 = a[0].toInt() and 0xFF
+                    val b1 = a[1].toInt() and 0xFF
+                    !(b0 == 0 || b0 == 10 || b0 == 127 ||
+                        (b0 == 169 && b1 == 254) ||
+                        (b0 == 172 && b1 in 16..31) ||
+                        (b0 == 192 && b1 == 168) ||
+                        b0 >= 224)
+                }
+                16 -> {
+                    val b0 = a[0].toInt() and 0xFF
+                    val b1 = a[1].toInt() and 0xFF
+                    val isGlobalUnicast = (b0 and 0xE0) == 0x20
+                    val isUla = (b0 and 0xFE) == 0xFC
+                    !(b0 == 0 && b1 == 0) && !isUla && isGlobalUnicast ||
+                        // fallthrough-safe: treat non-global unicast as rejected
+                        (isGlobalUnicast && !isUla)
+                }
+                else -> false
+            }
+        }
+    }
 
     data class DecryptedPrivateZap(val senderPubkey: String, val message: String)
+
+    private fun tagValue(event: NostrEvent, name: String): String? =
+        event.tags.firstOrNull { it.size >= 2 && it[0] == name }?.get(1)
+
+    private fun tagCount(event: NostrEvent, name: String): Int =
+        event.tags.count { it.size >= 2 && it[0] == name }
+
+    /** SHA-256 of the raw description string, hex-encoded — the invoice's `h` field commits to this. */
+    private fun descriptionHashHex(description: String): String =
+        MessageDigest.getInstance("SHA-256").digest(description.toByteArray(Charsets.UTF_8)).toHex()
+
+    /**
+     * Parse the receipt's embedded kind-9734 zap request with NIP-57 client-side
+     * validation. A receipt is an ordinary relay event anyone can author; without
+     * these checks the embedded request's pubkey would present as the zap sender —
+     * the same spoof class as unauthenticated NIP-17 rumor authors.
+     *
+     * Requires: signature-valid request, request addressing the same recipient
+     * as the receipt, matching e-tag presence (a genuine receipt mirrors the
+     * request's tags, so a request without one cannot be redirected onto an
+     * event by adding `e` to the receipt), a `P` sender mirror matching the
+     * request author when present, and an invoice whose description hash
+     * commits to the exact request string in the receipt's description tag.
+     */
+    /**
+     * [requireDescriptionHash] selects the validation tier (see the PR
+     * discussion): `true` enforces the BOLT-11 description-hash commitment
+     * (NIP-69 poll votes, anything weight-bearing); `false` keeps every
+     * cryptographic and tag check but treats a missing/mismatched `h` field
+     * as non-fatal, so legitimate zaps from LNURL providers that do not
+     * publish the commitment stay visible in informational feeds.
+     */
+    fun parseValidatedZapRequest(
+        receipt: NostrEvent,
+        expectedAuthor: String,
+        requireDescriptionHash: Boolean = true
+    ): NostrEvent? {
+        if (receipt.kind != KIND_ZAP_RECEIPT) return null
+        // Fail closed on the receipt itself. The relay pool authenticates every
+        // event it emits, but this function is public and must not depend on
+        // callers having used that path (standalone relay connections exist).
+        if (!receipt.verifySignature()) return null
+        // NIP-57: the receipt must be signed by the recipient's wallet service
+        // key (the LNURL-pay nostrPubkey). Without this binding an attacker can
+        // mint receipts around their own request + invoice and inflate zap
+        // counts and sats-weighted poll votes. Callers resolve it from the
+        // recipient's lud16 and cache; null means unresolvable and fail-closed.
+        // Required and fail-closed: a caller that could not resolve the
+        // recipient's wallet key must not reach this point with a blank value.
+        if (expectedAuthor.isBlank() || !receipt.pubkey.equals(expectedAuthor, ignoreCase = true)) {
+            return null
+        }
+        val description = tagValue(receipt, "description") ?: return null
+        val request = parseEmbeddedRequest(receipt) ?: return null
+        if (request.kind != KIND_ZAP_REQUEST) return null
+        if (!request.verifySignature()) return null
+        if (receiptInconsistency(receipt, request, description, requireDescriptionHash) != null) return null
+        return request
+    }
+
+    /**
+     * Signature-independent consistency checks between a receipt and its embedded
+     * request. Split from [parseValidatedZapRequest] so the tag/invoice logic is
+     * testable on the JVM classpath, where secp256k1 JNI is unavailable.
+     * Returns null when consistent, or the reason for rejection.
+     */
+    internal fun receiptInconsistency(
+        receipt: NostrEvent,
+        request: NostrEvent,
+        description: String,
+        requireDescriptionHash: Boolean = true
+    ): String? {
+        // Ambiguous security-relevant tags: reject rather than let first-match
+        // lookup pick a winner that other consumers might not agree on.
+        for (name in listOf("p", "e", "a", "description", "bolt11")) {
+            if (tagCount(receipt, name) > 1) return "duplicate $name tag in receipt"
+        }
+        for (name in listOf("p", "e", "a", "amount")) {
+            if (tagCount(request, name) > 1) return "duplicate $name tag in request"
+        }
+        val requestP = tagValue(request, "p") ?: return "request has no p tag"
+        val receiptP = tagValue(receipt, "p") ?: return "receipt has no p tag"
+        if (!requestP.equals(receiptP, ignoreCase = true)) return "p tag mismatch"
+        val requestE = tagValue(request, "e")
+        val receiptE = tagValue(receipt, "e")
+        if ((requestE == null) != (receiptE == null)) {
+            // Genuine receipts mirror the request's tags; asymmetric presence
+            // means the receipt retargeted a request into another zap context.
+            return "e tag presence mismatch"
+        }
+        if (requestE != null && !requestE.equals(receiptE, ignoreCase = true)) {
+            return "e tag mismatch"
+        }
+        val requestA = tagValue(request, "a")
+        val receiptA = tagValue(receipt, "a")
+        if ((requestA == null) != (receiptA == null)) {
+            return "a tag presence mismatch"
+        }
+        if (requestA != null && !requestA.equals(receiptA, ignoreCase = true)) {
+            return "a tag mismatch"
+        }
+        val receiptSenderMirror = tagValue(receipt, "P")
+        if (receiptSenderMirror != null && !receiptSenderMirror.equals(request.pubkey, ignoreCase = true)) {
+            return "P tag mismatch"
+        }
+        val bolt11 = tagValue(receipt, "bolt11") ?: return "receipt has no bolt11"
+        val invoice = Bolt11.decode(bolt11) ?: return "bolt11 undecodable"
+        val invoiceHash = invoice.descriptionHash
+        if (invoiceHash != null) {
+            // A present-but-mismatched h tag is rejected on BOTH tiers: the
+            // invoice was issued for a different description than the one
+            // attached, so forgiving it enables receipt-replay description
+            // substitution. Only a MISSING h tag is forgiven on the display
+            // tier (non-compliant LNURL providers).
+            if (!invoiceHash.equals(descriptionHashHex(description), ignoreCase = true)) {
+                return "description hash mismatch"
+            }
+        } else if (requireDescriptionHash) {
+            return "invoice has no description hash"
+        }
+        return null
+    }
 
     fun getZappedEventId(event: NostrEvent): String? {
         return event.tags.firstOrNull { it.size >= 2 && it[0] == "e" }?.get(1)
@@ -29,57 +200,50 @@ object Nip57 {
 
     /**
      * Extract the zapper's pubkey from a kind 9735 zap receipt.
-     * The description tag contains the serialized kind 9734 zap request whose pubkey is the sender.
+     * Returns null unless the receipt passes [parseValidatedZapRequest].
      */
-    fun getZapperPubkey(event: NostrEvent): String? {
-        val description = event.tags.firstOrNull { it.size >= 2 && it[0] == "description" }?.get(1)
-            ?: return null
-        return try {
-            val zapRequest = NostrEvent.fromJson(description)
-            zapRequest.pubkey.takeIf { it.isNotBlank() }
-        } catch (_: Exception) {
-            null
-        }
+    fun getZapperPubkey(
+        event: NostrEvent,
+        expectedAuthor: String,
+        requireDescriptionHash: Boolean = true
+    ): String? {
+        val zapRequest = parseValidatedZapRequest(event, expectedAuthor, requireDescriptionHash) ?: return null
+        return zapRequest.pubkey.takeIf { it.isNotBlank() }
     }
 
-    fun getZapMessage(event: NostrEvent): String {
-        val description = event.tags.firstOrNull { it.size >= 2 && it[0] == "description" }?.get(1)
-            ?: return ""
-        return try {
-            val zapRequest = NostrEvent.fromJson(description)
-            zapRequest.content
-        } catch (_: Exception) {
-            ""
-        }
+    fun getZapMessage(event: NostrEvent, expectedAuthor: String, requireDescriptionHash: Boolean = true): String {
+        return parseValidatedZapRequest(event, expectedAuthor, requireDescriptionHash)?.content ?: ""
     }
 
     /** Extract the relay URLs from the embedded 9734 zap request's "relays" tag. */
-    fun getZapRequestRelays(event: NostrEvent): List<String> {
-        val description = event.tags.firstOrNull { it.size >= 2 && it[0] == "description" }?.get(1)
-            ?: return emptyList()
-        return try {
-            val zapRequest = NostrEvent.fromJson(description)
-            zapRequest.tags.firstOrNull { it.size >= 2 && it[0] == "relays" }?.drop(1) ?: emptyList()
-        } catch (_: Exception) {
-            emptyList()
-        }
+    fun getZapRequestRelays(event: NostrEvent, expectedAuthor: String): List<String> {
+        return parseValidatedZapRequest(event, expectedAuthor)
+            ?.tags?.firstOrNull { it.size >= 2 && it[0] == "relays" }?.drop(1)
+            ?: emptyList()
     }
 
-    fun getZapAmountSats(event: NostrEvent): Long {
-        val bolt11 = event.tags.firstOrNull { it.size >= 2 && it[0] == "bolt11" }?.get(1)
-            ?: return 0
-        val match = bolt11AmountRegex.find(bolt11.lowercase()) ?: return 0
-        val amount = match.groupValues[1].toLongOrNull() ?: return 0
-        val multiplier = match.groupValues[2]
-        // Base unit is BTC, convert to sats (1 BTC = 100,000,000 sats)
-        return when (multiplier) {
-            "m" -> amount * 100_000        // milli-BTC
-            "u" -> amount * 100            // micro-BTC
-            "n" -> amount / 10             // nano-BTC (0.1 sat per nano)
-            "p" -> amount / 10_000         // pico-BTC
-            "" -> amount * 100_000_000     // whole BTC
-            else -> 0
-        }
+    /**
+     * Zap amount in sats from the receipt's bolt11, counting only validated
+     * receipts. A request that legitimately omits the amount tag leaves the
+     * invoice in charge; a present but malformed, negative or duplicated one
+     * makes the request unusable as a cross-check and rejects the amount
+     * instead of falling through.
+     */
+    fun getZapAmountSats(
+        event: NostrEvent,
+        expectedAuthor: String,
+        requireDescriptionHash: Boolean = true
+    ): Long {
+        val bolt11 = tagValue(event, "bolt11") ?: return 0
+        val amountMsat = Bolt11.decodeAmountMsat(bolt11) ?: return 0
+        val request = parseValidatedZapRequest(event, expectedAuthor, requireDescriptionHash) ?: return 0
+        val amountTags = request.tags.filter { it.size >= 2 && it[0] == "amount" }
+        if (amountTags.isEmpty()) return amountMsat / 1000
+        if (amountTags.size > 1) return 0
+        val requestedMsat = amountTags[0].getOrNull(1)?.toLongOrNull()
+        if (requestedMsat == null || requestedMsat <= 0) return 0
+        if (requestedMsat != amountMsat) return 0
+        return amountMsat / 1000
     }
 
     data class LnurlPayInfo(
@@ -96,11 +260,17 @@ object Nip57 {
                 val parts = lud16.split("@", limit = 2)
                 if (parts.size != 2) return@withContext null
                 val (user, domain) = parts
+                if (!isAllowedLnurlHost(domain)) return@withContext null
                 val url = "https://$domain/.well-known/lnurlp/$user"
                 val request = Request.Builder().url(url).build()
                 val response = httpClient.newCall(request).execute()
                 if (!response.isSuccessful) return@withContext null
+                val contentLength = response.body?.contentLength()
+                if (contentLength != null && (contentLength <= 0 || contentLength > MAX_LNURL_BODY_BYTES)) {
+                    return@withContext null
+                }
                 val body = response.body?.string() ?: return@withContext null
+                if (body.length > MAX_LNURL_BODY_BYTES) return@withContext null
                 val obj = json.parseToJsonElement(body).jsonObject
                 val allowsNostr = obj["allowsNostr"]?.jsonPrimitive?.boolean ?: false
                 LnurlPayInfo(
@@ -232,20 +402,29 @@ object Nip57 {
         )
     }
 
-    /** True if the receipt's embedded zap request carries a DIP-03 `anon` tag. */
-    fun isPrivateZap(receipt: NostrEvent): Boolean {
-        val request = parseEmbeddedRequest(receipt) ?: return false
+    /** True if the receipt's validated embedded zap request carries a DIP-03 `anon` tag. */
+    fun isPrivateZap(
+        receipt: NostrEvent,
+        expectedAuthor: String,
+        requireDescriptionHash: Boolean = true
+    ): Boolean {
+        val request = parseValidatedZapRequest(receipt, expectedAuthor, requireDescriptionHash) ?: return false
         return request.tags.any { it.size >= 2 && it[0] == ANON_TAG }
     }
 
     /**
      * Decrypt a DIP-03 private zap addressed to us (we are the recipient).
-     * Returns null unless the `anon` envelope decodes, AES-decrypts, and the
-     * inner kind 9733's Schnorr signature checks out — the anon tag is
-     * otherwise unauthenticated, so signature verification is mandatory.
+     * The embedded request must pass NIP-57 validation first; the `anon` envelope
+     * is otherwise unauthenticated, so the inner kind-9733 signature verification
+     * in [decryptAnonTag] is mandatory.
      */
-    fun decryptPrivateZap(receipt: NostrEvent, myPrivkey: ByteArray): DecryptedPrivateZap? {
-        val request = parseEmbeddedRequest(receipt) ?: return null
+    fun decryptPrivateZap(
+        receipt: NostrEvent,
+        myPrivkey: ByteArray,
+        expectedAuthor: String,
+        requireDescriptionHash: Boolean = true
+    ): DecryptedPrivateZap? {
+        val request = parseValidatedZapRequest(receipt, expectedAuthor, requireDescriptionHash) ?: return null
         val anon = request.tags.firstOrNull { it.size >= 2 && it[0] == ANON_TAG }?.get(1)
             ?: return null
         val shared = runCatching {
@@ -264,9 +443,11 @@ object Nip57 {
     fun decryptOwnOutgoingPrivateZap(
         receipt: NostrEvent,
         myPrivkey: ByteArray,
-        target: NostrEvent
+        target: NostrEvent,
+        expectedAuthor: String,
+        requireDescriptionHash: Boolean = true
     ): DecryptedPrivateZap? {
-        val request = parseEmbeddedRequest(receipt) ?: return null
+        val request = parseValidatedZapRequest(receipt, expectedAuthor, requireDescriptionHash) ?: return null
         val anon = request.tags.firstOrNull { it.size >= 2 && it[0] == ANON_TAG }?.get(1)
             ?: return null
         val ephPriv = deriveEphemeralPrivkey(myPrivkey, target.id, target.created_at)
@@ -299,6 +480,97 @@ object Nip57 {
         val description = receipt.tags.firstOrNull { it.size >= 2 && it[0] == "description" }?.get(1)
             ?: return null
         return runCatching { NostrEvent.fromJson(description) }.getOrNull()
+    }
+
+    /**
+     * Classify whether a lightning address supports Nostr zaps, distinguishing
+     * explicit non-support (a well-formed LNURL-pay document without
+     * \`allowsNostr\`/\`nostrPubkey\`, or a deterministic 404) from transient
+     * failures (network, timeouts, 5xx) so callers can negative-cache the
+     * former while retrying the latter.
+     */
+    sealed interface LnurlZapSupport {
+        /** LNURL-pay enables Nostr zaps and carries the wallet service key. */
+        data class Supported(val nostrPubkey: String) : LnurlZapSupport
+        /** A well-formed LNURL-pay document that does not enable Nostr zaps. */
+        data object NotSupported : LnurlZapSupport
+        /** Network, HTTP or server failure — retried on a later receipt. */
+        data object TransientError : LnurlZapSupport
+    }
+
+    fun resolveLnurlZapSupport(lud16: String, httpClient: OkHttpClient): LnurlZapSupport {
+        return try {
+            val parts = lud16.split("@", limit = 2)
+            if (parts.size != 2) return LnurlZapSupport.NotSupported
+            val (user, domain) = parts
+            if (!isAllowedLnurlHost(domain)) return LnurlZapSupport.NotSupported
+            val request = Request.Builder()
+                .url("https://$domain/.well-known/lnurlp/$user")
+                .build()
+            // Bound the response: LNURL-pay documents are tiny JSON; a hostile
+            // endpoint streaming unbounded bytes pins the reader thread.
+            httpClient.newCall(request).execute().use { response ->
+                if (response.code >= 500 || response.code == 429) return LnurlZapSupport.TransientError
+                if (!response.isSuccessful) return LnurlZapSupport.NotSupported
+                val contentLength = response.body?.contentLength()
+                if (contentLength != null && (contentLength <= 0 || contentLength > MAX_LNURL_BODY_BYTES)) {
+                    return LnurlZapSupport.NotSupported
+                }
+                val body = response.body?.string() ?: return LnurlZapSupport.TransientError
+                if (body.length > MAX_LNURL_BODY_BYTES) return LnurlZapSupport.NotSupported
+                val obj = try {
+                    json.parseToJsonElement(body).jsonObject
+                } catch (_: Exception) {
+                    return LnurlZapSupport.NotSupported
+                }
+                val allowsNostr = obj["allowsNostr"]?.jsonPrimitive?.boolean ?: false
+                val nostrPubkey = obj["nostrPubkey"]?.jsonPrimitive?.content
+                if (!allowsNostr || nostrPubkey.isNullOrBlank()) return LnurlZapSupport.NotSupported
+                LnurlZapSupport.Supported(nostrPubkey)
+            }
+        } catch (_: Exception) {
+            LnurlZapSupport.TransientError
+        }
+    }
+
+    /**
+     * Verify an LNURL callback invoice before the wallet pays it. The callback
+     * response is chosen by the provider, so the invoice must decode with a
+     * valid bech32 checksum, carry a payment hash, be msat-exact against the
+     * requested amount, be timestamp/expiry sane within a clock-skew grace
+     * window — and, when the zap request JSON is provided, its description
+     * hash must commit to that request whenever the h tag is present (a
+     * missing h tag is tolerated per the tiered policy; a mismatched one
+     * never is).
+     */
+    fun isInvoiceAcceptable(
+        bolt11: String,
+        amountMsats: Long,
+        sentZapRequestJson: String? = null,
+        requireDescriptionHash: Boolean = true,
+        nowEpochSeconds: Long = System.currentTimeMillis() / 1000,
+        clockSkewGraceSeconds: Long = 60
+    ): Boolean {
+        if (amountMsats <= 0) return false
+        val decoded = Bolt11.decode(bolt11) ?: return false
+        val paymentHash = decoded.paymentHash ?: return false
+        if (paymentHash.isBlank()) return false
+        val invoiceMsat = Bolt11.decodeAmountMsat(bolt11) ?: return false
+        if (invoiceMsat != amountMsats) return false
+        val timestamp = decoded.timestamp
+        if (timestamp <= 0 || timestamp > nowEpochSeconds + clockSkewGraceSeconds) return false
+        val expiresAt = runCatching { Math.addExact(timestamp, decoded.expiry) }.getOrNull() ?: return false
+        if (nowEpochSeconds - clockSkewGraceSeconds >= expiresAt) return false
+        val expectedHash = sentZapRequestJson?.let { descriptionHashHex(it) }
+        if (expectedHash != null) {
+            val invoiceHash = decoded.descriptionHash
+            if (invoiceHash == null) {
+                if (requireDescriptionHash) return false
+            } else if (!invoiceHash.equals(expectedHash, ignoreCase = true)) {
+                return false
+            }
+        }
+        return true
     }
 
     suspend fun fetchSimpleInvoice(

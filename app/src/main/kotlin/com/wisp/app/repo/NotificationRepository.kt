@@ -666,7 +666,7 @@ class NotificationRepository(
     }
 
     private fun mergeZap(event: NostrEvent): Boolean {
-        val amount = Nip57.getZapAmountSats(event)
+        val amount = eventRepo?.zapAmountSats(event) ?: 0
         if (amount <= 0) return false
         val (zapperPubkey, message) = eventRepo?.resolveZapSender(event) ?: (null to "")
         if (zapperPubkey == null) return false
@@ -679,7 +679,7 @@ class NotificationRepository(
         // the same 9735 event to be re-processed on periodic refresh cycles.
         val zapEventIds = zapEventIdsByGroup.getOrPut(key) { mutableSetOf() }
         if (!zapEventIds.add(event.id)) return false
-        val isPrivate = Nip57.isPrivateZap(event)
+        val isPrivate = eventRepo?.zapIsPrivate(event) ?: false
         val entry = ZapEntry(pubkey = zapperPubkey, sats = amount, message = message, createdAt = event.created_at, receiptEventId = event.id, isPrivate = isPrivate)
         val emoji = NotificationGroup.ZAP_EMOJI
         val existing = groupMap[key] as? NotificationGroup.ReactionGroup
@@ -714,7 +714,7 @@ class NotificationRepository(
         // Check if this zap is a vote on a kind 6969 zap poll
         val referencedEvent = eventRepo?.getEvent(referencedId)
         val zapPollOptionIndex = if (referencedEvent?.kind == Nip69.KIND_ZAP_POLL) {
-            Nip69.getZapPollOptionFromZapReceipt(event)
+            eventRepo?.zapPollOption(event)
         } else null
         val flatZapId = "zap:${event.id}"
         if (flatItemIds.add(flatZapId)) {
@@ -736,7 +736,7 @@ class NotificationRepository(
     }
 
     private fun mergeProfileZap(event: NostrEvent, zapperPubkey: String, amount: Long): Boolean {
-        val message = eventRepo?.resolveZapSender(event)?.second ?: Nip57.getZapMessage(event)
+        val message = eventRepo?.resolveZapSender(event)?.second ?: ""
         val recipientPubkey = event.tags.firstOrNull { it.size >= 2 && it[0] == "p" }?.get(1) ?: return false
         val flatZapId = "profilezap:${event.id}"
         if (flatItemIds.add(flatZapId)) {

@@ -124,17 +124,21 @@ class ZapSender(
         val zapRequest = when {
             isAnonymous -> {
                 val throwaway = Keys.generate()
-                Nip57.buildZapRequest(
-                    senderPrivkey = throwaway.privkey,
-                    senderPubkey = throwaway.pubkey,
-                    recipientPubkey = recipientPubkey,
-                    eventId = eventId,
-                    amountMsats = amountMsats,
-                    relayUrls = relayUrls,
-                    lnurl = recipientLud16,
-                    message = message,
-                    extraTags = allExtraTags
-                )
+                try {
+                    Nip57.buildZapRequest(
+                        senderPrivkey = throwaway.privkey,
+                        senderPubkey = throwaway.pubkey,
+                        recipientPubkey = recipientPubkey,
+                        eventId = eventId,
+                        amountMsats = amountMsats,
+                        relayUrls = relayUrls,
+                        lnurl = recipientLud16,
+                        message = message,
+                        extraTags = allExtraTags
+                    )
+                } finally {
+                    throwaway.wipe()
+                }
             }
             isPrivate -> {
                 // DIP-03 requires a concrete note target (id + created_at) to
@@ -193,10 +197,29 @@ class ZapSender(
         val bolt11 = Nip57.fetchInvoice(payInfo.callback, amountMsats, zapRequest, httpClient)
             ?: return Result.failure(Exception("Could not get invoice from lightning provider"))
 
-        // 4. Record zap recipient for transaction history display
+        // 4. Verify the invoice is the one this zap asked for. The callback
+        // response is chosen by the provider, so its amount must match the
+        // request and its description-hash commitment must bind to the sent
+        // zap request before the wallet commits funds to it.
+        // requireDescriptionHash = false mirrors the receive side: providers
+        // that omit the h tag (non-compliant LNURL) still get paid, while a
+        // PRESENT-but-mismatched h is always rejected (see Nip57).
+        if (!Nip57.isInvoiceAcceptable(
+                bolt11 = bolt11,
+                amountMsats = amountMsats,
+                sentZapRequestJson = zapRequest.toJson(),
+                requireDescriptionHash = false
+            )
+        ) {
+            return Result.failure(
+                Exception("The returned invoice does not match the requested zap (amount/expiry)")
+            )
+        }
+
+        // 5. Record zap recipient for transaction history display
         recordZap(bolt11, recipientPubkey)
 
-        // 5. Pay via wallet
+        // 6. Pay via wallet
         val payResult = getWalletProvider().payInvoice(bolt11)
         return payResult.map { }
     }
