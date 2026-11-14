@@ -8,6 +8,7 @@ import com.wisp.app.nostr.Nip22
 import com.wisp.app.nostr.Nip30
 import com.wisp.app.nostr.Bolt11
 import com.wisp.app.nostr.Nip57
+import com.wisp.app.relay.HttpClientFactory
 import com.wisp.app.nostr.Nip69
 import com.wisp.app.nostr.Nip88
 import com.wisp.app.nostr.NostrEvent
@@ -19,6 +20,10 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -650,14 +655,14 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                         ?: mutableSetOf<String>().also { countedZapIds.put(targetId, it) }
                 }
                 synchronized(dedupSet) { if (!dedupSet.add(event.id)) return }
-                val sats = Nip57.getZapAmountSats(event)
+                val sats = zapAmountSats(event)
                 if (sats > 0) {
                     // Skip if this is our own zap and we already added it optimistically
                     val isOwnOptimistic = zapperPk == currentUserPubkey && optimisticZaps.remove(targetId)
                     if (!isOwnOptimistic) {
                         addZapSats(targetId, sats)
                         if (zapperPk != null) {
-                            val isPrivateZap = Nip57.isPrivateZap(event)
+                            val isPrivateZap = zapIsPrivate(event)
                             val zaps = zapDetails.get(targetId)
                                 ?: java.util.Collections.synchronizedList(mutableListOf<ZapDetail>()).also {
                                     zapDetails.put(targetId, it)
@@ -813,7 +818,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     }
 
     private fun addZapPollVote(zapReceipt: NostrEvent, pollId: String, sats: Long, zapperPubkey: String?) {
-        val optionIndex = Nip69.getZapPollOptionFromZapReceipt(zapReceipt) ?: return
+        val optionIndex = zapPollOption(zapReceipt) ?: return
         val pubkey = zapperPubkey ?: return
 
         // Check if poll has closed
@@ -1078,17 +1083,142 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
      * embedded request is missing/malformed.
      */
     fun resolveZapSender(receipt: NostrEvent): Pair<String?, String> {
+        val expected = expectedZapAuthor(receipt) ?: return null to "" // fail closed
         val priv = keyRepo?.getKeypair()?.privkey
         if (priv != null) {
-            Nip57.decryptPrivateZap(receipt, priv)?.let { return it.senderPubkey to it.message }
+            Nip57.decryptPrivateZap(receipt, priv, expected, requireDescriptionHash = false)
+                ?.let { return it.senderPubkey to it.message }
             val targetId = receipt.tags.firstOrNull { it.size >= 2 && it[0] == "e" }?.get(1)
             val target = targetId?.let { getEvent(it) }
             if (target != null) {
-                Nip57.decryptOwnOutgoingPrivateZap(receipt, priv, target)
+                Nip57.decryptOwnOutgoingPrivateZap(receipt, priv, target, expected, requireDescriptionHash = false)
                     ?.let { return it.senderPubkey to it.message }
             }
         }
-        return Nip57.getZapperPubkey(receipt) to Nip57.getZapMessage(receipt)
+        return Nip57.getZapperPubkey(receipt, expected, requireDescriptionHash = false) to
+            Nip57.getZapMessage(receipt, expected, requireDescriptionHash = false)
+    }
+
+    // ─── NIP-57 receipt author binding ─────────────────────────────────────
+    // A receipt is only trustworthy when signed by the zapped user's wallet
+    // service key (the LNURL-pay nostrPubkey). Otherwise anyone can mint
+    // receipts around their own request + invoice and inflate zap counts and
+    // sats-weighted poll votes. Resolved from the recipient's profile lud16,
+    // cached per recipient and per receipt; unresolvable receipts are dropped
+    // (fail closed).
+
+    private val zapOriginCache = ConcurrentHashMap<String, String>()
+    /** Recipients whose LNURL document explicitly does not support Nostr zaps. */
+    private val zapOriginNotSupported = ConcurrentHashMap.newKeySet<String>()
+    /** In-flight LNURL resolutions: a burst of receipts for one note must produce one lookup. */
+    private val zapOriginInFlight = ConcurrentHashMap<String, Deferred<String?>>()
+    private val receiptExpectedAuthor = java.util.Collections.synchronizedMap(
+        object : LinkedHashMap<String, String>(64, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>): Boolean =
+                size > 2048
+        }
+    )
+    private val zapOriginScope by lazy { CoroutineScope(SupervisorJob() + Dispatchers.IO) }
+    private val zapHttpClient by lazy { HttpClientFactory.getGeneralClient() }
+
+    private fun receiptRecipient(receipt: NostrEvent): String? =
+        receipt.tags.firstOrNull { it.size >= 2 && it[0] == "p" }?.get(1)?.lowercase()
+
+    /**
+     * Composite cache key: the profile's CURRENT lightning address is part of
+     * the key, so updating kind-0 metadata mid-session (adding or migrating a
+     * lud16/lud06) automatically bypasses stale entries without an app
+     * restart. A missing profile sorts under the empty-address key and is
+     * retried on later receipts (never negatively cached).
+     */
+    private fun zapOriginCacheKey(recipient: String): String =
+        "$recipient|${getProfileData(recipient)?.lud16 ?: ""}" 
+
+    /**
+     * LNURL nostrPubkey expected as the receipt author, or null (fail closed).
+     * Caches are keyed by (recipient, current lightning address) so a
+     * mid-session kind-0 profile update — adding or migrating a lightning
+     * address — bypasses stale negative and positive entries automatically.
+     */
+    fun expectedZapAuthor(receipt: NostrEvent): String? {
+        val recipient = receiptRecipient(receipt) ?: return null
+        synchronized(receiptExpectedAuthor) { receiptExpectedAuthor[receipt.id]?.let { return it } }
+        val cacheKey = zapOriginCacheKey(recipient)
+        zapOriginCache[cacheKey]?.let {
+            synchronized(receiptExpectedAuthor) { receiptExpectedAuthor[receipt.id] = it }
+            return it
+        }
+        if (cacheKey in zapOriginNotSupported) return null
+        // Coalesce in-flight resolutions so a burst of receipts for one note
+        // produces a single LNURL lookup, then share the outcome.
+        val deferred = zapOriginInFlight.computeIfAbsent(cacheKey) {
+            zapOriginScope.async { expectedZapOrigin(recipient, cacheKey) }
+        }
+        deferred.invokeOnCompletion { zapOriginInFlight.remove(cacheKey, deferred) }
+        // Bounded wait on the event thread (review: <=5s): the lookup itself
+        // runs on the IO resolver scope, so a slow provider delays this
+        // receipt's processing by at most the cap and the outcome is cached
+        // (supported, or explicitly-unsupported on the composite key);
+        // transient failures stay retried on the next receipt.
+        return runBlocking {
+            withTimeoutOrNull(5_000) {
+                try {
+                    deferred.await()
+                } catch (_: Exception) {
+                    null
+                }
+            } ?: null
+        }
+    }
+
+    /**
+     * Classification per LNURL document: explicit non-support is negatively
+     * cached (receipts dropped for the session); transient network/HTTP
+     * failures are not cached, so a later receipt retries the lookup.
+     */
+    private suspend fun expectedZapOrigin(recipient: String, cacheKey: String): String? {
+        val profile = getProfileData(recipient)
+        // Profile not loaded yet — retry on a later receipt rather than
+        // permanently treating the recipient as unsupported.
+        if (profile == null) return null
+        val lud16 = profile.lud16
+        if (lud16.isNullOrBlank()) {
+            zapOriginNotSupported.add(cacheKey)
+            return null
+        }
+        return when (val support = Nip57.resolveLnurlZapSupport(lud16, zapHttpClient)) {
+            is Nip57.LnurlZapSupport.Supported -> {
+                zapOriginCache[cacheKey] = support.nostrPubkey
+                support.nostrPubkey
+            }
+            Nip57.LnurlZapSupport.NotSupported -> {
+                zapOriginNotSupported.add(cacheKey)
+                null
+            }
+            Nip57.LnurlZapSupport.TransientError -> null
+        }
+    }
+
+    /**
+     * Display-tier wrappers: every check binds except the BOLT-11 description
+     * hash, which stays non-fatal for informational feeds (see the tiered
+     * validation discussion on PR #678). Poll votes use the strict tier via
+     * [zapPollOption].
+     */
+    fun zapAmountSats(receipt: NostrEvent): Long {
+        val expected = expectedZapAuthor(receipt) ?: return 0 // fail closed
+        return Nip57.getZapAmountSats(receipt, expected, requireDescriptionHash = false)
+    }
+
+    fun zapIsPrivate(receipt: NostrEvent): Boolean {
+        val expected = expectedZapAuthor(receipt) ?: return false // fail closed
+        return Nip57.isPrivateZap(receipt, expected, requireDescriptionHash = false)
+    }
+
+    /** Strict tier: sats-weighted poll votes require the description-hash commitment. */
+    fun zapPollOption(receipt: NostrEvent): Int? {
+        val expected = expectedZapAuthor(receipt) ?: return null // fail closed
+        return Nip69.getZapPollOptionFromZapReceipt(receipt, expected)
     }
 
     /**
