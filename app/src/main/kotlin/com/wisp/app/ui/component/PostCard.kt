@@ -219,12 +219,17 @@ fun PostCard(
     // content keeps its 16dp horizontal padding. Tap-to-open lives on the
     // content Column so the (tiny) divider area isn't tappable.
     // Keep the gesture coroutine alive while dispatching to the latest handler.
-    val currentNoteClick by rememberUpdatedState(onNoteClick)
+    // An article item opens the article, not a thread
+    val articleClick = noteActions?.onArticleClick
+    val noteClick = if (event.kind == 30023 && articleClick != null) {
+        { articleClick(30023, event.pubkey, event.tags.firstOrNull { it.size >= 2 && it[0] == "d" }?.get(1) ?: "") }
+    } else onNoteClick
+    val currentNoteClick by rememberUpdatedState(noteClick)
     Column(modifier = modifier.fillMaxWidth()) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .then(if (onNoteClick != null) Modifier.pointerInput(Unit) {
+            .then(if (noteClick != null) Modifier.pointerInput(Unit) {
                 awaitEachGesture {
                     // Observe DOWN without consuming so children can still process it
                     val downEvent = awaitPointerEvent(PointerEventPass.Initial)
@@ -613,7 +618,13 @@ fun PostCard(
                 contentHasMedia(event.content, imetaMap)
             }
 
-            if (hasMedia) {
+            if (event.kind == 30023) {
+                ArticlePreviewCard(
+                    event = event,
+                    onArticleClick = articleClick,
+                    showAuthor = false
+                )
+            } else if (hasMedia) {
                 RichContent(
                     content = event.content,
                     style = MaterialTheme.typography.bodyLarge,

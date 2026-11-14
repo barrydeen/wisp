@@ -1218,25 +1218,6 @@ fun FeedScreen(
                                 val itemOnZap = { zapTargetEvent = event }
                                 val itemOnAddToList = { onAddToList(event.id) }
                                 val itemOnOpenEmojiLibrary = { showEmojiLibrary = true }
-                                if (event.kind == 30023) {
-                                    FeedArticleItem(
-                                        event = event,
-                                        viewModel = viewModel,
-                                        userPubkey = userPubkey,
-                                        isZapAnimating = event.id in zapAnimatingIds,
-                                        isZapInProgress = event.id in zapInProgress,
-                                        isInList = event.id in listedIds,
-                                        onArticleClick = onArticleClick,
-                                        onProfileClick = onProfileClick,
-                                        onReply = itemOnReply,
-                                        onReact = itemOnReact,
-                                        onRepost = itemOnRepost,
-                                        onQuote = itemOnQuote,
-                                        onZap = itemOnZap,
-                                        onAddToList = itemOnAddToList,
-                                        onOpenEmojiLibrary = itemOnOpenEmojiLibrary
-                                    )
-                                } else {
                                 FeedItem(
                                     event = event,
                                     viewModel = viewModel,
@@ -1267,7 +1248,6 @@ fun FeedScreen(
                                     onPollVote = { optionIds -> viewModel.publishPollVote(event.id, optionIds) },
                                     onZapPollVote = { optionIndex -> zapPollTarget = Pair(event, optionIndex) }
                                 )
-                                }
                             }
                             if (initialLoadDone) {
                                 item(key = "load-more", contentType = "loader") {
@@ -1574,172 +1554,6 @@ private fun FeedItem(
             onTranslate = onTranslateCb,
             autoTranslate = viewModel.interfacePrefs.isAutoTranslate()
         )
-    }
-}
-
-@Composable
-private fun FeedArticleItem(
-    event: NostrEvent,
-    viewModel: FeedViewModel,
-    userPubkey: String?,
-    isZapAnimating: Boolean,
-    isZapInProgress: Boolean = false,
-    isInList: Boolean = false,
-    onArticleClick: ((Int, String, String) -> Unit)?,
-    onProfileClick: (String) -> Unit,
-    onReply: () -> Unit,
-    onReact: (String) -> Unit,
-    onRepost: () -> Unit,
-    onQuote: () -> Unit,
-    onZap: () -> Unit,
-    onAddToList: () -> Unit = {},
-    onOpenEmojiLibrary: (() -> Unit)? = null
-) {
-    // Per-item invalidation — see FeedItem for the rationale.
-    val engagement by remember(viewModel, event.id) {
-        viewModel.eventRepo.engagementVersion(event.id)
-    }.collectAsState(initial = 0)
-    val profileVersion by remember(viewModel, event.pubkey) {
-        viewModel.eventRepo.profileVersionFor(event.pubkey)
-    }.collectAsState(initial = 0)
-    val title = remember(event) { event.tags.firstOrNull { it.size >= 2 && it[0] == "title" }?.get(1) }
-    val summary = remember(event) { event.tags.firstOrNull { it.size >= 2 && it[0] == "summary" }?.get(1) }
-    val image = remember(event) { event.tags.firstOrNull { it.size >= 2 && it[0] == "image" }?.get(1) }
-    val dTag = remember(event) { event.tags.firstOrNull { it.size >= 2 && it[0] == "d" }?.get(1) ?: "" }
-    val publishedAt = remember(event) {
-        event.tags.firstOrNull { it.size >= 2 && it[0] == "published_at" }?.get(1)?.toLongOrNull()
-    }
-    val profileData = remember(viewModel, profileVersion, event.pubkey) {
-        viewModel.eventRepo.getProfileData(event.pubkey)
-    }
-    val likeCount = remember(viewModel, engagement, event.id) { viewModel.eventRepo.getReactionCount(event.id) }
-    val replyCount = remember(viewModel, engagement, event.id) { viewModel.eventRepo.getReplyCount(event.id) }
-    val zapSats = remember(viewModel, engagement, event.id) { viewModel.eventRepo.getZapSats(event.id) }
-    val userEmojis = remember(viewModel, engagement, event.id, userPubkey) {
-        userPubkey?.let { viewModel.eventRepo.getUserReactionEmojis(event.id, it) } ?: emptySet()
-    }
-    val repostCount = remember(viewModel, engagement, event.id) { viewModel.eventRepo.getRepostCount(event.id) }
-    val hasUserReposted = remember(viewModel, engagement, event.id, userPubkey) { viewModel.eventRepo.hasUserReposted(event.id) }
-    val hasUserZapped = remember(viewModel, engagement, event.id, userPubkey) { viewModel.eventRepo.hasUserZapped(event.id) }
-    val resolvedEmojis by viewModel.customEmojiRepo.resolvedEmojis.collectAsState()
-    val unicodeEmojis by viewModel.customEmojiRepo.sortedUnicodeEmojis.collectAsState()
-    val eventReactionEmojiUrls = remember(viewModel, engagement, event.id) {
-        viewModel.eventRepo.getReactionEmojiUrls(event.id)
-    }
-
-    val displayName = profileData?.displayString
-        ?: event.pubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
-
-    Surface(
-        shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.surface,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 6.dp)
-            .then(
-                if (onArticleClick != null) Modifier.clickable { onArticleClick(30023, event.pubkey, dTag) }
-                else Modifier
-            )
-    ) {
-        Column {
-            if (image != null) {
-                coil3.compose.AsyncImage(
-                    model = image,
-                    contentDescription = title,
-                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 180.dp)
-                        .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
-                )
-            }
-            Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-                // Author row
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                ) {
-                    ProfilePicture(
-                        url = profileData?.picture,
-                        size = 28,
-                        modifier = Modifier.clickable { onProfileClick(event.pubkey) }
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = displayName,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        modifier = Modifier
-                            .weight(1f)
-                            .clickable { onProfileClick(event.pubkey) }
-                    )
-                    val timestamp = publishedAt ?: event.created_at
-                    Text(
-                        text = formatFeedArticleTimestamp(timestamp),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                    )
-                }
-                // Article badge + title
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Surface(
-                        shape = RoundedCornerShape(4.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer,
-                        modifier = Modifier.padding(end = 8.dp)
-                    ) {
-                        Text(
-                            text = "ARTICLE",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                    }
-                    Text(
-                        text = title ?: "Untitled Article",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 2,
-                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-                if (!summary.isNullOrBlank()) {
-                    Text(
-                        text = summary,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 3,
-                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
-                }
-            }
-            // Action bar
-            com.wisp.app.ui.component.ActionBar(
-                onReply = onReply,
-                onReact = onReact,
-                userReactionEmojis = userEmojis,
-                onRepost = onRepost,
-                onQuote = onQuote,
-                hasUserReposted = hasUserReposted,
-                onZap = onZap,
-                hasUserZapped = hasUserZapped,
-                onAddToList = onAddToList,
-                isInList = isInList,
-                likeCount = likeCount,
-                repostCount = repostCount,
-                replyCount = replyCount,
-                zapSats = zapSats,
-                isZapAnimating = isZapAnimating,
-                isZapInProgress = isZapInProgress,
-                reactionEmojiUrls = eventReactionEmojiUrls,
-                resolvedEmojis = resolvedEmojis,
-                unicodeEmojis = unicodeEmojis,
-                onOpenEmojiLibrary = onOpenEmojiLibrary,
-                modifier = Modifier.padding(horizontal = 4.dp)
-            )
-        }
     }
 }
 
@@ -3366,15 +3180,3 @@ fun BroadcastStatusBar(
     }
 }
 
-private fun formatFeedArticleTimestamp(epoch: Long): String {
-    val now = System.currentTimeMillis() / 1000
-    val diff = now - epoch
-    return when {
-        diff < 60 -> "now"
-        diff < 3600 -> "${diff / 60}m"
-        diff < 86400 -> "${diff / 3600}h"
-        diff < 604800 -> "${diff / 86400}d"
-        else -> java.text.SimpleDateFormat("MMM d", java.util.Locale.US)
-            .format(java.util.Date(epoch * 1000))
-    }
-}
