@@ -1155,12 +1155,19 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
             zapOriginScope.async { expectedZapOrigin(recipient, cacheKey) }
         }
         deferred.invokeOnCompletion { zapOriginInFlight.remove(cacheKey, deferred) }
+        // Bounded wait on the event thread (review: <=5s): the lookup itself
+        // runs on the IO resolver scope, so a slow provider delays this
+        // receipt's processing by at most the cap and the outcome is cached
+        // (supported, or explicitly-unsupported on the composite key);
+        // transient failures stay retried on the next receipt.
         return runBlocking {
-            try {
-                deferred.await()
-            } catch (_: Exception) {
-                null
-            }
+            withTimeoutOrNull(5_000) {
+                try {
+                    deferred.await()
+                } catch (_: Exception) {
+                    null
+                }
+            } ?: null
         }
     }
 
