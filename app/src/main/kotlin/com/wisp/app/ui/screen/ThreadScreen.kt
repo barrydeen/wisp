@@ -447,6 +447,7 @@ fun ThreadScreen(
                                         userZapPollVote = userZapPollVote,
                                         onZapPollVote = { idx -> onZapPollVote(event.id, idx) },
                                         showDivider = !showConnector,
+                                        startExpanded = event.id == viewModel.openedEventId,
                                         modifier = Modifier.padding(start = indentPadding)
                                     )
                                 }
