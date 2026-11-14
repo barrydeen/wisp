@@ -26,7 +26,7 @@ data class LiveStream(
     val lastChatAt: Long = 0L
 )
 
-class LiveStreamRepository {
+class LiveStreamRepository(private val eventRepo: EventRepository? = null) {
     private val streams = ConcurrentHashMap<String, LiveStream>()
     private val seenChatIds = ConcurrentHashMap.newKeySet<String>()
     private var currentStreamKey: String? = null
@@ -161,10 +161,11 @@ class LiveStreamRepository {
      */
     fun addStreamZap(event: NostrEvent, aTagValue: String) {
         if (!seenChatIds.add("zap-${event.id}")) return
-        val sats = Nip57.getZapAmountSats(event)
+        val sats = eventRepo?.zapAmountSats(event) ?: 0
         if (sats <= 0) return
-        val zapperPubkey = Nip57.getZapperPubkey(event) ?: return
-        val zapMessage = Nip57.getZapMessage(event)
+        val resolved = eventRepo?.resolveZapSender(event) ?: return
+        val zapperPubkey = resolved.first ?: return
+        val zapMessage = resolved.second
 
         val msg = LiveChatMessage(
             id = "zap-${event.id}",
