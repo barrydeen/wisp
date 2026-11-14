@@ -2737,6 +2737,9 @@ internal fun InlineVideoPlayerWithFullscreen(meta: MediaMeta, onFullScreen: (pos
             if (mediaSettings.videoLoop) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
     }
 
+    // Instance-unique keep-awake holder: the same clip can be composed twice.
+    val keepAwakeId = remember(url) { "video:$url:${java.util.UUID.randomUUID()}" }
+
     DisposableEffect(url, playerWanted) {
         if (!playerWanted) return@DisposableEffect onDispose {}
         val player = (PipController.reclaimPlayer(url)
@@ -2757,6 +2760,7 @@ internal fun InlineVideoPlayerWithFullscreen(meta: MediaMeta, onFullScreen: (pos
             }
             override fun onIsPlayingChanged(playing: Boolean) {
                 isPlaying = playing
+                context.updateKeepScreenOn(keepAwakeId, playing)
                 if (!playing && player.playbackState == Player.STATE_READY) {
                     userPaused = true
                 }
@@ -2778,6 +2782,7 @@ internal fun InlineVideoPlayerWithFullscreen(meta: MediaMeta, onFullScreen: (pos
             resumePositionMs = player.currentPosition
             isPlaying = false
             isBuffering = false
+            context.updateKeepScreenOn(keepAwakeId, false)
             exoPlayer = null
             // Only release if not handed off to PiP
             if (PipController.pipState.value?.url != url) {
@@ -3095,6 +3100,9 @@ private fun InlineVideoPlayer(url: String, modifier: Modifier = Modifier) {
             if (mediaSettings.videoLoop) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
     }
 
+    // Instance-unique keep-awake holder: the same clip can be composed twice.
+    val keepAwakeId = remember(url) { "video:$url:${java.util.UUID.randomUUID()}" }
+
     DisposableEffect(url, playerWanted) {
         if (!playerWanted) return@DisposableEffect onDispose {}
         val player = (PipController.reclaimPlayer(url)
@@ -3115,6 +3123,7 @@ private fun InlineVideoPlayer(url: String, modifier: Modifier = Modifier) {
             }
             override fun onIsPlayingChanged(playing: Boolean) {
                 isPlaying = playing
+                context.updateKeepScreenOn(keepAwakeId, playing)
                 if (!playing && player.playbackState == Player.STATE_READY) {
                     userPaused = true
                 }
@@ -3136,6 +3145,7 @@ private fun InlineVideoPlayer(url: String, modifier: Modifier = Modifier) {
             resumePositionMs = player.currentPosition
             isPlaying = false
             isBuffering = false
+            context.updateKeepScreenOn(keepAwakeId, false)
             exoPlayer = null
             if (PipController.pipState.value?.url != url) {
                 player.release()

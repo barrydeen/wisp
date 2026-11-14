@@ -95,6 +95,7 @@ import com.wisp.app.repo.MentionCandidate
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.ui.component.EmojiReactionPopup
 import com.wisp.app.ui.component.InlineVideoPlayerWithFullscreen
+import com.wisp.app.ui.component.updateKeepScreenOn
 import com.wisp.app.ui.component.MediaMeta
 import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.ui.component.RichContent
@@ -150,11 +151,12 @@ fun LiveStreamScreen(
     }
 
     val context = LocalContext.current
+    // Held for the whole screen via the shared holder registry, so the
+    // embedded inline player pausing cannot clear keep-awake mid-stream.
     DisposableEffect(context) {
-        val window = context.findHostActivity()?.window
-        window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        context.updateKeepScreenOn("livestream-screen", true)
         onDispose {
-            window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            context.updateKeepScreenOn("livestream-screen", false)
         }
     }
 
@@ -1098,13 +1100,4 @@ private fun formatZapSats(sats: Long): String = when {
     sats >= 1_000_000 -> "${"%.1f".format(sats / 1_000_000.0)}M"
     sats >= 1_000 -> "${"%.1f".format(sats / 1_000.0)}k"
     else -> sats.toString()
-}
-
-private fun android.content.Context.findHostActivity(): android.app.Activity? {
-    var ctx: android.content.Context = this
-    while (ctx is android.content.ContextWrapper) {
-        if (ctx is android.app.Activity) return ctx
-        ctx = ctx.baseContext
-    }
-    return null
 }
