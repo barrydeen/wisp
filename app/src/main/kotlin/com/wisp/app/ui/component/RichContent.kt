@@ -3331,13 +3331,73 @@ private suspend fun fetchOgData(url: String): OgData? = withContext(Dispatchers.
     }
 }
 
-private fun unescapeHtml(s: String): String = s
-    .replace("&amp;", "&")
-    .replace("&lt;", "<")
-    .replace("&gt;", ">")
-    .replace("&quot;", "\"")
-    .replace("&#39;", "'")
-    .replace("&#x27;", "'")
+// Decode HTML character references in OG text: common named entities plus
+// decimal (&#39;, &#039;) and hex (&#x27;) numeric references. Single
+// left-to-right pass, so escaped source text like "&amp;#039;" decodes to
+// the literal "&#039;" rather than double-decoding to "'".
+internal fun unescapeHtml(s: String): String {
+    if (!s.contains('&')) return s
+    val named = mapOf(
+        "amp" to "&", "lt" to "<", "gt" to ">", "quot" to "\"", "apos" to "'",
+        "nbsp" to "\u00A0", "mdash" to "\u2014", "ndash" to "\u2013",
+        "hellip" to "\u2026", "lsquo" to "\u2018", "rsquo" to "\u2019",
+        "ldquo" to "\u201C", "rdquo" to "\u201D",
+    )
+    val out = StringBuilder(s.length)
+    var i = 0
+    while (i < s.length) {
+        val c = s[i]
+        if (c != '&') {
+            out.append(c)
+            i++
+            continue
+        }
+        // A character reference is '&' + body + ';'; bound the body at 10
+        // characters (`&#x10FFFF;` and friends all fit well inside).
+        val limit = minOf(i + 11, s.length)
+        var body: String? = null
+        var end = i + 1
+        while (end < limit) {
+            if (s[end] == ';') {
+                body = s.substring(i + 1, end)
+                break
+            }
+            end++
+        }
+        val replacement = body?.let { decodeEntity(it, named) }
+        if (body != null && replacement != null) {
+            out.append(replacement)
+            i = end + 1
+        } else {
+            out.append(c)
+            i++
+        }
+    }
+    return out.toString()
+}
+
+private fun decodeEntity(body: String, named: Map<String, String>): String? {
+    named[body]?.let { return it }
+    if (body.startsWith("#")) {
+        val digits = body.substring(1)
+        val code = if (digits.startsWith("x") || digits.startsWith("X")) {
+            digits.substring(1).toIntOrNull(16)
+        } else {
+            digits.toIntOrNull(10)
+        }
+        // Surrogates and values above U+10FFFF can't form a Unicode scalar:
+        // toChars throws for out-of-range values, surrogates are rejected
+        // explicitly. Both pass through as literal source text.
+        if (code != null && code !in 0xD800..0xDFFF) {
+            try {
+                return Character.toChars(code).concatToString()
+            } catch (_: IllegalArgumentException) {
+                return null
+            }
+        }
+    }
+    return null
+}
 
 @Composable
 private fun LinkPreview(url: String) {
