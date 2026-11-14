@@ -794,7 +794,7 @@ class WalletViewModel(
     fun restoreSparkWallet(mnemonic: String = _restoreMnemonic.value) {
         val trimmed = mnemonic.trim().lowercase()
         Log.d("WalletBackup", "restoreSparkWallet: validating ${trimmed.split(" ").size} words")
-        val validationError = sparkRepo.validateMnemonic(trimmed)
+        val validationError = SparkRepository.validateMnemonic(trimmed)
         if (validationError != null) {
             Log.e("WalletVM", "restoreSparkWallet: validation failed: $validationError")
             _sendError.value = validationError
