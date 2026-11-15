@@ -364,7 +364,7 @@ class ArticleViewModel : ViewModel() {
     private fun parseAndEmit(event: NostrEvent) {
         _article.value = event
         _title.value = event.tags.firstOrNull { it.size >= 2 && it[0] == "title" }?.get(1)
-        _coverImage.value = event.tags.firstOrNull { it.size >= 2 && it[0] == "image" }?.get(1)
+        _coverImage.value = event.tags.firstOrNull { it.size >= 2 && it[0] == "image" }?.get(1)?.takeIf { it.isNotBlank() }
         _publishedAt.value = event.tags.firstOrNull { it.size >= 2 && it[0] == "published_at" }?.get(1)?.toLongOrNull()
         _hashtags.value = event.tags.filter { it.size >= 2 && it[0] == "t" }.map { it[1] }
         _isLoading.value = false
