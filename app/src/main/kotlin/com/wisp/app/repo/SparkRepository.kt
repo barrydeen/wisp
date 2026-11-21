@@ -56,6 +56,7 @@ import com.wisp.app.BuildConfig
 import com.wisp.app.nostr.Keys
 import java.io.File
 import java.security.SecureRandom
+import java.util.Locale
 
 class SparkRepository(
     private val context: Context,
@@ -80,6 +81,85 @@ class SparkRepository(
             } catch (_: Exception) {
                 emptyList()
             }
+        }
+        private val BIP39_WORD_INDEX: Map<String, Int> by lazy {
+            BIP39_WORDS.withIndex().associate { (i, w) -> w to i }
+        }
+
+        private val WHITESPACE_RUN_REGEX = Regex("\\s+")
+
+        /**
+         * Canonicalize a user-entered BIP-39 mnemonic: convert Unicode spaces
+         * (NBSP U+00A0, figure U+2007, narrow NBSP U+202F) inserted by PDF/notes
+         * apps to ASCII space, trim, collapse whitespace runs to single ASCII
+         * spaces, and lowercase with [Locale.US] (immune to Turkish-locale 'I').
+         */
+        fun normalizeMnemonic(mnemonic: String): String =
+            mnemonic
+                .replace('\u00A0', ' ')
+                .replace('\u2007', ' ')
+                .replace('\u202F', ' ')
+                .trim()
+                .lowercase(Locale.US)
+                .replace(WHITESPACE_RUN_REGEX, " ")
+
+        /**
+         * Validate a mnemonic: correct word count, all words in BIP39 wordlist,
+         * valid checksum.
+         *
+         * Normalization tolerates the Unicode spaces (NBSP U+00A0, figure U+2007,
+         * narrow NBSP U+202F) that PDF/notes apps insert when a phrase is
+         * copied — normalized before trim() so leading/trailing Unicode spaces
+         * never produce empty tokens. BIP-39 also specifies NFKD normalization;
+         * the ASCII English wordlist needs no more than the space collapsing
+         * done here.
+         *
+         * Companion-level (no instance state) so it is unit-testable on the
+         * JVM classpath.
+         */
+        fun validateMnemonic(mnemonic: String): String? =
+            validateMnemonic(mnemonic, BIP39_WORD_INDEX)
+
+        internal fun validateMnemonic(mnemonic: String, wordIndex: Map<String, Int>): String? {
+            val normalized = normalizeMnemonic(mnemonic)
+            if (normalized.isEmpty()) {
+                return "Recovery phrase must be 12, 15, 18, 21, or 24 words"
+            }
+            val words = normalized.split(' ')
+            if (words.size !in listOf(12, 15, 18, 21, 24)) {
+                return "Recovery phrase must be 12, 15, 18, 21, or 24 words"
+            }
+            // Fail closed: a missing or truncated wordlist must not make an
+            // invalid recovery phrase validate as correct. The SDK re-checks on
+            // connect, but the user should hear it here first.
+            if (wordIndex.size < 2048) {
+                return "Recovery phrase validation is unavailable (wordlist missing)"
+            }
+            val invalid = words.filter { it !in wordIndex }
+            if (invalid.isNotEmpty()) {
+                return "Invalid word${if (invalid.size > 1) "s" else ""}: ${invalid.take(3).joinToString(", ")}"
+            }
+            // Checksum validation
+            val indices = words.map { wordIndex.getValue(it) }
+            val bits = StringBuilder(words.size * 11)
+            for (idx in indices) {
+                bits.append(idx.toString(2).padStart(11, '0'))
+            }
+            val totalBits = words.size * 11
+            val checksumBits = totalBits / 33
+            val entropyBits = totalBits - checksumBits
+            val entropyBytes = ByteArray(entropyBits / 8)
+            for (i in entropyBytes.indices) {
+                entropyBytes[i] = Integer.parseInt(bits.substring(i * 8, i * 8 + 8), 2).toByte()
+            }
+            val hash = java.security.MessageDigest.getInstance("SHA-256").digest(entropyBytes)
+            val hashBits = (hash[0].toInt() and 0xFF).toString(2).padStart(8, '0')
+            val expectedChecksum = hashBits.substring(0, checksumBits)
+            val actualChecksum = bits.substring(entropyBits, entropyBits + checksumBits)
+            if (expectedChecksum != actualChecksum) {
+                return "Invalid recovery phrase (checksum mismatch)"
+            }
+            return null
         }
     }
 
@@ -202,40 +282,6 @@ class SparkRepository(
         return words.joinToString(" ")
     }
 
-    /** Validate a mnemonic: correct word count, all words in BIP39 wordlist, valid checksum. */
-    fun validateMnemonic(mnemonic: String): String? {
-        val words = mnemonic.trim().lowercase().split(Regex("\\s+"))
-        if (words.size !in listOf(12, 15, 18, 21, 24)) {
-            return "Recovery phrase must be 12, 15, 18, 21, or 24 words"
-        }
-        val wordlist = BIP39_WORDS
-        if (wordlist.size < 2048) return null // can't validate without wordlist
-        val invalid = words.filter { it !in wordlist }
-        if (invalid.isNotEmpty()) {
-            return "Invalid word${if (invalid.size > 1) "s" else ""}: ${invalid.take(3).joinToString(", ")}"
-        }
-        // Checksum validation
-        val indices = words.map { wordlist.indexOf(it) }
-        val bits = StringBuilder()
-        for (idx in indices) {
-            bits.append(String.format("%11s", Integer.toBinaryString(idx)).replace(' ', '0'))
-        }
-        val totalBits = words.size * 11
-        val checksumBits = totalBits / 33
-        val entropyBits = totalBits - checksumBits
-        val entropyBytes = ByteArray(entropyBits / 8)
-        for (i in entropyBytes.indices) {
-            entropyBytes[i] = Integer.parseInt(bits.substring(i * 8, i * 8 + 8), 2).toByte()
-        }
-        val hash = java.security.MessageDigest.getInstance("SHA-256").digest(entropyBytes)
-        val hashBits = String.format("%8s", Integer.toBinaryString(hash[0].toInt() and 0xFF)).replace(' ', '0')
-        val expectedChecksum = hashBits.substring(0, checksumBits)
-        val actualChecksum = bits.substring(entropyBits, entropyBits + checksumBits)
-        if (expectedChecksum != actualChecksum) {
-            return "Invalid recovery phrase (checksum mismatch)"
-        }
-        return null
-    }
 
     /**
      * Save a Spark mnemonic. Resets the seed-backup ack flag because
