@@ -792,9 +792,10 @@ class WalletViewModel(
     }
 
     fun restoreSparkWallet(mnemonic: String = _restoreMnemonic.value) {
-        val trimmed = mnemonic.trim().lowercase()
-        Log.d("WalletBackup", "restoreSparkWallet: validating ${trimmed.split(" ").size} words")
-        val validationError = SparkRepository.validateMnemonic(trimmed)
+        val normalized = SparkRepository.normalizeMnemonic(mnemonic)
+        val wordCount = if (normalized.isEmpty()) 0 else normalized.split(' ').size
+        Log.d("WalletBackup", "restoreSparkWallet: validating $wordCount words")
+        val validationError = SparkRepository.validateMnemonic(normalized)
         if (validationError != null) {
             Log.e("WalletVM", "restoreSparkWallet: validation failed: $validationError")
             _sendError.value = validationError
@@ -802,7 +803,7 @@ class WalletViewModel(
         }
         Log.d("WalletBackup", "restoreSparkWallet: saving and connecting")
         clearWalletDisplayState()
-        sparkRepo.saveMnemonic(trimmed)
+        sparkRepo.saveMnemonic(normalized)
         // Compute isDefaultWallet from the restored mnemonic rather than
         // hard-coding false — a user restoring their nsec-derived default
         // via NIP-78 should still light up the "default wallet" surface
