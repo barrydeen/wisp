@@ -35,6 +35,11 @@ class SparkMnemonicValidationTest {
     }
 
     @Test
+    fun `leading and trailing NBSP are trimmed before splitting`() {
+        assertNull(SparkRepository.validateMnemonic("\u00A0$canonical\u202F"))
+    }
+
+    @Test
     fun `figure and narrow NBSP separators are normalized`() {
         assertNull(SparkRepository.validateMnemonic(canonical.replace(' ', '\u2007')))
         assertNull(SparkRepository.validateMnemonic(canonical.replace(' ', '\u202F')))
